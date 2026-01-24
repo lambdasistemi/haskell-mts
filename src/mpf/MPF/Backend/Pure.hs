@@ -32,7 +32,7 @@ import Database.KV.Transaction
     , DMap
     , DSum (..)
     , Transaction
-    , mkCols
+    , fromPairList
     , runTransactionUnguarded
     )
 import MPF.Backend.Standalone
@@ -162,7 +162,7 @@ standaloneMPFPureCols
         , mpfValueCodec = pv
         , mpfNodeCodec = pa
         } =
-        mkCols
+        fromPairList
             [ MPFStandaloneKVCol
                 :=> Column
                     { family = MPFStandaloneKV

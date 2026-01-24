@@ -108,11 +108,12 @@ deletionPathToOps hashing = snd . go []
                                 -- The new node combines the branch jump + child's digit + child's jump
                                 -- Preserve the child's node type (leaf or branch)
                                 let newJump = j <> [onlyD] <> hexJump onlyChild
-                                    collapsed = HexIndirect
-                                        { hexJump = newJump
-                                        , hexValue = hexValue onlyChild
-                                        , hexIsLeaf = hexIsLeaf onlyChild
-                                        }
+                                    collapsed =
+                                        HexIndirect
+                                            { hexJump = newJump
+                                            , hexValue = hexValue onlyChild
+                                            , hexIsLeaf = hexIsLeaf onlyChild
+                                            }
                                 in  ( Just collapsed
                                     , [ (k, Just collapsed)
                                       , (k <> j <> [onlyD], Nothing) -- Delete old child location

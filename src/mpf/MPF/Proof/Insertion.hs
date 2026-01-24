@@ -12,7 +12,6 @@ where
 
 import Control.Monad (guard)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
-import Data.Foldable (foldl')
 import Data.List (isPrefixOf)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -62,10 +61,12 @@ data MPFProofStep a
         -- ^ Merkle root of branch
         }
     | ProofStepBranch
-        { psbPrefixLen :: Int
-        -- ^ Length of common prefix
+        { psbJump :: HexKey
+        -- ^ Jump prefix from this branch to next level
+        , psbPosition :: HexDigit
+        -- ^ Our position (digit) at this branch
         , psbSiblingHashes :: [(HexDigit, a)]
-        -- ^ Sibling hashes at this branch
+        -- ^ Sibling NODE hashes at this branch (leafHash applied for leaves)
         }
     deriving (Show, Eq)
 
@@ -73,6 +74,8 @@ data MPFProofStep a
 data MPFProof a = MPFProof
     { mpfProofSteps :: [MPFProofStep a]
     , mpfProofRootPrefix :: HexKey
+    , mpfProofLeafSuffix :: HexKey
+    -- ^ The remaining key suffix at the leaf level
     }
     deriving (Show, Eq)
 
@@ -80,62 +83,123 @@ data MPFProof a = MPFProof
 mkMPFInclusionProof
     :: (Monad m, GCompare d)
     => FromHexKV k v a
+    -> MPFHashing a
     -> Selector d HexKey (HexIndirect a)
     -> k
     -> Transaction m cf d ops (Maybe (MPFProof a))
-mkMPFInclusionProof FromHexKV{fromHexK} sel k = runMaybeT $ do
+mkMPFInclusionProof FromHexKV{fromHexK} hashing sel k = runMaybeT $ do
     let key = fromHexK k
-    HexIndirect{hexJump = rootJump, hexIsLeaf = _} <- MaybeT $ query sel []
+    HexIndirect{hexJump = rootJump, hexIsLeaf = rootIsLeaf} <-
+        MaybeT $ query sel []
     guard $ isPrefixOf rootJump key
-    steps <- go rootJump $ drop (length rootJump) key
-    pure
-        $ MPFProof{mpfProofSteps = reverse steps, mpfProofRootPrefix = rootJump}
+    let remainingAfterRoot = drop (length rootJump) key
+    if rootIsLeaf
+        then
+            -- Single leaf at root, no branch steps needed
+            -- leafSuffix is the node's hexJump (used in leafHash computation)
+            pure
+                $ MPFProof
+                    { mpfProofSteps = []
+                    , mpfProofRootPrefix = [] -- No prefix for single-leaf root
+                    , mpfProofLeafSuffix = rootJump -- The leaf's suffix is its hexJump
+                    }
+        else do
+            -- For branches, we need to track the parent's jump for branchHash
+            -- Root branch's jump is rootJump
+            (steps, leafSuffix) <- go [] rootJump remainingAfterRoot
+            pure
+                $ MPFProof
+                    { mpfProofSteps = reverse steps
+                    , mpfProofRootPrefix = rootJump
+                    , mpfProofLeafSuffix = leafSuffix
+                    }
   where
-    go _ [] = pure []
-    go u (x : ks) = do
-        HexIndirect{hexJump = jump} <- MaybeT $ query sel (u <> [x])
-        guard $ isPrefixOf jump ks
+    -- go currentPath currentBranchJump remainingKey
+    -- Returns (steps built bottom-up, leaf's hexJump as suffix)
+    go _ _ [] = pure ([], [])
+    go u branchJump (x : ks) = do
+        HexIndirect{hexJump = childJump, hexIsLeaf} <-
+            MaybeT $ query sel (u <> branchJump <> [x])
+        guard $ isPrefixOf childJump ks
+        let remaining = drop (length childJump) ks
         -- Collect sibling information at this branch
-        siblings <- MaybeT $ Just <$> fetchSiblings sel u x
+        -- Compute node hashes (leafHash for leaves, branchHash for branches)
+        siblings <-
+            MaybeT
+                $ Just <$> fetchSiblingNodeHashes hashing sel (u <> branchJump) x
+        -- psbJump is the current BRANCH's jump (for branchHash), not the child's
         let step =
                 ProofStepBranch
-                    { psbPrefixLen = length jump
-                    , psbSiblingHashes = Map.toList $ Map.map hexValue siblings
+                    { psbJump = branchJump
+                    , psbPosition = x
+                    , psbSiblingHashes = Map.toList siblings
                     }
-        (step :) <$> go (u <> (x : jump)) (drop (length jump) ks)
+        if hexIsLeaf
+            then
+                -- Reached the leaf - suffix for hashing is the leaf's hexJump
+                pure ([step], childJump)
+            else do
+                -- Descend into child branch, passing child's jump as the new branchJump
+                (restSteps, leafSuffix) <-
+                    go (u <> branchJump <> [x]) childJump remaining
+                pure (step : restSteps, leafSuffix)
 
--- | Fetch all sibling nodes at a branch point (excluding the given digit)
-fetchSiblings
+-- | Fetch all sibling NODE hashes at a branch point (excluding the given digit)
+-- For leaf nodes: computes leafHash(suffix, valueHash)
+-- For branch nodes: uses the stored branchHash directly
+fetchSiblingNodeHashes
     :: (Monad m, GCompare d)
-    => Selector d HexKey (HexIndirect a)
+    => MPFHashing a
+    -> Selector d HexKey (HexIndirect a)
     -> HexKey
     -> HexDigit
-    -> Transaction m cf d ops (Map HexDigit (HexIndirect a))
-fetchSiblings sel prefix exclude = do
+    -> Transaction m cf d ops (Map HexDigit a)
+fetchSiblingNodeHashes MPFHashing{leafHash} sel prefix exclude = do
     let digits = [HexDigit n | n <- [0 .. 15], HexDigit n /= exclude]
     pairs <- mapM fetchOne digits
-    pure $ Map.fromList [(d, i) | (d, Just i) <- pairs]
+    pure $ Map.fromList [(d, h) | (d, Just h) <- pairs]
   where
     fetchOne d = do
         mi <- query sel (prefix <> [d])
-        pure (d, mi)
+        pure $ case mi of
+            Nothing -> (d, Nothing)
+            Just HexIndirect{hexJump, hexValue, hexIsLeaf}
+                | hexIsLeaf ->
+                    -- Leaf: hexValue is VALUE hash, compute NODE hash
+                    (d, Just $ leafHash hexJump hexValue)
+                | otherwise ->
+                    -- Branch: hexValue is already the BRANCH hash
+                    (d, Just hexValue)
 
 -- | Fold a proof to compute the root hash
+-- Starts with the value hash, computes the leaf hash, then works up through
+-- branches applying merkleRoot and branchHash at each level
 foldMPFProof :: MPFHashing a -> a -> MPFProof a -> a
-foldMPFProof hashing valueHash MPFProof{mpfProofSteps, mpfProofRootPrefix} =
-    branchHash hashing mpfProofRootPrefix rootValue
+foldMPFProof hashing valueHash MPFProof{mpfProofSteps, mpfProofLeafSuffix} =
+    case mpfProofSteps of
+        [] ->
+            -- Single leaf at root: compute leaf hash with full suffix
+            leafHash hashing mpfProofLeafSuffix valueHash
+        steps ->
+            -- Multiple levels: fold from leaf up to root
+            -- Each step includes branchHash, so final result IS the root hash
+            let leafNodeHash = leafHash hashing mpfProofLeafSuffix valueHash
+            in  foldr step leafNodeHash steps
   where
-    rootValue = foldl' step (leafHash hashing [] valueHash) mpfProofSteps
-    step acc proofStep =
+    step proofStep acc =
         case proofStep of
-            ProofStepBranch{psbPrefixLen, psbSiblingHashes} ->
-                let jump = replicate psbPrefixLen (HexDigit 0) -- Placeholder
-                    siblingMap = Map.fromList psbSiblingHashes
-                    -- Build sparse array including our value
-                    sparseArray = [Map.lookup (HexDigit n) siblingMap | n <- [0 .. 15]]
-                    -- Note: This is simplified; actual implementation needs to track position
+            ProofStepBranch{psbJump, psbPosition, psbSiblingHashes} ->
+                let siblingMap = Map.fromList psbSiblingHashes
+                    -- Build sparse 16-element array with our hash at psbPosition
+                    -- and sibling hashes at their respective positions
+                    sparseArray =
+                        [ if HexDigit n == psbPosition
+                            then Just acc
+                            else Map.lookup (HexDigit n) siblingMap
+                        | n <- [0 .. 15]
+                        ]
                     mr = merkleRoot hashing sparseArray
-                in  branchHash hashing jump mr
+                in  branchHash hashing psbJump mr
             ProofStepLeaf{} ->
                 -- Leaf step: handled at termination
                 acc
@@ -144,6 +208,7 @@ foldMPFProof hashing valueHash MPFProof{mpfProofSteps, mpfProofRootPrefix} =
                 psfMerkleRoot
 
 -- | Verify a membership proof
+-- Compares the computed root hash from the proof against the stored root hash
 verifyMPFInclusionProof
     :: (Eq a, Monad m, GCompare d)
     => FromHexKV k v a
@@ -152,10 +217,17 @@ verifyMPFInclusionProof
     -> v
     -> MPFProof a
     -> Transaction m cf d ops Bool
-verifyMPFInclusionProof FromHexKV{fromHexV} sel hashing v proof = do
+verifyMPFInclusionProof FromHexKV{fromHexV} sel hashing@MPFHashing{leafHash} v proof = do
     let valueHash = fromHexV v
     mv <- query sel []
     pure $ case mv of
-        Just rootValue ->
-            hexValue rootValue == foldMPFProof hashing valueHash proof
+        Just HexIndirect{hexJump, hexValue, hexIsLeaf} ->
+            -- Compute the root NODE hash from what's stored
+            -- Leaf: hexValue is VALUE hash, need to apply leafHash
+            -- Branch: hexValue is already the BRANCH hash
+            let rootNodeHash =
+                    if hexIsLeaf
+                        then leafHash hexJump hexValue
+                        else hexValue
+            in  rootNodeHash == foldMPFProof hashing valueHash proof
         Nothing -> False

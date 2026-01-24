@@ -202,7 +202,8 @@ hexIndirectPrism prismA =
     prism'
         (evalPutM . putHexIndirect . fmap (review prismA))
         ( unsafeEvalGet $ do
-            HexIndirect{hexJump = k, hexValue = x, hexIsLeaf = isLeaf} <- getHexIndirect
+            HexIndirect{hexJump = k, hexValue = x, hexIsLeaf = isLeaf} <-
+                getHexIndirect
             pure $ preview prismA x <&> \a ->
                 HexIndirect{hexJump = k, hexValue = a, hexIsLeaf = isLeaf}
         )

@@ -19,7 +19,7 @@ import Database.KV.Transaction
     , Column (..)
     , DMap
     , DSum (..)
-    , mkCols
+    , fromPairList
     )
 import Database.RocksDB
     ( BatchOp
@@ -45,7 +45,7 @@ mpfStandaloneRocksDBCols
 mpfStandaloneRocksDBCols
     MPFStandaloneCodecs{mpfKeyCodec, mpfValueCodec, mpfNodeCodec}
     [kvcf, mpfcf] =
-        mkCols
+        fromPairList
             [ MPFStandaloneKVCol
                 :=> Column
                     { family = kvcf

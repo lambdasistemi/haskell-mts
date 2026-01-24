@@ -136,13 +136,13 @@ insertByteStringM k v =
 proofMPFM :: HexKey -> MPFPure (Maybe (MPFProof MPFHash))
 proofMPFM k =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
-        $ mkMPFInclusionProof fromHexKVIdentity MPFStandaloneMPFCol k
+        $ mkMPFInclusionProof fromHexKVIdentity mpfHashing MPFStandaloneMPFCol k
 
 -- | Verify a membership proof for a key-value pair in the Pure monad
 verifyMPFM :: HexKey -> MPFHash -> MPFPure Bool
 verifyMPFM k v =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs) $ do
-        mProof <- mkMPFInclusionProof fromHexKVIdentity MPFStandaloneMPFCol k
+        mProof <- mkMPFInclusionProof fromHexKVIdentity mpfHashing MPFStandaloneMPFCol k
         case mProof of
             Nothing -> pure False
             Just proof ->

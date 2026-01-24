@@ -31,10 +31,10 @@ import MPF.Interface
 -- | A tree structure for building insertion operations
 -- Similar to CSMT's Compose but with 16-ary branching
 data MPFCompose a
-    = MPFComposeLeaf (HexIndirect a)
-    -- ^ A leaf with value hash - leafHash will be applied during scan
-    | MPFComposeBranch HexKey (Map HexDigit (MPFCompose a))
-    -- ^ A branch being constructed with children
+    = -- | A leaf with value hash - leafHash will be applied during scan
+      MPFComposeLeaf (HexIndirect a)
+    | -- | A branch being constructed with children
+      MPFComposeBranch HexKey (Map HexDigit (MPFCompose a))
     deriving (Show, Eq)
 
 -- | Insert a key-value pair into the MPF structure
@@ -87,15 +87,16 @@ mkMPFCompose mpfCol key h = go key [] pure
                     (d1 : os, d2 : us') -> do
                         -- Divergence: create new branch with two children
                         -- Check if existing node is a leaf or branch
-                        child1 <- if hexIsLeaf
-                            then
-                                -- Leaf: hexValue is VALUE hash, wrap as leaf to recompute with new suffix
-                                pure $ MPFComposeLeaf $ mkLeafIndirect os hexValue
-                            else do
-                                -- Branch: hexValue is BRANCH hash, need to fetch children
-                                -- and rebuild the branch structure with the new prefix
-                                children <- fetchChildTree mpfCol (current <> hexJump)
-                                pure $ MPFComposeBranch os children
+                        child1 <-
+                            if hexIsLeaf
+                                then
+                                    -- Leaf: hexValue is VALUE hash, wrap as leaf to recompute with new suffix
+                                    pure $ MPFComposeLeaf $ mkLeafIndirect os hexValue
+                                else do
+                                    -- Branch: hexValue is BRANCH hash, need to fetch children
+                                    -- and rebuild the branch structure with the new prefix
+                                    children <- fetchChildTree mpfCol (current <> hexJump)
+                                    pure $ MPFComposeBranch os children
                         go us' (current <> common <> [d2]) $ \c ->
                             cont
                                 $ MPFComposeBranch common
@@ -123,7 +124,8 @@ fetchSiblings mpfCol prefix exclude = do
         mi <- query mpfCol (prefix <> [d])
         pure (d, mi)
     wrapNode d HexIndirect{hexIsLeaf, hexJump, hexValue}
-        | hexIsLeaf = pure (d, MPFComposeLeaf $ mkLeafIndirect hexJump hexValue)
+        | hexIsLeaf =
+            pure (d, MPFComposeLeaf $ mkLeafIndirect hexJump hexValue)
         | otherwise = do
             -- Branch: fetch its children to rebuild structure
             children <- fetchChildTree mpfCol (prefix <> [d] <> hexJump)
@@ -144,7 +146,8 @@ fetchChildTree mpfCol prefix = do
         mi <- query mpfCol (prefix <> [d])
         pure (d, mi)
     wrapNode d HexIndirect{hexIsLeaf, hexJump, hexValue}
-        | hexIsLeaf = pure (d, MPFComposeLeaf $ mkLeafIndirect hexJump hexValue)
+        | hexIsLeaf =
+            pure (d, MPFComposeLeaf $ mkLeafIndirect hexJump hexValue)
         | otherwise = do
             -- Recursively fetch children for nested branches
             children <- fetchChildTree mpfCol (prefix <> [d] <> hexJump)
@@ -160,8 +163,8 @@ scanMPFCompose MPFHashing{leafHash, merkleRoot, branchHash} = go []
     go k (MPFComposeLeaf i) =
         -- NEW leaf: compute leaf hash from value hash, store value hash
         let nodeHash = leafHash (hexJump i) (hexValue i)
-            stored = mkLeafIndirect (hexJump i) (hexValue i)  -- Store VALUE hash
-            returned = mkLeafIndirect (hexJump i) nodeHash    -- Return NODE hash
+            stored = mkLeafIndirect (hexJump i) (hexValue i) -- Store VALUE hash
+            returned = mkLeafIndirect (hexJump i) nodeHash -- Return NODE hash
         in  (returned, [(k, stored)])
     go k (MPFComposeBranch jump children) =
         let k' = k <> jump
@@ -177,6 +180,6 @@ scanMPFCompose MPFHashing{leafHash, merkleRoot, branchHash} = go []
             -- Compute branch hash
             mr = merkleRoot childHashes
             value = branchHash jump mr
-            stored = mkBranchIndirect jump value   -- Store as BRANCH
+            stored = mkBranchIndirect jump value -- Store as BRANCH
             returned = mkBranchIndirect jump value -- Return same for merkle root
         in  (returned, allInserts <> [(k, stored)])

@@ -16,7 +16,7 @@ import MPF.Test.Lib
     , runMPFPure'
     , verifyMPFM
     )
-import Test.Hspec (Spec, describe, it, pendingWith, shouldBe, shouldSatisfy)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 
 spec :: Spec
 spec = do
@@ -58,8 +58,12 @@ spec = do
 
         describe "verifyMPFInclusionProof" $ do
             it "verifies proof for single element" $ do
-                -- NOTE: foldMPFProof implementation is incomplete (uses placeholder)
-                pendingWith "foldMPFProof needs proper prefix handling"
+                let key = byteStringToHexKey "hello"
+                    value = mkMPFHash "world"
+                    (r, _) = runMPFPure' $ do
+                        insertMPFM key value
+                        verifyMPFM key value
+                r `shouldBe` True
 
             it "rejects proof with wrong value" $ do
                 let key = byteStringToHexKey "hello"
@@ -71,10 +75,35 @@ spec = do
                 r `shouldBe` False
 
             it "verifies proof with multiple elements" $ do
-                pendingWith "foldMPFProof needs proper prefix handling"
+                let k1 = byteStringToHexKey "key1"
+                    v1 = mkMPFHash "value1"
+                    k2 = byteStringToHexKey "key2"
+                    v2 = mkMPFHash "value2"
+                    k3 = byteStringToHexKey "key3"
+                    v3 = mkMPFHash "value3"
+                    (r, _) = runMPFPure' $ do
+                        insertMPFM k1 v1
+                        insertMPFM k2 v2
+                        insertMPFM k3 v3
+                        verifyMPFM k2 v2
+                r `shouldBe` True
 
             it "verifies all elements after multiple insertions" $ do
-                pendingWith "foldMPFProof needs proper prefix handling"
+                let k1 = byteStringToHexKey "apple"
+                    v1 = mkMPFHash "red"
+                    k2 = byteStringToHexKey "banana"
+                    v2 = mkMPFHash "yellow"
+                    k3 = byteStringToHexKey "cherry"
+                    v3 = mkMPFHash "dark-red"
+                    ((r1, r2, r3), _) = runMPFPure' $ do
+                        insertMPFM k1 v1
+                        insertMPFM k2 v2
+                        insertMPFM k3 v3
+                        (,,)
+                            <$> verifyMPFM k1 v1
+                            <*> verifyMPFM k2 v2
+                            <*> verifyMPFM k3 v3
+                (r1, r2, r3) `shouldBe` (True, True, True)
 
         describe "proof after deletion" $ do
             it "rejects proof for deleted element" $ do
@@ -87,7 +116,16 @@ spec = do
                 r `shouldBe` False
 
             it "still verifies non-deleted siblings" $ do
-                pendingWith "foldMPFProof needs proper prefix handling"
+                let k1 = byteStringToHexKey "keep"
+                    v1 = mkMPFHash "keep-value"
+                    k2 = byteStringToHexKey "delete"
+                    v2 = mkMPFHash "delete-value"
+                    (r, _) = runMPFPure' $ do
+                        insertMPFM k1 v1
+                        insertMPFM k2 v2
+                        deleteMPFM k2
+                        verifyMPFM k1 v1
+                r `shouldBe` True
 
         describe "foldMPFProof" $ do
             it "folds proof to compute root hash" $ do
@@ -117,8 +155,28 @@ spec = do
                     Just _ -> True
                     Nothing -> False
 
-            it "verifies membership for apple in fruits dataset" $ do
-                pendingWith "foldMPFProof needs proper prefix handling"
+            it "verifies membership for apple with 3 fruits" $ do
+                let (verified, _) = runMPFPure' $ do
+                        insertByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                        insertByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7"
+                        insertByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c"
+                        let appleKey = byteStringToHexKey
+                                $ renderMPFHash
+                                $ mkMPFHash "apple[uid: 58]"
+                            appleValue = mkMPFHash "\xf0\x9f\x8d\x8e"
+                        verifyMPFM appleKey appleValue
+                verified `shouldBe` True
+
+            it "verifies membership for apple with 28 fruits" $ do
+                let first28 = take 28 fruitsTestData
+                    (verified, _) = runMPFPure' $ do
+                        forM_ first28 $ uncurry insertByteStringM
+                        let appleKey = byteStringToHexKey
+                                $ renderMPFHash
+                                $ mkMPFHash "apple[uid: 58]"
+                            appleValue = mkMPFHash "\xf0\x9f\x8d\x8e"
+                        verifyMPFM appleKey appleValue
+                verified `shouldBe` True
 
             it "rejects wrong value for apple in fruits dataset" $ do
                 let (verified, _) = runMPFPure' $ do
