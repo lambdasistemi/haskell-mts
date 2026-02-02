@@ -1,5 +1,33 @@
 # Manual
 
+## Demos
+
+### Basic Operations
+
+Insert, query, delete keys and get root hash:
+
+```asciinema
+{
+    "file": "assets/asciinema/basic-ops.cast",
+    "idle_time_limit": 2,
+    "theme": "monokai",
+    "poster": "npt:0:3"
+}
+```
+
+### Proof Operations
+
+Generate and verify self-contained inclusion proofs:
+
+```asciinema
+{
+    "file": "assets/asciinema/proof-ops.cast",
+    "idle_time_limit": 2,
+    "theme": "monokai",
+    "poster": "npt:0:3"
+}
+```
+
 ## CLI Usage
 
 The CSMT library comes with a command-line interface (CLI) tool that allows users to interact with the Compact Sparse Merkle Tree. The CLI provides various commands to perform operations such as adding and removing elements, generating proofs, and verifying membership within the tree.
