@@ -35,6 +35,15 @@ sudo dpkg -i csmt.deb
 
 You can build with nix
 
+```asciinema-player
+{
+    "file": "assets/asciinema/bootstrap.cast",
+    "idle_time_limit": 2,
+    "theme": "monokai",
+    "poster": "npt:0:3"
+}
+```
+
 ```bash
 nix shell nixpkgs#cachix -c cachix use paolino
 nix shell github:paolino/csmt --refresh

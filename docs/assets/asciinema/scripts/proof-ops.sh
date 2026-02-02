@@ -26,20 +26,12 @@ PROOF=$(csmt <<< "q mykey")
 echo "$PROOF"
 sleep 2
 
-# Verify with correct value
+# Verify proof
 echo ""
-echo "## Verify proof (correct value)"
+echo "## Verify inclusion proof"
 sleep 0.5
-echo "\$ csmt <<< \"v myvalue \$PROOF\""
-csmt <<< "v myvalue $PROOF"
-sleep 1
-
-# Verify with wrong value
-echo ""
-echo "## Verify proof (wrong value)"
-sleep 0.5
-echo "\$ csmt <<< \"v wrongvalue \$PROOF\""
-csmt <<< "v wrongvalue $PROOF"
+echo '$ echo "v $PROOF" | csmt'
+printf "v %s\n" "$PROOF" | csmt
 sleep 2
 
 # Show proof is self-contained
@@ -49,8 +41,8 @@ sleep 0.5
 echo '$ rm -rf $CSMT_DB_PATH'
 rm -rf "$CSMT_DB_PATH"
 sleep 0.5
-echo "\$ csmt <<< \"v myvalue \$PROOF\""
-csmt <<< "v myvalue $PROOF"
+echo '$ echo "v $PROOF" | csmt'
+printf "v %s\n" "$PROOF" | csmt
 sleep 2
 
 # Cleanup

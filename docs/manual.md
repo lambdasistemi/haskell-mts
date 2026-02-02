@@ -6,7 +6,7 @@
 
 Insert, query, delete keys and get root hash:
 
-```asciinema
+```asciinema-player
 {
     "file": "assets/asciinema/basic-ops.cast",
     "idle_time_limit": 2,
@@ -19,7 +19,7 @@ Insert, query, delete keys and get root hash:
 
 Generate and verify self-contained inclusion proofs:
 
-```asciinema
+```asciinema-player
 {
     "file": "assets/asciinema/proof-ops.cast",
     "idle_time_limit": 2,
@@ -42,7 +42,7 @@ CLI works in interactive mode by default. You can also pass commands directly as
 | `d`     | Delete a key                       | key              |                              |
 | `q`     | Query inclusion proof for a key    | key              | base64 encoding of the proof |
 | `r`     | Get the current root of the CSMT   |                  | base64 encoding of the root  |
-| `v`     | Verify inclusion proof for a value | value, proof[^1] | Valid or Invalid             |
+| `v`     | Verify inclusion proof             | proof            | Valid or Invalid             |
 | `w`     | Query value for a key              | key              | value                        |
 | `c`     | Comment (no operation)             |                  |                              |
 
@@ -80,7 +80,7 @@ Now the database contains the value for `key1`, and you can query its inclusion 
 === "Input"
     ```bash
     csmt <<$
-    v value1 AQDjun1C8tTl1kdY1oon8sAQWL86/UMiJyZFswQ9Sf49XQAA
+    v AQDjun1C8tTl1kdY1oon8sAQWL86/UMiJyZFswQ9Sf49XQAA
     $
     ```
 === "Output"
@@ -88,19 +88,7 @@ Now the database contains the value for `key1`, and you can query its inclusion 
     Valid
     ```
 
-Now, if you try to verify the same proof with a different value
-
-
-=== "Input"
-    ```bash
-    csmt <<$
-    v value2 AQDjun1C8tTl1kdY1oon8sAQWL86/UMiJyZFswQ9Sf49XQAA
-    $
-    ```
-=== "Output"
-    ```text
-    Invalid
-    ```
+The proof is self-contained and includes the value hash, so verification doesn't need the value as a separate argument.
 
 ### Querying
 
@@ -188,5 +176,3 @@ If you insert some keys first:
     NrJMih3czFriydMUwvFKFK6VYKZYVjKpKGe1WC4e+VU=
     TreeEmpty
     ```
-
-[^1]: In case the tree contains only one key, the proof argument has to be an empty string.
