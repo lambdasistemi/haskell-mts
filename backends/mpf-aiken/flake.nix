@@ -48,9 +48,10 @@
           text = ''
             WORKDIR=$(mktemp -d)
             cp -r ${mpf-src}/off-chain/* "$WORKDIR/"
+            chmod -R u+w "$WORKDIR"
             cd "$WORKDIR"
             export HOME="$WORKDIR"
-            npm ci
+            npm install
             npm test
           '';
         };

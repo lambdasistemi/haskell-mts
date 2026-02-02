@@ -23,6 +23,8 @@ npm test
 nix run .#test
 ```
 
+Note: The FFI tests require the Aiken on-chain compiler and will fail. The core MPF tests (helpers, cbor, crypto) pass.
+
 ## Comparing with Haskell MPF
 
 The test vectors in `test-lib-mpf/MPF/Test/Lib.hs` are derived from the Aiken implementation:
