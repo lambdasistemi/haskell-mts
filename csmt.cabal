@@ -51,6 +51,7 @@ common warnings
 
 library
   import:           warnings
+  autogen-modules:  Paths_csmt
   other-modules:    Paths_csmt
   exposed-modules:
     CSMT
@@ -88,7 +89,6 @@ library
 
   hs-source-dirs:   src/csmt/
   default-language: Haskell2010
-  other-modules:    Paths_csmt
 
 executable csmt
   import:           warnings
@@ -171,7 +171,6 @@ benchmark bench
 
 executable space-leak
   import:           warnings
-  ghc-options:      -O2
   main-is:          src/csmt/CSMT/Frontend/CLI/SpaceLeak.hs
   build-depends:
     , base        >=4.19 && <5

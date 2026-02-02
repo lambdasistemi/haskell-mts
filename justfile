@@ -25,6 +25,13 @@ format-check:
     fourmolu -m check $hs_files
     find . -name '*.cabal' -not -path './dist-newstyle/*' | xargs cabal-fmt -c
 
+# Check package is ready for Hackage
+hackage-ready:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cabal check
+    cabal haddock all
+
 # Run hlint
 hlint:
     #!/usr/bin/env bash
