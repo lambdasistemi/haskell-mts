@@ -51,9 +51,18 @@ jobs:
       - name: Upload release artifacts
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          gh release upload ${{ needs.release-please.outputs.tag_name }} \
-            csmt-image \
-            csmt.AppImage \
-            csmt.rpm \
-            csmt.deb
+          # Find and copy actual files from bundler outputs
+          find csmt.deb -name "*.deb" -exec cp {} csmt-${TAG}.deb \;
+          find csmt.rpm -name "*.rpm" -exec cp {} csmt-${TAG}.rpm \;
+          cp -L csmt.AppImage csmt-${TAG}.AppImage 2>/dev/null || \
+            find csmt.AppImage -type f -exec cp {} csmt-${TAG}.AppImage \;
+          cp csmt-image csmt-${TAG}-docker.tar.gz 2>/dev/null || \
+            find csmt-image -type f -exec cp {} csmt-${TAG}-docker.tar.gz \;
+
+          gh release upload ${TAG} \
+            csmt-${TAG}.deb \
+            csmt-${TAG}.rpm \
+            csmt-${TAG}.AppImage \
+            csmt-${TAG}-docker.tar.gz
