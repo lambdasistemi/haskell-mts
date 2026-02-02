@@ -2,12 +2,15 @@
 
 module MPF.Insertion
     ( inserting
+    , insertingBatch
+    , insertingBulk
     , mkMPFCompose
     , scanMPFCompose
     , MPFCompose (..)
     )
 where
 
+import Data.List (foldl', sortOn)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Database.KV.Transaction
@@ -51,6 +54,92 @@ inserting FromHexKV{fromHexK, fromHexV} hashing kvCol mpfCol k v = do
     insert kvCol k v
     c <- mkMPFCompose mpfCol (fromHexK k) (fromHexV v)
     mapM_ (uncurry $ insert mpfCol) $ snd $ scanMPFCompose hashing c
+
+-- | Batch insert multiple key-value pairs into an empty MPF structure
+-- This is much faster than sequential inserts as it builds the tree in one pass
+-- using divide-and-conquer (O(n log n) vs O(n²))
+insertingBatch
+    :: (Monad m, Ord k, GCompare d)
+    => FromHexKV k v a
+    -> MPFHashing a
+    -> Selector d k v
+    -> Selector d HexKey (HexIndirect a)
+    -> [(k, v)]
+    -> Transaction m cf d ops ()
+insertingBatch FromHexKV{fromHexK, fromHexV} hashing kvCol mpfCol kvs = do
+    -- Insert all key-value pairs into the KV store
+    mapM_ (uncurry $ insert kvCol) kvs
+    -- Build the MPF tree in one pass and insert all nodes
+    let hexKvs = [(fromHexK k, fromHexV v) | (k, v) <- kvs]
+        compose = buildComposeFromList hexKvs
+    case compose of
+        Nothing -> pure () -- Empty list
+        Just c -> mapM_ (uncurry $ insert mpfCol) $ snd $ scanMPFCompose hashing c
+
+-- | Bulk insert for large datasets (millions of items)
+-- Sorts items by key and inserts sequentially. Sorted insertion is much faster
+-- than random order because consecutive keys share prefixes, minimizing tree
+-- restructuring. For empty trees, consider 'insertingBatch' for small-to-medium
+-- datasets that fit in memory.
+--
+-- Complexity: O(n log n) for sorting + O(n * d) for insertion where d is key depth
+-- vs O(n² * d) for random insertion order
+insertingBulk
+    :: (Monad m, Ord k, GCompare d)
+    => FromHexKV k v a
+    -> MPFHashing a
+    -> Selector d k v
+    -> Selector d HexKey (HexIndirect a)
+    -> [(k, v)]
+    -> Transaction m cf d ops ()
+insertingBulk fhkv@FromHexKV{fromHexK} hashing kvCol mpfCol kvs = do
+    -- Sort by hex key for optimal insertion order
+    let sorted = sortOn (fromHexK . fst) kvs
+    -- Insert each item in sorted order
+    mapM_ (\(k, v) -> inserting fhkv hashing kvCol mpfCol k v) sorted
+
+-- | Build an MPFCompose tree from a list of key-value pairs
+-- Uses divide-and-conquer: find common prefix, group by first digit, recurse
+buildComposeFromList :: [(HexKey, a)] -> Maybe (MPFCompose a)
+buildComposeFromList [] = Nothing
+buildComposeFromList [(key, value)] =
+    -- Single element: create a leaf
+    Just $ MPFComposeLeaf $ mkLeafIndirect key value
+buildComposeFromList kvs =
+    -- Multiple elements: find common prefix, then branch
+    let prefix = commonPrefixAll (map fst kvs)
+        prefixLen = length prefix
+        -- Strip prefix and group by first digit
+        stripped = [(drop prefixLen k, v) | (k, v) <- kvs]
+        -- Group by first digit
+        grouped = groupByFirstDigit stripped
+        -- Recursively build children
+        children = Map.mapMaybe buildComposeFromList grouped
+    in  if Map.null children
+            then Nothing
+            else Just $ MPFComposeBranch prefix children
+
+-- | Find the common prefix of all keys
+commonPrefixAll :: [HexKey] -> HexKey
+commonPrefixAll [] = []
+commonPrefixAll [k] = k
+commonPrefixAll (k : ks) = foldl' commonPrefix2 k ks
+
+-- | Find common prefix of two keys
+commonPrefix2 :: HexKey -> HexKey -> HexKey
+commonPrefix2 [] _ = []
+commonPrefix2 _ [] = []
+commonPrefix2 (x : xs) (y : ys)
+    | x == y = x : commonPrefix2 xs ys
+    | otherwise = []
+
+-- | Group key-value pairs by their first hex digit
+groupByFirstDigit :: [(HexKey, a)] -> Map HexDigit [(HexKey, a)]
+groupByFirstDigit = foldl' addToGroup Map.empty
+  where
+    addToGroup acc ([], _) = acc -- Should not happen after stripping common prefix
+    addToGroup acc (d : rest, v) =
+        Map.insertWith (++) d [(rest, v)] acc
 
 -- | Build a compose tree by traversing the existing trie
 mkMPFCompose

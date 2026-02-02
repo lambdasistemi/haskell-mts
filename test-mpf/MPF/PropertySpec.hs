@@ -23,6 +23,8 @@ import MPF.Interface (HexKey, byteStringToHexKey)
 import MPF.Test.Lib
     ( deleteMPFM
     , getRootHashM
+    , insertBatchMPFM
+    , insertBulkMPFM
     , insertMPFM
     , runMPFPure'
     , verifyMPFM
@@ -76,6 +78,13 @@ spec = do
             it "inserted key-value can be verified" $ property propInsertVerify
 
             it "multiple inserts all verifiable" $ property propMultipleInsertVerify
+
+        describe "batch insert" $ do
+            it "batch insert equals sequential inserts" $
+                property propBatchEqualsSequential
+
+            it "bulk insert equals sequential inserts" $
+                property propBulkEqualsSequential
 
         describe "insertion order independence" $ do
             it "same keys in any order produce same root hash" $
@@ -172,3 +181,37 @@ propSingleInsertHasRoot (TestKV keyBs valBs) =
     in  case mRoot of
             Just _ -> True
             Nothing -> False
+
+-- | Property: batch insert produces same root hash as sequential inserts
+propBatchEqualsSequential :: Property
+propBatchEqualsSequential =
+    forAll (vectorOf 5 ((,) <$> genKeyBytes <*> genValue)) $ \rawKvs ->
+        let kvs = nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) rawKvs
+        in  length kvs >= 2 ==>
+                let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                    -- Sequential inserts
+                    (rootSeq, _) = runMPFPure' $ do
+                        forM_ kvHashed $ uncurry insertMPFM
+                        getRootHashM
+                    -- Batch insert
+                    (rootBatch, _) = runMPFPure' $ do
+                        insertBatchMPFM kvHashed
+                        getRootHashM
+                in  fmap renderMPFHash rootSeq === fmap renderMPFHash rootBatch
+
+-- | Property: bulk insert produces same root hash as sequential inserts
+propBulkEqualsSequential :: Property
+propBulkEqualsSequential =
+    forAll (vectorOf 5 ((,) <$> genKeyBytes <*> genValue)) $ \rawKvs ->
+        let kvs = nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) rawKvs
+        in  length kvs >= 2 ==>
+                let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                    -- Sequential inserts
+                    (rootSeq, _) = runMPFPure' $ do
+                        forM_ kvHashed $ uncurry insertMPFM
+                        getRootHashM
+                    -- Bulk insert
+                    (rootBulk, _) = runMPFPure' $ do
+                        insertBulkMPFM kvHashed
+                        getRootHashM
+                in  fmap renderMPFHash rootSeq === fmap renderMPFHash rootBulk
