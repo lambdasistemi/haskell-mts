@@ -69,6 +69,16 @@ jobs:
           cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - name: Run Benchmarks
         run: nix --quiet run .#bench
+  typescript:
+    name: TypeScript Verifier Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: paolino/dev-assets/setup-nix@v0.0.1
+        with:
+          cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - name: Run TypeScript Tests
+        run: nix --quiet run ./verifiers/typescript#test
   formatting:
     name: Check code formatting
     runs-on: ubuntu-latest
