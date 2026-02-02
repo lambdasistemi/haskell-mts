@@ -7,12 +7,11 @@
 -- QuickCheck properties testing core MPF invariants:
 --
 -- * Single key insert-verify roundtrip
+-- * Multiple key insert-verify roundtrip
 -- * Root hash independence from insertion order
 -- * Deletion removes key from verification
+-- * Deletion preserves sibling proofs
 -- * Root hash existence after insertions
---
--- Note: Some multi-key properties are disabled as they reveal edge case bugs
--- in the proof implementation that need further investigation.
 module MPF.PropertySpec (spec) where
 
 import Control.Monad (forM, forM_)
@@ -43,19 +42,18 @@ import Test.QuickCheck
     , (==>)
     )
 
--- | Generate a random ByteString key (short keys like unit tests use)
+-- | Generate a random ByteString key
 genKeyBytes :: Gen ByteString
-genKeyBytes = do
-    len <- choose (4, 16)  -- 8-32 hex digits, similar to unit tests
-    B.pack <$> vectorOf len (choose (0, 255))
+genKeyBytes = B.pack <$> listOf1 (choose (0, 255))
 
 -- | Generate a random ByteString value
 genValue :: Gen ByteString
 genValue = B.pack <$> listOf1 (choose (0, 255))
 
--- | Convert key bytes to HexKey (directly, like unit tests do)
+-- | Convert key bytes to HexKey by hashing first (like insertByteStringM does)
+-- This produces 64 hex digit keys, which is what Aiken/fruits tests use
 toHexKey :: ByteString -> HexKey
-toHexKey = byteStringToHexKey
+toHexKey = byteStringToHexKey . renderMPFHash . mkMPFHash
 
 -- | A key-value pair for testing
 data TestKV = TestKV ByteString ByteString
@@ -64,11 +62,12 @@ data TestKV = TestKV ByteString ByteString
 instance Arbitrary TestKV where
     arbitrary = TestKV <$> genKeyBytes <*> genValue
 
--- | Generate a list of unique key-value pairs (unique by key bytes)
+-- | Generate a list of unique key-value pairs (unique by hashed key)
 genUniqueKVs :: Gen [(ByteString, ByteString)]
 genUniqueKVs = do
     kvs <- listOf1 ((,) <$> genKeyBytes <*> genValue)
-    pure $ nubBy (\(k1, _) (k2, _) -> k1 == k2) kvs
+    -- Ensure uniqueness after hashing to avoid key collisions
+    pure $ nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) kvs
 
 spec :: Spec
 spec = do
@@ -76,11 +75,7 @@ spec = do
         describe "insert-verify roundtrip" $ do
             it "inserted key-value can be verified" $ property propInsertVerify
 
-            -- Note: propMultipleInsertVerify is commented out as it reveals
-            -- edge case bugs in the MPF proof implementation that need
-            -- further investigation. The test reliably fails with certain
-            -- random key patterns while fixed keys work correctly.
-            -- it "multiple inserts all verifiable" $ property propMultipleInsertVerify
+            it "multiple inserts all verifiable" $ property propMultipleInsertVerify
 
         describe "insertion order independence" $ do
             it "same keys in any order produce same root hash" $
@@ -89,10 +84,7 @@ spec = do
         describe "deletion properties" $ do
             it "deleted key cannot be verified" $ property propDeleteRemovesKey
 
-            -- Note: propDeletePreservesSiblings reveals the same edge case bugs
-            -- as propMultipleInsertVerify - certain random key patterns cause
-            -- proof verification to fail after deletion.
-            -- it "deletion preserves sibling proofs" $ property propDeletePreservesSiblings
+            it "deletion preserves sibling proofs" $ property propDeletePreservesSiblings
 
         describe "root hash properties" $ do
             it "empty tree has no root hash" $ do
@@ -111,21 +103,22 @@ propInsertVerify (TestKV keyBs valBs) =
             verifyMPFM key value
     in  verified
 
--- | Property: multiple inserts all verifiable (disabled - reveals edge case bugs)
--- Uses small number of inserts to isolate the issue
-_propMultipleInsertVerify :: Property
-_propMultipleInsertVerify = forAll genUniqueKVs $ \kvs ->
-    length kvs >= 2 && length kvs <= 5 ==>
-        let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- take 3 kvs]
-            -- Insert all, then verify one at a time to find which fails
-            (verifyResults, _) = runMPFPure' $ do
-                forM_ kvHashed $ uncurry insertMPFM
-                -- Return verification result for each key
-                forM kvHashed $ \(k, v) -> do
-                    r <- verifyMPFM k v
-                    pure (r, k)
-            allPassed = all fst verifyResults
-        in  allPassed
+-- | Property: multiple inserts all verifiable
+propMultipleInsertVerify :: Property
+propMultipleInsertVerify =
+    forAll (vectorOf 3 ((,) <$> genKeyBytes <*> genValue)) $ \rawKvs ->
+        let kvs = nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) rawKvs
+        in  length kvs == 3 ==>
+                let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                    -- Insert all, then verify one at a time to find which fails
+                    (verifyResults, _) = runMPFPure' $ do
+                        forM_ kvHashed $ uncurry insertMPFM
+                        -- Return verification result for each key
+                        forM kvHashed $ \(k, v) -> do
+                            r <- verifyMPFM k v
+                            pure (r, k)
+                    allPassed = all fst verifyResults
+                in  allPassed
 
 -- | Property: same keys in any order produce same root hash
 propInsertionOrderIndependence :: Property
@@ -153,18 +146,20 @@ propDeleteRemovesKey (TestKV keyBs valBs) =
             verifyMPFM key value
     in  not verified
 
--- | Property: deletion preserves sibling proofs (disabled - reveals edge case bugs)
-_propDeletePreservesSiblings :: Property
-_propDeletePreservesSiblings = forAll genUniqueKVs $ \kvs ->
-    length kvs >= 2 ==>
-        let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
-            (keepKey, keepVal) = head kvHashed
-            deleteKey = fst (kvHashed !! 1)
-            (verified, _) = runMPFPure' $ do
-                forM_ kvHashed $ uncurry insertMPFM
-                deleteMPFM deleteKey
-                verifyMPFM keepKey keepVal
-        in  verified
+-- | Property: deletion preserves sibling proofs
+propDeletePreservesSiblings :: Property
+propDeletePreservesSiblings =
+    forAll (vectorOf 3 ((,) <$> genKeyBytes <*> genValue)) $ \rawKvs ->
+        let kvs = nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) rawKvs
+        in  length kvs == 3 ==>
+                let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                    (keepKey, keepVal) = head kvHashed
+                    deleteKey = fst (kvHashed !! 1)
+                    (verified, _) = runMPFPure' $ do
+                        forM_ kvHashed $ uncurry insertMPFM
+                        deleteMPFM deleteKey
+                        verifyMPFM keepKey keepVal
+                in  verified
 
 -- | Property: single insert produces a root hash
 propSingleInsertHasRoot :: TestKV -> Bool

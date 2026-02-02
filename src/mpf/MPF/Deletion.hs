@@ -75,8 +75,16 @@ deletionPathToOps
      . MPFHashing a
     -> MPFDeletionPath a
     -> [(HexKey, Maybe (HexIndirect a))]
-deletionPathToOps hashing = snd . go []
+deletionPathToOps hashing@MPFHashing{leafHash} = snd . go []
   where
+    -- | Compute the NODE hash from a HexIndirect
+    -- Leaf: compute leafHash from value hash
+    -- Branch: use the stored branch hash directly
+    nodeHash :: HexIndirect a -> a
+    nodeHash HexIndirect{hexJump, hexValue, hexIsLeaf}
+        | hexIsLeaf = leafHash hexJump hexValue
+        | otherwise = hexValue
+
     go
         :: HexKey
         -> MPFDeletionPath a
@@ -91,7 +99,8 @@ deletionPathToOps hashing = snd . go []
                     -- Child still exists, update the branch hash
                     let updatedSiblings = Map.insert d i' siblings
                         sparseArray = [Map.lookup (HexDigit n) updatedSiblings | n <- [0 .. 15]]
-                        childHashes = map (fmap hexValue) sparseArray
+                        -- Use NODE hashes for merkle root (leafHash for leaves, hexValue for branches)
+                        childHashes = map (fmap nodeHash) sparseArray
                         mr = merkleRoot hashing childHashes
                         value = branchHash hashing j mr
                         i'' = mkBranchIndirect j value
@@ -103,28 +112,41 @@ deletionPathToOps hashing = snd . go []
                             [] ->
                                 -- No more children, delete the branch
                                 (Nothing, [(k, Nothing), (k <> j <> [d], Nothing)] <> ops)
-                            [(onlyD, onlyChild)] ->
-                                -- Single child remaining: collapse the branch
-                                -- The new node combines the branch jump + child's digit + child's jump
-                                -- Preserve the child's node type (leaf or branch)
-                                let newJump = j <> [onlyD] <> hexJump onlyChild
-                                    collapsed =
-                                        HexIndirect
-                                            { hexJump = newJump
-                                            , hexValue = hexValue onlyChild
-                                            , hexIsLeaf = hexIsLeaf onlyChild
-                                            }
-                                in  ( Just collapsed
-                                    , [ (k, Just collapsed)
-                                      , (k <> j <> [onlyD], Nothing) -- Delete old child location
-                                      , (k <> j <> [d], Nothing) -- Delete deleted child location
-                                      ]
-                                        <> ops
-                                    )
+                            [(onlyD, onlyChild)]
+                                | hexIsLeaf onlyChild ->
+                                    -- Single LEAF child remaining: collapse the branch
+                                    -- The new node combines the branch jump + child's digit + child's jump
+                                    let newJump = j <> [onlyD] <> hexJump onlyChild
+                                        collapsed =
+                                            HexIndirect
+                                                { hexJump = newJump
+                                                , hexValue = hexValue onlyChild
+                                                , hexIsLeaf = True
+                                                }
+                                    in  ( Just collapsed
+                                        , [ (k, Just collapsed)
+                                          , (k <> j <> [onlyD], Nothing) -- Delete old child location
+                                          , (k <> j <> [d], Nothing) -- Delete deleted child location
+                                          ]
+                                            <> ops
+                                        )
+                                | otherwise ->
+                                    -- Single BRANCH child remaining: cannot collapse because
+                                    -- branchHash includes the jump and we'd need to recompute
+                                    -- Just update the parent branch hash with remaining child
+                                    let sparseArray = [if HexDigit n == onlyD then Just onlyChild else Nothing | n <- [0 .. 15]]
+                                        childHashes = map (fmap nodeHash) sparseArray
+                                        mr = merkleRoot hashing childHashes
+                                        value = branchHash hashing j mr
+                                        i'' = mkBranchIndirect j value
+                                    in  ( Just i''
+                                        , [(k, Just i''), (k <> j <> [d], Nothing)] <> ops
+                                        )
                             _ ->
                                 -- Multiple children remain, just remove the deleted one and update hash
                                 let sparseArray = [Map.lookup (HexDigit n) siblings | n <- [0 .. 15]]
-                                    childHashes = map (fmap hexValue) sparseArray
+                                    -- Use NODE hashes for merkle root
+                                    childHashes = map (fmap nodeHash) sparseArray
                                     mr = merkleRoot hashing childHashes
                                     value = branchHash hashing j mr
                                     i'' = mkBranchIndirect j value

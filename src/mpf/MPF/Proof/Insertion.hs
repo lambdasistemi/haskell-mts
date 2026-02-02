@@ -12,7 +12,7 @@ where
 
 import Control.Monad (guard)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
-import Data.List (isPrefixOf)
+import Data.List (foldl', isPrefixOf)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Database.KV.Transaction
@@ -182,11 +182,12 @@ foldMPFProof hashing valueHash MPFProof{mpfProofSteps, mpfProofLeafSuffix} =
             leafHash hashing mpfProofLeafSuffix valueHash
         steps ->
             -- Multiple levels: fold from leaf up to root
-            -- Each step includes branchHash, so final result IS the root hash
+            -- Steps are ordered leaf-to-root, so foldl' processes in correct order:
+            -- start with leaf hash, combine with leaf's parent siblings, work up
             let leafNodeHash = leafHash hashing mpfProofLeafSuffix valueHash
-            in  foldr step leafNodeHash steps
+            in  foldl' step leafNodeHash steps
   where
-    step proofStep acc =
+    step acc proofStep =
         case proofStep of
             ProofStepBranch{psbJump, psbPosition, psbSiblingHashes} ->
                 let siblingMap = Map.fromList psbSiblingHashes
