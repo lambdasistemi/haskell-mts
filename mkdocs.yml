@@ -50,3 +50,4 @@ nav:
   - Usage:
     - CLI Manual: manual.md
     - Library API: library.md
+    - TypeScript Verifier: typescript.md
