@@ -69,22 +69,22 @@ library
     Data.Serialize.Extra
 
   build-depends:
-    , async
-    , base
-    , bytestring
-    , cborg
-    , cereal
-    , containers
-    , crypton
-    , exceptions
-    , haskeline
-    , lens
-    , memory
-    , opt-env-conf
-    , rocksdb-haskell-jprupp
-    , rocksdb-kv-transactions
+    , async                    >=2.2   && <2.3
+    , base                     >=4.19  && <5
+    , bytestring               >=0.12  && <0.13
+    , cborg                    >=0.2   && <0.3
+    , cereal                   >=0.5   && <0.6
+    , containers               >=0.6   && <0.7
+    , crypton                  >=1.0   && <1.1
+    , exceptions               >=0.10  && <0.11
+    , haskeline                >=0.8   && <0.9
+    , lens                     >=5.3   && <5.4
+    , memory                   >=0.18  && <0.19
+    , opt-env-conf             >=0.11  && <0.12
+    , rocksdb-haskell-jprupp   >=2.1   && <2.2
+    , rocksdb-kv-transactions  >=0.1   && <0.2
     , rocksdb-kv-transactions:kv-transactions
-    , transformers
+    , transformers             >=0.6   && <0.7
 
   hs-source-dirs:   src/csmt/
   default-language: Haskell2010
@@ -95,7 +95,7 @@ executable csmt
   ghc-options:      -threaded -rtsopts -with-rtsopts=-N -O2
   main-is:          app/cli/main.hs
   build-depends:
-    , base
+    , base  >=4.19 && <5
     , csmt
 
   default-language: Haskell2010
@@ -105,13 +105,13 @@ library test-lib
   visibility:       public
   exposed-modules:  CSMT.Test.Lib
   build-depends:
-    , base
-    , bytestring
-    , cereal
+    , base        >=4.19 && <5
+    , bytestring  >=0.12 && <0.13
+    , cereal      >=0.5  && <0.6
     , csmt
-    , free
-    , lens
-    , QuickCheck
+    , free        >=5.2  && <5.3
+    , lens        >=5.3  && <5.4
+    , QuickCheck  >=2.14 && <2.18
     , rocksdb-kv-transactions:kv-transactions
 
   hs-source-dirs:   test-lib
@@ -122,24 +122,24 @@ test-suite unit-tests
   default-language:   Haskell2010
   hs-source-dirs:     test
   build-depends:
-    , base
-    , bytestring
-    , cereal
-    , containers
+    , base                     >=4.19 && <5
+    , bytestring               >=0.12 && <0.13
+    , cereal                   >=0.5  && <0.6
+    , containers               >=0.6  && <0.7
     , csmt
     , csmt:test-lib
-    , data-default
-    , filepath
-    , hspec
-    , lens
-    , QuickCheck
-    , rocksdb-haskell-jprupp
-    , rocksdb-kv-transactions
+    , data-default             >=0.8  && <0.9
+    , filepath                 >=1.4  && <1.5
+    , hspec                    >=2.11 && <2.12
+    , lens                     >=5.3  && <5.4
+    , QuickCheck               >=2.14 && <2.18
+    , rocksdb-haskell-jprupp   >=2.1  && <2.2
+    , rocksdb-kv-transactions  >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
-    , temporary
-    , transformers
+    , temporary                >=1.3  && <1.4
+    , transformers             >=0.6  && <0.7
 
-  build-tool-depends: hspec-discover:hspec-discover
+  build-tool-depends: hspec-discover:hspec-discover >=2.11 && <2.12
   type:               exitcode-stdio-1.0
   main-is:            main.hs
   other-modules:
@@ -160,22 +160,22 @@ benchmark bench
   hs-source-dirs:   bench
   main-is:          main.hs
   build-depends:
-    , base
-    , bytestring
+    , base        >=4.19 && <5
+    , bytestring  >=0.12 && <0.13
     , csmt
-    , deepseq
-    , filepath
-    , miniterion
+    , deepseq     >=1.5  && <1.6
+    , filepath    >=1.4  && <1.5
+    , miniterion  >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
-    , temporary
+    , temporary   >=1.3  && <1.4
 
 executable space-leak
   import:           warnings
   ghc-options:      -O2
   main-is:          src/csmt/CSMT/Frontend/CLI/SpaceLeak.hs
   build-depends:
-    , base
-    , bytestring
+    , base        >=4.19 && <5
+    , bytestring  >=0.12 && <0.13
     , csmt
     , rocksdb-kv-transactions:kv-transactions
 
