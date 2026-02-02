@@ -1,3 +1,12 @@
+-- |
+-- Module      : CSMT.Frontend.CLI.App
+-- Description : Interactive CLI for CSMT operations
+-- Copyright   : (c) Paolo Veronelli, 2026
+-- License     : Apache-2.0
+--
+-- Command-line interface for interacting with a CSMT database.
+-- Supports inserting, deleting, and querying key-value pairs,
+-- as well as generating and verifying inclusion proofs.
 module CSMT.Frontend.CLI.App
     ( main
     ) where
@@ -297,6 +306,7 @@ codecs =
         , nodeCodec = isoHash
         }
 
+-- | Entry point for the CSMT CLI application.
 main :: IO ()
 main = do
     Options{optDbPath, optCSMTMaxFiles, optKVMaxFiles} <-

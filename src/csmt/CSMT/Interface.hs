@@ -138,6 +138,7 @@ compareKeys (x : xs) (y : ys)
         in  (x : j, o, r)
     | otherwise = ([], x : xs, y : ys)
 
+-- | Query the root hash of the CSMT. Returns 'Nothing' if the tree is empty.
 root
     :: (Monad m, GCompare d)
     => Hashing a
@@ -152,10 +153,12 @@ root hsh sel = do
 bigendian :: [Int]
 bigendian = [7, 6 .. 0]
 
+-- | Serialize a 'Direction' to a single byte (0 for 'L', 1 for 'R').
 putDirection :: Direction -> PutM ()
 putDirection d = do
     putWord8 $ if toBool d then 1 else 0
 
+-- | Deserialize a 'Direction' from a single byte.
 getDirection :: Get Direction
 getDirection = do
     b <- getWord8
@@ -164,6 +167,7 @@ getDirection = do
         1 -> return R
         _ -> fail "Invalid direction byte"
 
+-- | Serialize a 'Key' to bytes: 2-byte length followed by bit-packed directions.
 putKey :: Key -> PutM ()
 putKey k = do
     let bytes = BA.pack $ unfoldr unconsDirection k
@@ -182,6 +186,7 @@ putKey k = do
         | toBool dir = setBit b i
         | otherwise = b
 
+-- | Deserialize a 'Key' from bytes.
 getKey :: Get Key
 getKey = do
     len <- getWord16be
@@ -195,12 +200,14 @@ getKey = do
     byteToDirections :: Bits b => b -> Key
     byteToDirections byte = [if testBit byte i then R else L | i <- bigendian]
 
+-- | Serialize a byte array with a 2-byte length prefix.
 putSizedByteString :: BA.ByteArrayAccess a => a -> PutM ()
 putSizedByteString bs = do
     let len = fromIntegral $ BA.length bs
     putWord16be len
     putByteString $ convert bs
 
+-- | Deserialize a length-prefixed byte array.
 getSizedByteString :: BA.ByteArray a => Get a
 getSizedByteString = do
     len <- getWord16be
