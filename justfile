@@ -31,6 +31,9 @@ hackage-ready:
     set -euo pipefail
     cabal check
     cabal haddock all
+    cabal sdist
+    echo "BLOCKED: rocksdb-kv-transactions is not on Hackage yet"
+    exit 1
 
 # Run hlint
 hlint:

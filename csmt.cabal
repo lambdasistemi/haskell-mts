@@ -13,9 +13,14 @@ license:         Apache-2.0
 license-file:    LICENSE
 author:          Paolo Veronelli
 maintainer:      paolo.veronelli@gmail.com
-category:        Development
+homepage:        https://github.com/paolino/haskell-csmt
+bug-reports:     https://github.com/paolino/haskell-csmt/issues
+category:        Cryptography, Data
+stability:       experimental
 build-type:      Simple
-extra-doc-files: CHANGELOG.md
+extra-doc-files:
+    CHANGELOG.md
+    README.md
 
 common warnings
   ghc-options:
