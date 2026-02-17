@@ -10,6 +10,12 @@ An inclusion proof is self-contained: it includes all information needed to
 verify membership, including the key, value hash, and expected root hash.
 Verification is pure computation with no database access required.
 
+**Note on tree prefixes**: When `treePrefix` is configured, the tree key used
+for proof generation is `treePrefix(value) <> fromK(key)`. The proof generator
+first looks up the value from the KV column to compute the full tree key, then
+traverses the CSMT column to build the proof. The `proofKey` in the resulting
+proof contains the full prefixed key.
+
 ```mermaid
 graph TD
     subgraph "Inclusion Proof"

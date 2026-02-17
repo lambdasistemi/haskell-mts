@@ -12,6 +12,7 @@ A Compact Sparse Merkle Tree is a space-efficient variant of a Merkle tree optim
 This package provides:
 
 - **Haskell Library**: A CSMT implementation with persistent storage backends, offering efficient insertion, deletion, and proof generation for applications requiring verifiable data structures.
+- **Secondary Indexing**: Configurable `treePrefix` allows grouping entries by a value-derived prefix (e.g. address), enabling completeness proofs over subsets of the tree.
 - **CLI Tool**: Interactive command-line interface for tree operations including adding/removing elements, generating proofs, and verifying membership.
 - **Preimage Storage**: Automatic storage of key-value preimages in sync with the CSMT, enabling value retrieval alongside proof verification.
 
