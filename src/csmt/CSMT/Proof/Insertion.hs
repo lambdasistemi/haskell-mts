@@ -30,6 +30,7 @@ import CSMT.Interface
     , addWithDirection
     , oppositeDirection
     )
+import Control.Lens (view)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Data.List (isPrefixOf)
 
@@ -96,10 +97,10 @@ buildInclusionProof
     -> Hashing a
     -> k
     -> Transaction m cf d ops (Maybe (v, InclusionProof a))
-buildInclusionProof FromKV{fromK, fromV, treePrefix} kvSel csmtSel hashing k =
+buildInclusionProof FromKV{isoK, fromV, treePrefix} kvSel csmtSel hashing k =
     runMaybeT $ do
         v <- MaybeT $ query kvSel k
-        let key = treePrefix v <> fromK k
+        let key = treePrefix v <> view isoK k
             value = fromV v
         rootIndirect@(Indirect rootJump _) <- MaybeT $ query csmtSel []
         guard $ isPrefixOf rootJump key

@@ -73,6 +73,7 @@ import CSMT.Deletion
     )
 import CSMT.Hashes (Hash, hashHashing, isoHash, mkHash)
 import CSMT.Interface (FromKV (..), Hashing (..))
+import Control.Lens (simple)
 import Control.Lens (Prism', prism')
 import Control.Monad (replicateM)
 import Control.Monad.Free (Free (..), liftF)
@@ -98,7 +99,7 @@ import Test.QuickCheck
 import Test.QuickCheck.Gen (Gen, elements)
 
 identityFromKV :: FromKV Key a a
-identityFromKV = FromKV{fromK = id, fromV = id, treePrefix = const []}
+identityFromKV = FromKV{isoK = simple, fromV = id, treePrefix = const []}
 
 word64Hashing :: Hashing Word64
 word64Hashing =

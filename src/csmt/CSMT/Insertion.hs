@@ -33,6 +33,7 @@ import CSMT.Interface
     , compareKeys
     , oppositeDirection
     )
+import Control.Lens (view)
 import Database.KV.Transaction
     ( GCompare
     , Selector
@@ -79,9 +80,9 @@ inserting
     -> k
     -> v
     -> Transaction m cf d ops ()
-inserting FromKV{fromK, fromV, treePrefix} hashing kVCol csmtCol k v = do
+inserting FromKV{isoK, fromV, treePrefix} hashing kVCol csmtCol k v = do
     insert kVCol k v
-    let treeKey = treePrefix v <> fromK k
+    let treeKey = treePrefix v <> view isoK k
     c <- buildComposeTree csmtCol treeKey (fromV v)
     mapM_ (uncurry $ insert csmtCol) $ snd $ scanCompose hashing c
 

@@ -46,7 +46,7 @@ module CSMT.Interface
     )
 where
 
-import Control.Lens (Prism', preview, prism', review, (<&>))
+import Control.Lens (Iso', Prism', preview, prism', review, (<&>))
 import Data.Bits (Bits (..))
 import Data.ByteArray (convert)
 import Data.ByteArray qualified as BA
@@ -121,8 +121,8 @@ prefix q Indirect{jump, value} = Indirect{jump = q ++ jump, value}
 -- tree keys and hash values.
 data FromKV k v a
     = FromKV
-    { fromK :: k -> Key
-    -- ^ Convert an external key to a tree path
+    { isoK :: Iso' k Key
+    -- ^ Bidirectional conversion between external keys and tree paths
     , fromV :: v -> a
     -- ^ Convert an external value to a hash
     , treePrefix :: v -> Key

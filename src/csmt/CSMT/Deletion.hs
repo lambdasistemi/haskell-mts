@@ -32,6 +32,7 @@ import CSMT.Interface
     , compareKeys
     , oppositeDirection
     )
+import Control.Lens (view)
 import Control.Monad (guard)
 import Control.Monad.Trans.Maybe (MaybeT (..))
 import Database.KV.Transaction
@@ -76,12 +77,12 @@ deleting
     -> Selector d Key (Indirect a)
     -> k
     -> Transaction m cf d ops ()
-deleting FromKV{fromK, treePrefix} hashing kvSel csmtSel key = do
+deleting FromKV{isoK, treePrefix} hashing kvSel csmtSel key = do
     mv <- query kvSel key
     case mv of
         Nothing -> pure ()
         Just v -> do
-            let treeKey = treePrefix v <> fromK key
+            let treeKey = treePrefix v <> view isoK key
             mpath <- newDeletionPath csmtSel treeKey
             case mpath of
                 Nothing -> pure ()

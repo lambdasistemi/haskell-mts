@@ -175,7 +175,7 @@ isoHash = iso Hash renderHash
 fromKVHashes :: FromKV ByteString ByteString Hash
 fromKVHashes =
     FromKV
-        { fromK = byteStringToKey
+        { isoK = iso byteStringToKey keyToByteString
         , fromV = mkHash
         , treePrefix = const []
         }

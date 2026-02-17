@@ -18,6 +18,7 @@ import CSMT.Backend.Pure
     , runPureTransaction
     )
 import CSMT.Interface (FromKV (..))
+import Control.Lens (simple)
 import CSMT.Proof.Completeness
     ( collectValues
     , foldProof
@@ -49,7 +50,7 @@ import Test.QuickCheck.Gen (elements)
 prefixedFromKV :: FromKV Key Word64 Word64
 prefixedFromKV =
     FromKV
-        { fromK = id
+        { isoK = simple
         , fromV = id
         , treePrefix = \v -> if even v then [L] else [R]
         }
