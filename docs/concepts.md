@@ -99,10 +99,14 @@ CBOR wire format specification.
 
 ### Completeness Proofs
 
-A completeness proof demonstrates that a set of values comprises the entire tree contents. It consists of:
+A completeness proof demonstrates that a set of values comprises the
+entire contents of a subtree. When `treePrefix` groups entries by a
+common prefix (e.g. address bytes), a completeness proof can show that
+a given set of entries is **all** entries under that prefix. It consists of:
 
-1. All leaf values
-2. A sequence of merge operations to reconstruct the tree
+1. All leaf values under the prefix
+2. A sequence of merge operations to reconstruct the subtree
+3. Sibling hashes at the boundary to connect back to the root
 
 ## Storage Model
 
@@ -111,10 +115,18 @@ The CSMT uses two storage columns:
 | Column | Key | Value |
 |--------|-----|-------|
 | KV | Original key | Original value |
-| CSMT | Path prefix | Indirect (jump + hash) |
+| CSMT | `treePrefix(value) <> fromK(key)` | Indirect (jump + hash) |
+
+The tree key in CSMTCol is computed as `treePrefix(value) <> fromK(key)`,
+where `treePrefix` is a configurable function that derives a prefix from
+the value. When `treePrefix = const []` (the default), the tree key is
+simply `fromK(key)`, preserving the original behavior.
 
 This dual storage allows:
 
 - Efficient tree operations via the CSMT column
 - Retrieval of original values via the KV column
 - Proof generation using both columns
+- **Prefix-based queries**: all entries sharing a `treePrefix` are grouped
+  in the same subtree, enabling completeness proofs over subsets (e.g. all
+  UTxOs at a given address)

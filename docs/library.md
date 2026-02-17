@@ -58,9 +58,10 @@ insertExample =
 The `insert` function:
 
 1. Stores the key-value pair in the KV column
-2. Computes the value hash
-3. Updates the CSMT structure
-4. Recomputes affected node hashes
+2. Computes the tree key as `treePrefix(value) <> fromK(key)`
+3. Computes the value hash
+4. Updates the CSMT structure at the tree key
+5. Recomputes affected node hashes
 
 ### Deleting Values
 
@@ -75,9 +76,11 @@ deleteExample =
 
 Deletion:
 
-1. Removes the key from the KV column
-2. Updates the tree structure (may compact nodes)
-3. Recomputes affected hashes
+1. Looks up the value from the KV column (needed to compute the tree key
+   via `treePrefix(value) <> fromK(key)`)
+2. Removes the key from the KV column
+3. Updates the tree structure (may compact nodes)
+4. Recomputes affected hashes
 
 ### Querying the Root
 

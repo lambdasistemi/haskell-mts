@@ -20,7 +20,12 @@ graph LR
 | Column | Key Type | Value Type | Purpose |
 |--------|----------|------------|---------|
 | KV | User key (`k`) | User value (`v`) | Store original key-value pairs |
-| CSMT | Path prefix (`Key`) | `Indirect a` | Store Merkle tree nodes |
+| CSMT | `treePrefix(v) <> fromK(k)` | `Indirect a` | Store Merkle tree nodes |
+
+The CSMT column key is computed by prepending `treePrefix(value)` to
+`fromK(key)`. When `treePrefix = const []` (the default), this is just
+`fromK(key)`. A non-trivial `treePrefix` groups entries with the same
+prefix into a common subtree, enabling prefix-based completeness proofs.
 
 ## CSMT Node Storage
 
@@ -76,7 +81,8 @@ graph TD
 The KV column stores the original key-value pairs, enabling:
 
 - Retrieval of original values given a key
-- Proof generation (needs both key and value)
+- Proof generation (needs both key and value — the value is required to
+  compute `treePrefix(value)` for the tree key)
 - Value lookup after proof verification
 
 ```
