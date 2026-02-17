@@ -17,6 +17,7 @@ module CSMT.Proof.Completeness
     , foldProof
     , collectValues
     , generateProof
+    , queryPrefix
     )
 where
 
@@ -89,69 +90,162 @@ data TreeWithDifferentLengthsError = TreeWithDifferentLengthsError
     deriving (Show)
 
 -- |
--- Collect all leaf values from a subtree.
+-- Collect all leaf values from a subtree rooted at a prefix.
 --
--- Traverses the tree depth-first, collecting all leaf indirect values
--- with their full paths from the given starting key.
+-- Navigates from the tree root to the target prefix, handling path
+-- compression (jumps that span beyond the prefix). Once the prefix
+-- is consumed, collects all leaves below that point.
 collectValues
     :: (Monad m, GCompare d)
     => Selector d Key (Indirect a)
     -> Key
     -> Transaction m cf d op [Indirect a]
-collectValues sel = go
+collectValues sel targetPrefix = navigate [] targetPrefix
   where
-    go key = do
-        mi <- query sel key
+    navigate currentKey remainingPrefix = do
+        mi <- query sel currentKey
         case mi of
             Nothing -> pure []
-            Just indirect@(Indirect jump _) -> do
-                l <- go (key <> jump <> [L])
-                r <- go (key <> jump <> [R])
-                if null l && null r
-                    then pure [indirect]
-                    else
-                        pure
-                            $ prefix jump
-                                <$> ( (prefix [L] <$> l)
-                                        <> (prefix [R] <$> r)
-                                    )
+            Just (Indirect fullJump val) ->
+                let (_, prefixRest, jumpRest) =
+                        compareKeys remainingPrefix fullJump
+                in  case prefixRest of
+                        -- Prefix consumed: collect everything below
+                        [] -> do
+                            let base = currentKey <> fullJump
+                            l <- navigate (base <> [L]) []
+                            r <- navigate (base <> [R]) []
+                            if null l && null r
+                                then pure [Indirect jumpRest val]
+                                else
+                                    pure
+                                        $ prefix jumpRest
+                                            <$> ( (prefix [L] <$> l)
+                                                    <> (prefix [R] <$> r)
+                                                )
+                        -- Jump consumed, prefix continues
+                        (d : rest)
+                            | null jumpRest ->
+                                navigate
+                                    (currentKey <> fullJump <> [d])
+                                    rest
+                            -- Divergence: no entries under this prefix
+                            | otherwise -> pure []
 
 -- |
--- Generate a completeness proof for a subtree.
+-- Generate a completeness proof for a subtree rooted at a prefix.
 --
--- Traverses the tree and generates a sequence of merge operations that,
--- when applied to the collected leaf values, will produce the root hash.
+-- Navigates from the tree root to the target prefix, then generates
+-- a sequence of merge operations that, when applied to the collected
+-- leaf values, will produce the subtree root hash.
 generateProof
     :: forall m d a cf op
      . (Monad m, GCompare d)
     => Selector d Key (Indirect a)
     -> Key
     -> Transaction m cf d op (Maybe CompletenessProof)
-generateProof sel = fmap (fmap fst) . go 0
+generateProof sel targetPrefix =
+    fmap (fmap fst) $ navigate 0 [] targetPrefix
   where
+    navigate
+        :: Int
+        -> Key
+        -> Key
+        -> Transaction
+            m
+            cf
+            d
+            op
+            (Maybe (CompletenessProof, (Int, Int)))
+    navigate n currentKey remainingPrefix = do
+        mi <- query sel currentKey
+        case mi of
+            Nothing -> pure Nothing
+            Just (Indirect fullJump _) ->
+                let (_, prefixRest, jumpRest) =
+                        compareKeys remainingPrefix fullJump
+                in  case prefixRest of
+                        -- Prefix consumed: generate proof below
+                        [] -> go n currentKey fullJump
+                        -- Jump consumed, prefix continues
+                        (d : rest)
+                            | null jumpRest ->
+                                navigate
+                                    n
+                                    (currentKey <> fullJump <> [d])
+                                    rest
+                            -- Divergence: no entries under this prefix
+                            | otherwise -> pure Nothing
     go
         :: Int
         -> Key
-        -> Transaction m cf d op (Maybe (CompletenessProof, (Int, Int)))
-    go n key = do
+        -> Key
+        -> Transaction
+            m
+            cf
+            d
+            op
+            (Maybe (CompletenessProof, (Int, Int)))
+    go n key jump = do
+        let base = key <> jump
+            leftKey = base <> [L]
+            rightKey = base <> [R]
+        ml <- goChild n leftKey
+        case ml of
+            Nothing -> pure $ Just ([], (n + 1, n))
+            Just (lxs, (n', li)) -> do
+                mr <- goChild n' rightKey
+                case mr of
+                    Nothing -> error "Right subtree missing"
+                    Just (rxs, (n'', ri)) ->
+                        pure
+                            $ Just
+                                ( lxs
+                                    ++ rxs
+                                    ++ [(li, ri)]
+                                , (n'', n)
+                                )
+    goChild
+        :: Int
+        -> Key
+        -> Transaction
+            m
+            cf
+            d
+            op
+            (Maybe (CompletenessProof, (Int, Int)))
+    goChild n key = do
         mi <- query sel key
         case mi of
             Nothing -> pure Nothing
-            Just (Indirect jump _) -> do
-                let leftKey = key <> jump <> [L]
-                    rightKey = key <> jump <> [R]
-                ml <- go n leftKey
-                case ml of
-                    Nothing -> pure $ Just ([], (n + 1, n))
-                    Just (lxs, (n', li)) -> do
-                        mr <- go n' rightKey
-                        case mr of
-                            Nothing -> error "Right subtree missing"
-                            Just (rxs, (n'', ri)) ->
-                                pure
-                                    $ Just
-                                        ( lxs
-                                            ++ rxs
-                                            ++ [(li, ri)]
-                                        , (n'', n)
-                                        )
+            Just (Indirect jump _) -> go n key jump
+
+-- |
+-- Query the effective subtree root at a prefix.
+--
+-- Navigates from the tree root to the target prefix, returning the
+-- 'Indirect' at the prefix boundary with the remaining jump as the
+-- new jump field. Returns 'Nothing' if no entries exist under the
+-- prefix.
+queryPrefix
+    :: (Monad m, GCompare d)
+    => Selector d Key (Indirect a)
+    -> Key
+    -> Transaction m cf d op (Maybe (Indirect a))
+queryPrefix sel targetPrefix = navigate [] targetPrefix
+  where
+    navigate currentKey remainingPrefix = do
+        mi <- query sel currentKey
+        case mi of
+            Nothing -> pure Nothing
+            Just (Indirect fullJump val) ->
+                let (_, prefixRest, jumpRest) =
+                        compareKeys remainingPrefix fullJump
+                in  case prefixRest of
+                        [] -> pure $ Just (Indirect jumpRest val)
+                        (d : rest)
+                            | null jumpRest ->
+                                navigate
+                                    (currentKey <> fullJump <> [d])
+                                    rest
+                            | otherwise -> pure Nothing

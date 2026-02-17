@@ -5,8 +5,10 @@ where
 
 import CSMT
     ( Direction (L, R)
+    , Indirect (..)
     , Key
     , Standalone (StandaloneCSMTCol)
+    , combineHash
     )
 import CSMT.Backend.Pure
     ( InMemoryDB
@@ -18,6 +20,9 @@ import CSMT.Backend.Pure
 import CSMT.Interface (FromKV (..))
 import CSMT.Proof.Completeness
     ( collectValues
+    , foldProof
+    , generateProof
+    , queryPrefix
     )
 import CSMT.Test.Lib
     ( deleteM
@@ -29,6 +34,7 @@ import CSMT.Test.Lib
     , word64Hashing
     )
 import Data.Foldable (foldl')
+import Data.List (sort)
 import Data.Word (Word64)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import Test.QuickCheck
@@ -123,6 +129,19 @@ spec = do
             length collectedL `shouldBe` 2
             length collectedR `shouldBe` 1
 
+        it "collectValues finds single entry via prefix navigation" $ do
+            -- Single entry: key [R], value 2 (even) → tree key [L, R]
+            -- Stored as root at [] with jump [L, R]
+            -- collectValues [L] must navigate into the compressed jump
+            let db = insertP [R] 2 emptyInMemoryDB
+                collected =
+                    fst
+                        $ runPure db
+                        $ runPureTransaction word64Codecs
+                        $ collectValues StandaloneCSMTCol [L]
+            length collected `shouldBe` 1
+            map value collected `shouldBe` [2]
+
     describe "treePrefix properties" $ do
         it "insert then delete all yields empty DB"
             $ property
@@ -162,33 +181,108 @@ spec = do
                                 kvs
                     results `shouldBe` replicate (length kvs) True
 
-        it "prefix changes tree structure vs no prefix"
+        it "collectValues under prefix returns exactly the matching values"
             $ property
-            $ forAll (elements [2 .. 6])
+            $ forAll (elements [2 .. 8])
+            $ \n ->
+                forAll (genSomePaths n) $ \keys0 -> do
+                    let keys = take (max 2 $ length keys0) keys0
+                        kvs = zip keys [1 :: Word64 ..]
+                        db = foldl' (\d (k, v) -> insertP k v d) emptyInMemoryDB kvs
+                        expectedEven = sort [v | (_, v) <- kvs, even v]
+                        expectedOdd = sort [v | (_, v) <- kvs, odd v]
+                        collectedL =
+                            fst
+                                $ runPure db
+                                $ runPureTransaction word64Codecs
+                                $ collectValues StandaloneCSMTCol [L]
+                        collectedR =
+                            fst
+                                $ runPure db
+                                $ runPureTransaction word64Codecs
+                                $ collectValues StandaloneCSMTCol [R]
+                        actualEven = sort $ map value collectedL
+                        actualOdd = sort $ map value collectedR
+                    actualEven `shouldBe` expectedEven
+                    actualOdd `shouldBe` expectedOdd
+
+        it "collectValues [] partitions into [L] and [R]"
+            $ property
+            $ forAll (elements [1 .. 8])
             $ \n ->
                 forAll (genSomePaths n) $ \keys -> do
+                    let kvs = zip keys [1 :: Word64 ..]
+                        db = foldl' (\d (k, v) -> insertP k v d) emptyInMemoryDB kvs
+                        collect p =
+                            fst
+                                $ runPure db
+                                $ runPureTransaction word64Codecs
+                                $ collectValues StandaloneCSMTCol p
+                        allValues = sort $ map value $ collect []
+                        partitioned =
+                            sort
+                                $ map value
+                                $ collect [L] <> collect [R]
+                    allValues `shouldBe` partitioned
+
+        it "collectValues [] returns all inserted values"
+            $ property
+            $ forAll (elements [1 .. 8])
+            $ \n ->
+                forAll (genSomePaths n) $ \keys -> do
+                    let kvs = zip keys [1 :: Word64 ..]
+                        db = foldl' (\d (k, v) -> insertP k v d) emptyInMemoryDB kvs
+                        collected =
+                            sort
+                                $ map value
+                                $ fst
+                                $ runPure db
+                                $ runPureTransaction word64Codecs
+                                $ collectValues StandaloneCSMTCol []
+                        expected = sort $ map snd kvs
+                    collected `shouldBe` expected
+
+        it "collectValues on non-matching prefix returns empty"
+            $ property
+            $ forAll (elements [1 .. 8])
+            $ \n ->
+                forAll (genSomePaths n) $ \keys -> do
+                    -- Only even values → all go to prefix [L]
                     let kvs = zip keys [2, 4 :: Word64 ..]
-                        noPrefixFromKV =
-                            FromKV
-                                { fromK = id
-                                , fromV = id
-                                , treePrefix = const []
-                                }
-                        dbPrefixed =
-                            foldl'
-                                (\d (k, v) -> insertP k v d)
-                                emptyInMemoryDB
-                                kvs
-                        dbPlain =
-                            foldl'
-                                ( \d (k, v) ->
-                                    snd
-                                        $ runPure d
-                                        $ insertM word64Codecs noPrefixFromKV word64Hashing k v
-                                )
-                                emptyInMemoryDB
-                                kvs
-                        csmtPrefixed = inMemoryCSMTParsed word64Codecs dbPrefixed
-                        csmtPlain = inMemoryCSMTParsed word64Codecs dbPlain
-                    -- With prefix, tree structure differs from without
-                    csmtPrefixed `shouldSatisfy` (/= csmtPlain)
+                        db = foldl' (\d (k, v) -> insertP k v d) emptyInMemoryDB kvs
+                        collected =
+                            fst
+                                $ runPure db
+                                $ runPureTransaction word64Codecs
+                                $ collectValues StandaloneCSMTCol [R]
+                    collected `shouldBe` []
+
+        it "completeness proof for prefix subtree verifies"
+            $ property
+            $ forAll (elements [2 .. 8])
+            $ \n ->
+                forAll (genSomePaths n) $ \keys -> do
+                    let kvs = zip keys [1 :: Word64 ..]
+                        db = foldl' (\d (k, v) -> insertP k v d) emptyInMemoryDB kvs
+                        -- Collect values and generate proof for [L] subtree
+                        (collected, proof, subtreeRoot) =
+                            fst
+                                $ runPure db
+                                $ runPureTransaction word64Codecs
+                                $ do
+                                    c <- collectValues StandaloneCSMTCol [L]
+                                    p <- generateProof StandaloneCSMTCol [L]
+                                    r <- queryPrefix StandaloneCSMTCol [L]
+                                    pure (c, p, r)
+                    case proof of
+                        Nothing ->
+                            -- No subtree at [L] means no even values
+                            collected `shouldBe` []
+                        Just p -> do
+                            -- foldProof reconstructs the subtree root
+                            let computed =
+                                    foldProof
+                                        (combineHash word64Hashing)
+                                        (sort collected)
+                                        p
+                            computed `shouldBe` subtreeRoot
