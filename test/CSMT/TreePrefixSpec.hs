@@ -18,7 +18,6 @@ import CSMT.Backend.Pure
     , runPureTransaction
     )
 import CSMT.Interface (FromKV (..))
-import Control.Lens (simple)
 import CSMT.Proof.Completeness
     ( collectValues
     , foldProof
@@ -34,6 +33,7 @@ import CSMT.Test.Lib
     , word64Codecs
     , word64Hashing
     )
+import Control.Lens (simple)
 import Data.Foldable (foldl')
 import Data.List (sort)
 import Data.Word (Word64)

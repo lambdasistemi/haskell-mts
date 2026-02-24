@@ -27,7 +27,6 @@ import CSMT.Interface (csmtCodecs)
 import Control.Concurrent (newEmptyMVar, putMVar, readMVar)
 import Control.Concurrent.Async (async, link)
 import Control.Monad ((<=<))
-import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans.Reader (ReaderT (..), ask)
 import Database.KV.Database
     ( Database (..)
@@ -47,6 +46,7 @@ import Database.RocksDB
     , DB (..)
     , withDBCF
     )
+import UnliftIO (MonadUnliftIO)
 
 -- | The RocksDB monad, providing access to a RocksDB database.
 type RocksDB = ReaderT DB IO
@@ -75,7 +75,7 @@ standaloneRocksDBCols _ _ = error "pureCols: expected exactly two column familie
 
 -- | Create a RocksDB-backed database instance.
 standaloneRocksDBDatabase
-    :: MonadIO m
+    :: MonadUnliftIO m
     => StandaloneCodecs k v a
     -> RocksDB (Database m ColumnFamily (Standalone k v a) BatchOp)
 standaloneRocksDBDatabase codecs = do

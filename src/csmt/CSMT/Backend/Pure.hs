@@ -275,13 +275,16 @@ pureDatabase
     :: StandaloneCodecs k v a
     -> Database Pure StandaloneCF (Standalone k v a) StandaloneOp
 pureDatabase codecs =
-    Database
-        { valueAt = pureValueAt
-        , applyOps = pureApplyOps
-        , columns = standalonePureCols codecs
-        , mkOperation = mkStandaloneOp
-        , newIterator = pureIterator
-        }
+    let db =
+            Database
+                { valueAt = pureValueAt
+                , applyOps = pureApplyOps
+                , columns = standalonePureCols codecs
+                , mkOperation = mkStandaloneOp
+                , newIterator = pureIterator
+                , withSnapshot = \f -> f db
+                }
+    in  db
 
 -- | Run a transaction in the pure in-memory backend.
 runPureTransaction
