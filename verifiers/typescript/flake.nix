@@ -6,24 +6,14 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs =
-    {
-      self,
-      nixpkgs,
-      flake-utils,
-    }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
+  outputs = { self, nixpkgs, flake-utils, }:
+    flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
         nodejs = pkgs.nodejs_22;
-      in
-      {
+      in {
         devShells.default = pkgs.mkShell {
-          buildInputs = [
-            nodejs
-            pkgs.nodePackages.npm
-          ];
+          buildInputs = [ nodejs pkgs.nodePackages.npm ];
 
           shellHook = ''
             echo "CSMT TypeScript Verifier Development Shell"
@@ -49,22 +39,18 @@
           '';
         };
 
-        packages.test =
-          let
-            src = pkgs.lib.cleanSource ./.;
-          in
-          pkgs.writeShellApplication {
-            name = "csmt-verify-test";
-            runtimeInputs = [ nodejs ];
-            text = ''
-              WORKDIR=$(mktemp -d)
-              cp -r ${src}/* "$WORKDIR/"
-              cd "$WORKDIR"
-              export HOME="$WORKDIR"
-              npm ci
-              npm test
-            '';
-          };
-      }
-    );
+        packages.test = let src = pkgs.lib.cleanSource ./.;
+        in pkgs.writeShellApplication {
+          name = "csmt-verify-test";
+          runtimeInputs = [ nodejs ];
+          text = ''
+            WORKDIR=$(mktemp -d)
+            cp -r ${src}/* "$WORKDIR/"
+            cd "$WORKDIR"
+            export HOME="$WORKDIR"
+            npm ci
+            npm test
+          '';
+        };
+      });
 }

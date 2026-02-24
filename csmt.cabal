@@ -19,8 +19,8 @@ category:        Cryptography, Data
 stability:       experimental
 build-type:      Simple
 extra-doc-files:
-    CHANGELOG.md
-    README.md
+  CHANGELOG.md
+  README.md
 
 common warnings
   ghc-options:
@@ -75,22 +75,23 @@ library
     Data.Serialize.Extra
 
   build-depends:
-    , async                    >=2.2   && <2.3
-    , base                     >=4.19  && <5
-    , bytestring               >=0.12  && <0.13
-    , cborg                    >=0.2   && <0.3
-    , cereal                   >=0.5   && <0.6
-    , containers               >=0.6   && <0.7
-    , crypton                  >=1.0   && <1.1
-    , exceptions               >=0.10  && <0.11
-    , haskeline                >=0.8   && <0.9
-    , lens                     >=5.3   && <5.4
-    , memory                   >=0.18  && <0.19
-    , opt-env-conf             >=0.11  && <0.14
-    , rocksdb-haskell-jprupp   >=2.1   && <2.2
-    , rocksdb-kv-transactions  >=0.1   && <0.2
+    , async                                    >=2.2  && <2.3
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
+    , cborg                                    >=0.2  && <0.3
+    , cereal                                   >=0.5  && <0.6
+    , containers                               >=0.6  && <0.7
+    , crypton                                  >=1.0  && <1.1
+    , exceptions                               >=0.10 && <0.11
+    , haskeline                                >=0.8  && <0.9
+    , lens                                     >=5.3  && <5.4
+    , memory                                   >=0.18 && <0.19
+    , opt-env-conf                             >=0.11 && <0.14
+    , rocksdb-haskell-jprupp                   >=2.1  && <2.2
+    , rocksdb-kv-transactions                  >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
-    , transformers             >=0.6   && <0.7
+    , transformers                             >=0.6  && <0.7
+    , unliftio                                 >=0.2  && <0.3
 
   hs-source-dirs:   src/csmt/
   default-language: Haskell2010
@@ -110,13 +111,13 @@ library test-lib
   visibility:       public
   exposed-modules:  CSMT.Test.Lib
   build-depends:
-    , base        >=4.19 && <5
-    , bytestring  >=0.12 && <0.13
-    , cereal      >=0.5  && <0.6
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
+    , cereal                                   >=0.5  && <0.6
     , csmt
-    , free        >=5.2  && <5.3
-    , lens        >=5.3  && <5.4
-    , QuickCheck  >=2.14 && <2.18
+    , free                                     >=5.2  && <5.3
+    , lens                                     >=5.3  && <5.4
+    , QuickCheck                               >=2.14 && <2.18
     , rocksdb-kv-transactions:kv-transactions
 
   hs-source-dirs:   test-lib
@@ -127,22 +128,22 @@ test-suite unit-tests
   default-language:   Haskell2010
   hs-source-dirs:     test
   build-depends:
-    , base                     >=4.19 && <5
-    , bytestring               >=0.12 && <0.13
-    , cereal                   >=0.5  && <0.6
-    , containers               >=0.6  && <0.7
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
+    , cereal                                   >=0.5  && <0.6
+    , containers                               >=0.6  && <0.7
     , csmt
     , csmt:test-lib
-    , data-default             >=0.8  && <0.9
-    , filepath                 >=1.4  && <1.5
-    , hspec                    >=2.11 && <2.12
-    , lens                     >=5.3  && <5.4
-    , QuickCheck               >=2.14 && <2.18
-    , rocksdb-haskell-jprupp   >=2.1  && <2.2
-    , rocksdb-kv-transactions  >=0.1  && <0.2
+    , data-default                             >=0.8  && <0.9
+    , filepath                                 >=1.4  && <1.5
+    , hspec                                    >=2.11 && <2.12
+    , lens                                     >=5.3  && <5.4
+    , QuickCheck                               >=2.14 && <2.18
+    , rocksdb-haskell-jprupp                   >=2.1  && <2.2
+    , rocksdb-kv-transactions                  >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
-    , temporary                >=1.3  && <1.4
-    , transformers             >=0.6  && <0.7
+    , temporary                                >=1.3  && <1.4
+    , transformers                             >=0.6  && <0.7
 
   build-tool-depends: hspec-discover:hspec-discover >=2.11 && <2.12
   type:               exitcode-stdio-1.0
@@ -166,21 +167,21 @@ benchmark bench
   hs-source-dirs:   bench
   main-is:          main.hs
   build-depends:
-    , base        >=4.19 && <5
-    , bytestring  >=0.12 && <0.13
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
     , csmt
-    , deepseq     >=1.5  && <1.6
-    , filepath    >=1.4  && <1.5
-    , miniterion  >=0.1  && <0.2
+    , deepseq                                  >=1.5  && <1.6
+    , filepath                                 >=1.4  && <1.5
+    , miniterion                               >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
-    , temporary   >=1.3  && <1.4
+    , temporary                                >=1.3  && <1.4
 
 executable space-leak
   import:           warnings
   main-is:          src/csmt/CSMT/Frontend/CLI/SpaceLeak.hs
   build-depends:
-    , base        >=4.19 && <5
-    , bytestring  >=0.12 && <0.13
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
     , csmt
     , rocksdb-kv-transactions:kv-transactions
 

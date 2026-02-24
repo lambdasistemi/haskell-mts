@@ -126,10 +126,11 @@ keyToByteString = B.pack . go
     go [] = []
     go ds =
         let (byte, rest) = splitAt 8 ds
-            toByte = foldl
-                (\acc (i, d) -> case d of R -> setBit acc i; L -> acc)
-                (0 :: Word8)
-                (zip [7, 6 .. 0] byte)
+            toByte =
+                foldl
+                    (\acc (i, d) -> case d of R -> setBit acc i; L -> acc)
+                    (0 :: Word8)
+                    (zip [7, 6 .. 0] byte)
         in  toByte : go rest
 
 -- | Get the root hash of the tree, if it exists.
