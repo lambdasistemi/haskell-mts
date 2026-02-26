@@ -1,4 +1,4 @@
-{"version": 2, "width": 80, "height": 24, "timestamp": 1770038178, "env": {"SHELL": "/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin/bash", "TERM": "tmux-256color"}}
+{"version": 2, "width": 80, "height": 24, "timestamp": 1770038178, "env": {"SHELL": "/bin/bash", "TERM": "tmux-256color"}}
 [0.015752, "o", "# CSMT Basic Operations Demo\r\n\r\n"]
 [1.021725, "o", "## Insert key-value pairs\r\n"]
 [1.52824, "o", "$ csmt <<< \"i hello world\"\r\n"]
