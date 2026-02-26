@@ -1,4 +1,4 @@
-{"version": 2, "width": 80, "height": 24, "timestamp": 1770038730, "env": {"SHELL": "/nix/store/rlq03x4cwf8zn73hxaxnx0zn5q9kifls-bash-5.3p3/bin/bash", "TERM": "tmux-256color"}}
+{"version": 2, "width": 80, "height": 24, "timestamp": 1770038730, "env": {"SHELL": "/bin/bash", "TERM": "tmux-256color"}}
 [0.033322, "o", "# CSMT Proof Operations Demo\r\n\r\n"]
 [1.033257, "o", "## Setup: Insert data\r\n"]
 [1.536693, "o", "$ csmt <<< \"i mykey myvalue\"\r\n"]
