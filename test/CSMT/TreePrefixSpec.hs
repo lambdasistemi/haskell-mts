@@ -36,6 +36,7 @@ import CSMT.Test.Lib
 import Control.Lens (simple)
 import Data.Foldable (foldl')
 import Data.List (sort)
+import Data.Maybe (isJust)
 import Data.Word (Word64)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import Test.QuickCheck
@@ -329,7 +330,7 @@ spec = do
                                         $ do
                                             c <- collectValues StandaloneCSMTCol p
                                             pr <- generateProof StandaloneCSMTCol p
-                                            pure (null c, pr /= Nothing)
+                                            pure (null c, isJust pr)
                             in  isEmpty /= hasProof
                     all consistent ([[], [L], [R]] :: [Key])
                         `shouldBe` True

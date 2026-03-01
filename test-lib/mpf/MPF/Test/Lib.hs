@@ -42,6 +42,7 @@ import Control.Lens (Iso', iso)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.ByteString.Char8 qualified as BC
+import Data.Char (isDigit)
 import Data.Text.Encoding (encodeUtf8)
 import Data.Word (Word8)
 import Database.KV.Transaction (query, runTransactionUnguarded)
@@ -297,7 +298,7 @@ decodeHex hex = B.pack $ pairBytes $ BC.unpack hex
 
     hexDigit :: Char -> Word8
     hexDigit c
-        | c >= '0' && c <= '9' = fromIntegral (fromEnum c - fromEnum '0')
+        | isDigit c = fromIntegral (fromEnum c - fromEnum '0')
         | c >= 'a' && c <= 'f' = fromIntegral (fromEnum c - fromEnum 'a' + 10)
         | c >= 'A' && c <= 'F' = fromIntegral (fromEnum c - fromEnum 'A' + 10)
         | otherwise = error $ "decodeHex: invalid hex digit: " ++ [c]

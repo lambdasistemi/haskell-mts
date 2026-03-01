@@ -100,7 +100,7 @@ collectValues
     => Selector d Key (Indirect a)
     -> Key
     -> Transaction m cf d op [Indirect a]
-collectValues sel targetPrefix = navigate [] targetPrefix
+collectValues sel = navigate []
   where
     navigate currentKey remainingPrefix = do
         mi <- query sel currentKey
@@ -145,7 +145,7 @@ generateProof
     -> Key
     -> Transaction m cf d op (Maybe CompletenessProof)
 generateProof sel targetPrefix =
-    fmap (fmap fst) $ navigate 0 [] targetPrefix
+    fmap fst <$> navigate 0 [] targetPrefix
   where
     navigate
         :: Int
@@ -232,7 +232,7 @@ queryPrefix
     => Selector d Key (Indirect a)
     -> Key
     -> Transaction m cf d op (Maybe (Indirect a))
-queryPrefix sel targetPrefix = navigate [] targetPrefix
+queryPrefix sel = navigate []
   where
     navigate currentKey remainingPrefix = do
         mi <- query sel currentKey
