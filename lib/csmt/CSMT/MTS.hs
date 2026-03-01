@@ -1,11 +1,17 @@
--- | Wraps CSMT operations into a 'MerkleTreeStore'.
+-- | CSMT implementation of the MTS interface.
+--
+-- Defines @CsmtImpl@ phantom type with type family instances
+-- and a constructor that wraps CSMT operations into
+-- 'MerkleTreeStore'.
 module CSMT.MTS
-    ( csmtMerkleTreeStore
+    ( CsmtImpl
+    , csmtMerkleTreeStore
     )
 where
 
 import CSMT.Backend.Standalone (Standalone (..), StandaloneCodecs)
 import CSMT.Deletion (deleting)
+import CSMT.Hashes (Hash)
 import CSMT.Insertion (inserting)
 import CSMT.Interface
     ( FromKV (..)
@@ -20,21 +26,32 @@ import CSMT.Proof.Insertion
     , computeRootHash
     , verifyInclusionProof
     )
+import Data.ByteString (ByteString)
 import Database.KV.Transaction (runTransactionUnguarded)
-import MTS.Interface (MerkleTreeStore (..))
+import MTS.Interface
+    ( MerkleTreeStore (..)
+    , MtsHash
+    , MtsKey
+    , MtsProof
+    , MtsValue
+    )
 
--- | Build a 'MerkleTreeStore' from CSMT components.
---
--- The @run@ function executes a monadic action in the
--- backend context (e.g. 'runPure' for in-memory, IO for RocksDB).
+-- | Phantom type tag for the CSMT implementation.
+data CsmtImpl
+
+type instance MtsKey CsmtImpl = ByteString
+type instance MtsValue CsmtImpl = ByteString
+type instance MtsHash CsmtImpl = Hash
+type instance MtsProof CsmtImpl = InclusionProof Hash
+
+-- | Build a 'MerkleTreeStore' for CSMT.
 csmtMerkleTreeStore
-    :: (Ord k, Eq a)
-    => (forall b. m b -> IO b)
-    -> StandaloneCodecs k v a
-    -> (StandaloneCodecs k v a -> db)
-    -> FromKV k v a
-    -> Hashing a
-    -> MerkleTreeStore IO k v a (InclusionProof a)
+    :: (forall b. m b -> IO b)
+    -> StandaloneCodecs ByteString ByteString Hash
+    -> (StandaloneCodecs ByteString ByteString Hash -> db)
+    -> FromKV ByteString ByteString Hash
+    -> Hashing Hash
+    -> MerkleTreeStore CsmtImpl IO
 csmtMerkleTreeStore run codecs mkDb fromKV hashing =
     MerkleTreeStore
         { mtsInsert = \k v ->

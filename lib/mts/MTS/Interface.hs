@@ -1,28 +1,45 @@
 -- | Shared interface for Merkle Tree Store implementations.
 --
--- Both CSMT (binary trie) and MPF (16-ary trie) provide
--- constructors that wrap their operations into this record,
--- enabling shared QuickCheck properties across implementations.
+-- Uses type families so each implementation phantom type
+-- (@CsmtImpl@, @MpfImpl@) determines key, value, hash, and
+-- proof types. The 'MerkleTreeStore' record is parameterised
+-- by just the implementation tag and the monad.
 module MTS.Interface
     ( MerkleTreeStore (..)
+    , MtsKey
+    , MtsValue
+    , MtsHash
+    , MtsProof
     )
 where
 
+-- | Key type for an implementation.
+type family MtsKey imp
+
+-- | Value type for an implementation.
+type family MtsValue imp
+
+-- | Hash type for an implementation.
+type family MtsHash imp
+
+-- | Proof type for an implementation.
+type family MtsProof imp
+
 -- | A generic Merkle tree store providing insert, delete,
 -- proof generation and verification.
-data MerkleTreeStore m k v hash proof = MerkleTreeStore
-    { mtsInsert :: k -> v -> m ()
+data MerkleTreeStore imp m = MerkleTreeStore
+    { mtsInsert :: MtsKey imp -> MtsValue imp -> m ()
     -- ^ Insert a key-value pair
-    , mtsDelete :: k -> m ()
+    , mtsDelete :: MtsKey imp -> m ()
     -- ^ Delete a key
-    , mtsRootHash :: m (Maybe hash)
+    , mtsRootHash :: m (Maybe (MtsHash imp))
     -- ^ Query the current root hash
-    , mtsMkProof :: k -> m (Maybe proof)
+    , mtsMkProof :: MtsKey imp -> m (Maybe (MtsProof imp))
     -- ^ Generate a membership proof
-    , mtsVerifyProof :: v -> proof -> m Bool
+    , mtsVerifyProof :: MtsValue imp -> MtsProof imp -> m Bool
     -- ^ Verify a membership proof for a value
-    , mtsFoldProof :: hash -> proof -> hash
+    , mtsFoldProof :: MtsHash imp -> MtsProof imp -> MtsHash imp
     -- ^ Compute root hash from a proof
-    , mtsBatchInsert :: [(k, v)] -> m ()
+    , mtsBatchInsert :: [(MtsKey imp, MtsValue imp)] -> m ()
     -- ^ Batch insert multiple key-value pairs
     }

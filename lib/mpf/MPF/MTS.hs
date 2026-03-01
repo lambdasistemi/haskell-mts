@@ -1,16 +1,22 @@
--- | Wraps MPF operations into a 'MerkleTreeStore'.
+-- | MPF implementation of the MTS interface.
+--
+-- Defines @MpfImpl@ phantom type with type family instances
+-- and a constructor that wraps MPF operations into
+-- 'MerkleTreeStore'.
 module MPF.MTS
-    ( mpfMerkleTreeStore
+    ( MpfImpl
+    , mpfMerkleTreeStore
     )
 where
 
+import Data.ByteString (ByteString)
 import Database.KV.Transaction (query, runTransactionUnguarded)
 import MPF.Backend.Standalone
     ( MPFStandalone (..)
     , MPFStandaloneCodecs
     )
 import MPF.Deletion (deleting)
-import MPF.Hashes (MPFHashing (..))
+import MPF.Hashes (MPFHash, MPFHashing (..))
 import MPF.Insertion (inserting, insertingBatch)
 import MPF.Interface
     ( FromHexKV (..)
@@ -23,20 +29,30 @@ import MPF.Proof.Insertion
     , mkMPFInclusionProof
     , verifyMPFInclusionProof
     )
-import MTS.Interface (MerkleTreeStore (..))
+import MTS.Interface
+    ( MerkleTreeStore (..)
+    , MtsHash
+    , MtsKey
+    , MtsProof
+    , MtsValue
+    )
 
--- | Build a 'MerkleTreeStore' from MPF components.
---
--- The @run@ function executes a monadic action in the
--- backend context (e.g. 'runMPFPure' for in-memory).
+-- | Phantom type tag for the MPF implementation.
+data MpfImpl
+
+type instance MtsKey MpfImpl = ByteString
+type instance MtsValue MpfImpl = ByteString
+type instance MtsHash MpfImpl = MPFHash
+type instance MtsProof MpfImpl = MPFProof MPFHash
+
+-- | Build a 'MerkleTreeStore' for MPF.
 mpfMerkleTreeStore
-    :: (Ord k, Eq a)
-    => (forall b. m b -> IO b)
-    -> MPFStandaloneCodecs k a a
-    -> (MPFStandaloneCodecs k a a -> db)
-    -> FromHexKV k v a
-    -> MPFHashing a
-    -> MerkleTreeStore IO k v a (MPFProof a)
+    :: (forall b. m b -> IO b)
+    -> MPFStandaloneCodecs ByteString MPFHash MPFHash
+    -> (MPFStandaloneCodecs ByteString MPFHash MPFHash -> db)
+    -> FromHexKV ByteString ByteString MPFHash
+    -> MPFHashing MPFHash
+    -> MerkleTreeStore MpfImpl IO
 mpfMerkleTreeStore run codecs mkDb fromKV hashing =
     MerkleTreeStore
         { mtsInsert = \k v ->
