@@ -65,7 +65,12 @@ import MPF.Hashes
     , parseMPFHash
     , renderMPFHash
     )
-import MPF.Insertion (inserting, insertingBatch, insertingChunked, insertingStream)
+import MPF.Insertion
+    ( inserting
+    , insertingBatch
+    , insertingChunked
+    , insertingStream
+    )
 import MPF.Interface
     ( FromHexKV (..)
     , HexIndirect (..)
@@ -96,7 +101,7 @@ isoMPFHash = iso parseMPFHashUnsafe renderMPFHash
   where
     parseMPFHashUnsafe bs = case parseMPFHash bs of
         Just h -> h
-        Nothing -> mkMPFHash bs  -- hash it if not 32 bytes
+        Nothing -> mkMPFHash bs -- hash it if not 32 bytes
 
 -- | Identity FromHexKV for testing with HexKey and MPFHash
 fromHexKVIdentity :: FromHexKV HexKey MPFHash MPFHash
@@ -104,7 +109,12 @@ fromHexKVIdentity = FromHexKV{fromHexK = id, fromHexV = id, hexTreePrefix = cons
 
 -- | FromHexKV for ByteString keys and values
 fromHexKVByteString :: FromHexKV ByteString ByteString MPFHash
-fromHexKVByteString = FromHexKV{fromHexK = byteStringToHexKey, fromHexV = mkMPFHash, hexTreePrefix = const []}
+fromHexKVByteString =
+    FromHexKV
+        { fromHexK = byteStringToHexKey
+        , fromHexV = mkMPFHash
+        , hexTreePrefix = const []
+        }
 
 -- | Insert a key-value pair into an MPF database
 insertMPF
@@ -127,40 +137,69 @@ deleteMPF db k =
 insertMPFM :: HexKey -> MPFHash -> MPFPure ()
 insertMPFM k v =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
-        $ inserting fromHexKVIdentity mpfHashing MPFStandaloneKVCol MPFStandaloneMPFCol k v
+        $ inserting
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneKVCol
+            MPFStandaloneMPFCol
+            k
+            v
 
 -- | Delete in the Pure monad
 deleteMPFM :: HexKey -> MPFPure ()
 deleteMPFM k =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
-        $ deleting fromHexKVIdentity mpfHashing MPFStandaloneKVCol MPFStandaloneMPFCol k
+        $ deleting
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneKVCol
+            MPFStandaloneMPFCol
+            k
 
 -- | Insert a ByteString key-value pair in the Pure monad
 -- Hashes both key and value, then uses hash of key as the trie path (Aiken compatible)
 insertByteStringM :: ByteString -> ByteString -> MPFPure ()
 insertByteStringM k v =
-    insertMPFM (byteStringToHexKey $ renderMPFHash $ mkMPFHash k) (mkMPFHash v)
+    insertMPFM
+        (byteStringToHexKey $ renderMPFHash $ mkMPFHash k)
+        (mkMPFHash v)
 
 -- | Batch insert multiple key-value pairs in the Pure monad
 -- Much faster than sequential inserts - O(n log n) vs O(n²)
 insertBatchMPFM :: [(HexKey, MPFHash)] -> MPFPure ()
 insertBatchMPFM kvs =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
-        $ insertingBatch fromHexKVIdentity mpfHashing MPFStandaloneKVCol MPFStandaloneMPFCol kvs
+        $ insertingBatch
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneKVCol
+            MPFStandaloneMPFCol
+            kvs
 
 -- | Chunked insert for large datasets in the Pure monad
 -- Processes items in chunks to bound memory usage
 insertChunkedMPFM :: Int -> [(HexKey, MPFHash)] -> MPFPure Int
 insertChunkedMPFM chunkSize kvs =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
-        $ insertingChunked fromHexKVIdentity mpfHashing MPFStandaloneKVCol MPFStandaloneMPFCol chunkSize kvs
+        $ insertingChunked
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneKVCol
+            MPFStandaloneMPFCol
+            chunkSize
+            kvs
 
 -- | Streaming insert for very large datasets in the Pure monad
 -- Groups by first hex digit to reduce peak memory by ~16x
 insertStreamMPFM :: [(HexKey, MPFHash)] -> MPFPure ()
 insertStreamMPFM kvs =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
-        $ insertingStream fromHexKVIdentity mpfHashing MPFStandaloneKVCol MPFStandaloneMPFCol kvs
+        $ insertingStream
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneKVCol
+            MPFStandaloneMPFCol
+            kvs
 
 -- | Generate a membership proof for a key in the Pure monad
 proofMPFM :: HexKey -> MPFPure (Maybe (MPFProof MPFHash))
@@ -172,11 +211,17 @@ proofMPFM k =
 verifyMPFM :: HexKey -> MPFHash -> MPFPure Bool
 verifyMPFM k v =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs) $ do
-        mProof <- mkMPFInclusionProof fromHexKVIdentity mpfHashing MPFStandaloneMPFCol k
+        mProof <-
+            mkMPFInclusionProof fromHexKVIdentity mpfHashing MPFStandaloneMPFCol k
         case mProof of
             Nothing -> pure False
             Just proof ->
-                verifyMPFInclusionProof fromHexKVIdentity MPFStandaloneMPFCol mpfHashing v proof
+                verifyMPFInclusionProof
+                    fromHexKVIdentity
+                    MPFStandaloneMPFCol
+                    mpfHashing
+                    v
+                    proof
 
 -- | Get the root hash from the MPF trie
 getRootHashM :: MPFPure (Maybe MPFHash)
@@ -185,10 +230,11 @@ getRootHashM =
         mi <- query MPFStandaloneMPFCol []
         pure $ case mi of
             Nothing -> Nothing
-            Just i -> Just $
-                if hexIsLeaf i
-                    then leafHash mpfHashing (hexJump i) (hexValue i)  -- Leaf: compute from value hash
-                    else hexValue i  -- Branch: already has branch hash
+            Just i ->
+                Just
+                    $ if hexIsLeaf i
+                        then leafHash mpfHashing (hexJump i) (hexValue i) -- Leaf: compute from value hash
+                        else hexValue i -- Branch: already has branch hash
 
 -- | Evaluate a pure MPF computation from empty database
 evalMPFPure' :: MPFPure a -> a
@@ -237,7 +283,8 @@ fruitsTestData =
 -- | Expected root hash after inserting all fruits
 expectedFullTrieRoot :: ByteString
 expectedFullTrieRoot =
-    decodeHex "4acd78f345a686361df77541b2e0b533f53362e36620a1fdd3a13e0b61a3b078"
+    decodeHex
+        "4acd78f345a686361df77541b2e0b533f53362e36620a1fdd3a13e0b61a3b078"
 
 -- | Decode a hex string to ByteString
 decodeHex :: ByteString -> ByteString
@@ -246,7 +293,7 @@ decodeHex hex = B.pack $ pairBytes $ BC.unpack hex
     pairBytes :: String -> [Word8]
     pairBytes [] = []
     pairBytes [_] = error "decodeHex: odd length hex string"
-    pairBytes (a:b:rest) = hexDigit a * 16 + hexDigit b : pairBytes rest
+    pairBytes (a : b : rest) = hexDigit a * 16 + hexDigit b : pairBytes rest
 
     hexDigit :: Char -> Word8
     hexDigit c

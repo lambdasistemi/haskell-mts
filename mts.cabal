@@ -109,6 +109,8 @@ library csmt
     , transformers                             >=0.6  && <0.7
     , unliftio                                 >=0.2  && <0.3
 
+  autogen-modules:  Paths_mts
+  other-modules:    Paths_mts
   hs-source-dirs:   lib/csmt/
   default-language: Haskell2010
 
@@ -136,11 +138,14 @@ library mpf
     , crypton                                  >=1.0  && <1.1
     , lens                                     >=5.3  && <5.4
     , memory                                   >=0.18 && <0.19
+    , async                                    >=2.2  && <2.3
+    , exceptions                               >=0.10 && <0.11
     , mts
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
     , rocksdb-kv-transactions                  >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
     , transformers                             >=0.6  && <0.7
+    , unliftio                                 >=0.2  && <0.3
 
   hs-source-dirs:   lib/mpf/
   default-language: Haskell2010
@@ -156,6 +161,7 @@ library csmt-test-lib
     , cereal                                   >=0.5  && <0.6
     , free                                     >=5.2  && <5.3
     , lens                                     >=5.3  && <5.4
+    , mts
     , mts:csmt
     , QuickCheck                               >=2.14 && <2.18
     , rocksdb-kv-transactions:kv-transactions

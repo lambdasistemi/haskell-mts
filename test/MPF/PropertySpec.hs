@@ -77,30 +77,33 @@ spec = do
         describe "insert-verify roundtrip" $ do
             it "inserted key-value can be verified" $ property propInsertVerify
 
-            it "multiple inserts all verifiable" $ property propMultipleInsertVerify
+            it "multiple inserts all verifiable"
+                $ property propMultipleInsertVerify
 
         describe "batch insert" $ do
-            it "batch insert equals sequential inserts" $
-                property propBatchEqualsSequential
+            it "batch insert equals sequential inserts"
+                $ property propBatchEqualsSequential
 
-            it "chunked insert equals sequential inserts" $
-                property propChunkedEqualsSequential
+            it "chunked insert equals sequential inserts"
+                $ property propChunkedEqualsSequential
 
         describe "insertion order independence" $ do
-            it "same keys in any order produce same root hash" $
-                property propInsertionOrderIndependence
+            it "same keys in any order produce same root hash"
+                $ property propInsertionOrderIndependence
 
         describe "deletion properties" $ do
             it "deleted key cannot be verified" $ property propDeleteRemovesKey
 
-            it "deletion preserves sibling proofs" $ property propDeletePreservesSiblings
+            it "deletion preserves sibling proofs"
+                $ property propDeletePreservesSiblings
 
         describe "root hash properties" $ do
             it "empty tree has no root hash" $ do
                 let (mRoot, _) = runMPFPure' getRootHashM
                 mRoot `shouldBe` Nothing
 
-            it "single insert produces root hash" $ property propSingleInsertHasRoot
+            it "single insert produces root hash"
+                $ property propSingleInsertHasRoot
 
 -- | Property: inserted key-value can be verified
 propInsertVerify :: TestKV -> Bool

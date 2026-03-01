@@ -43,14 +43,14 @@ spec = describe "MPF.Interface" $ do
         it "finds common prefix" $ do
             let k1 = [HexDigit 1, HexDigit 2, HexDigit 3]
                 k2 = [HexDigit 1, HexDigit 2, HexDigit 4]
-            compareHexKeys k1 k2 `shouldBe`
-                ([HexDigit 1, HexDigit 2], [HexDigit 3], [HexDigit 4])
+            compareHexKeys k1 k2
+                `shouldBe` ([HexDigit 1, HexDigit 2], [HexDigit 3], [HexDigit 4])
 
         it "handles empty common prefix" $ do
             let k1 = [HexDigit 1, HexDigit 2]
                 k2 = [HexDigit 3, HexDigit 4]
-            compareHexKeys k1 k2 `shouldBe`
-                ([], [HexDigit 1, HexDigit 2], [HexDigit 3, HexDigit 4])
+            compareHexKeys k1 k2
+                `shouldBe` ([], [HexDigit 1, HexDigit 2], [HexDigit 3, HexDigit 4])
 
         it "handles identical keys" $ do
             let k = [HexDigit 1, HexDigit 2]
@@ -59,5 +59,5 @@ spec = describe "MPF.Interface" $ do
         it "handles one key being prefix of another" $ do
             let k1 = [HexDigit 1, HexDigit 2]
                 k2 = [HexDigit 1, HexDigit 2, HexDigit 3]
-            compareHexKeys k1 k2 `shouldBe`
-                ([HexDigit 1, HexDigit 2], [], [HexDigit 3])
+            compareHexKeys k1 k2
+                `shouldBe` ([HexDigit 1, HexDigit 2], [], [HexDigit 3])

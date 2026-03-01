@@ -147,9 +147,10 @@ spec = do
                 let (proofResults, _) = runMPFPure' $ do
                         forM_ fruitsTestData $ uncurry insertByteStringM
                         -- Try to generate proof for apple (first fruit)
-                        let appleKey = byteStringToHexKey
-                                $ renderMPFHash
-                                $ mkMPFHash "apple[uid: 58]"
+                        let appleKey =
+                                byteStringToHexKey
+                                    $ renderMPFHash
+                                    $ mkMPFHash "apple[uid: 58]"
                         proofMPFM appleKey
                 proofResults `shouldSatisfy` \case
                     Just _ -> True
@@ -160,9 +161,10 @@ spec = do
                         insertByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
                         insertByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7"
                         insertByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c"
-                        let appleKey = byteStringToHexKey
-                                $ renderMPFHash
-                                $ mkMPFHash "apple[uid: 58]"
+                        let appleKey =
+                                byteStringToHexKey
+                                    $ renderMPFHash
+                                    $ mkMPFHash "apple[uid: 58]"
                             appleValue = mkMPFHash "\xf0\x9f\x8d\x8e"
                         verifyMPFM appleKey appleValue
                 verified `shouldBe` True
@@ -171,9 +173,10 @@ spec = do
                 let first28 = take 28 fruitsTestData
                     (verified, _) = runMPFPure' $ do
                         forM_ first28 $ uncurry insertByteStringM
-                        let appleKey = byteStringToHexKey
-                                $ renderMPFHash
-                                $ mkMPFHash "apple[uid: 58]"
+                        let appleKey =
+                                byteStringToHexKey
+                                    $ renderMPFHash
+                                    $ mkMPFHash "apple[uid: 58]"
                             appleValue = mkMPFHash "\xf0\x9f\x8d\x8e"
                         verifyMPFM appleKey appleValue
                 verified `shouldBe` True
@@ -182,9 +185,10 @@ spec = do
                 let (verified, _) = runMPFPure' $ do
                         forM_ fruitsTestData $ uncurry insertByteStringM
                         -- Try to verify with wrong value
-                        let appleKey = byteStringToHexKey
-                                $ renderMPFHash
-                                $ mkMPFHash "apple[uid: 58]"
+                        let appleKey =
+                                byteStringToHexKey
+                                    $ renderMPFHash
+                                    $ mkMPFHash "apple[uid: 58]"
                             wrongValue = mkMPFHash "not-apple"
                         verifyMPFM appleKey wrongValue
                 verified `shouldBe` False

@@ -12,6 +12,9 @@ module MTS.Properties
     , propEmptyTreeNoRoot
     , propSingleInsertHasRoot
     , propWrongValueRejects
+    , propCompletenessRoundTrip
+    , propCompletenessEmpty
+    , propCompletenessAfterDelete
     )
 where
 
@@ -21,15 +24,14 @@ import MTS.Interface
     ( MerkleTreeStore (..)
     , MtsHash
     , MtsKey
-    , MtsProof
     , MtsValue
     )
 import Test.QuickCheck
     ( Gen
     , Property
     , forAll
+    , ioProperty
     , property
-    , (===)
     )
 
 -- | After inserting k v, verify k v returns True.
@@ -41,7 +43,7 @@ propInsertVerify
     -> Gen (MtsKey imp, MtsValue imp)
     -> Property
 propInsertVerify mkStore gen =
-    property $ forAll gen $ \(k, v) -> do
+    property $ forAll gen $ \(k, v) -> ioProperty $ do
         store <- mkStore
         mtsInsert store k v
         mp <- mtsMkProof store k
@@ -58,7 +60,7 @@ propMultipleInsertAllVerify
     -> Gen [(MtsKey imp, MtsValue imp)]
     -> Property
 propMultipleInsertAllVerify mkStore gen =
-    property $ forAll gen $ \kvs -> do
+    property $ forAll gen $ \kvs -> ioProperty $ do
         store <- mkStore
         mapM_ (uncurry $ mtsInsert store) kvs
         results <-
@@ -67,7 +69,8 @@ propMultipleInsertAllVerify mkStore gen =
                     mp <- mtsMkProof store k
                     case mp of
                         Nothing -> pure False
-                        Just proof -> mtsVerifyProof store v proof
+                        Just proof ->
+                            mtsVerifyProof store v proof
                 )
                 kvs
         pure $ and results
@@ -84,7 +87,7 @@ propInsertionOrderIndependence
     -> Gen [(MtsKey imp, MtsValue imp)]
     -> Property
 propInsertionOrderIndependence mkStore1 mkStore2 gen =
-    property $ forAll gen $ \kvs -> do
+    property $ forAll gen $ \kvs -> ioProperty $ do
         let sorted = sortBy (comparing fst) kvs
             reversed' = reverse sorted
         store1 <- mkStore1
@@ -104,14 +107,15 @@ propDeleteRemovesKey
     -> Gen (MtsKey imp, MtsValue imp)
     -> Property
 propDeleteRemovesKey mkStore gen =
-    property $ forAll gen $ \(k, v) -> do
+    property $ forAll gen $ \(k, v) -> ioProperty $ do
         store <- mkStore
         mtsInsert store k v
         mtsDelete store k
         mp <- mtsMkProof store k
         case mp of
             Nothing -> pure True
-            Just proof -> not <$> mtsVerifyProof store v proof
+            Just proof ->
+                not <$> mtsVerifyProof store v proof
 
 -- | Insert 3, delete one, other two still verify.
 propDeletePreservesSiblings
@@ -124,27 +128,29 @@ propDeletePreservesSiblings
     -> Gen (MtsKey imp, MtsValue imp)
     -> Property
 propDeletePreservesSiblings mkStore gen1 gen2 gen3 =
-    property $ forAll gen1 $ \(k1, v1) ->
-        forAll gen2 $ \(k2, v2) ->
-            forAll gen3 $ \(k3, v3) -> do
-                store <- mkStore
-                mtsInsert store k1 v1
-                mtsInsert store k2 v2
-                mtsInsert store k3 v3
-                mtsDelete store k2
-                r1 <- do
-                    mp <- mtsMkProof store k1
-                    case mp of
-                        Nothing -> pure False
-                        Just proof ->
-                            mtsVerifyProof store v1 proof
-                r3 <- do
-                    mp <- mtsMkProof store k3
-                    case mp of
-                        Nothing -> pure False
-                        Just proof ->
-                            mtsVerifyProof store v3 proof
-                pure $ r1 && r3
+    property
+        $ forAll gen1
+        $ \(k1, v1) ->
+            forAll gen2 $ \(k2, v2) ->
+                forAll gen3 $ \(k3, v3) -> ioProperty $ do
+                    store <- mkStore
+                    mtsInsert store k1 v1
+                    mtsInsert store k2 v2
+                    mtsInsert store k3 v3
+                    mtsDelete store k2
+                    r1 <- do
+                        mp <- mtsMkProof store k1
+                        case mp of
+                            Nothing -> pure False
+                            Just proof ->
+                                mtsVerifyProof store v1 proof
+                    r3 <- do
+                        mp <- mtsMkProof store k3
+                        case mp of
+                            Nothing -> pure False
+                            Just proof ->
+                                mtsVerifyProof store v3 proof
+                    pure $ r1 && r3
 
 -- | Batch insert produces same root as sequential.
 propBatchEqualsSequential
@@ -157,7 +163,7 @@ propBatchEqualsSequential
     -> Gen [(MtsKey imp, MtsValue imp)]
     -> Property
 propBatchEqualsSequential mkSeqStore mkBatchStore gen =
-    property $ forAll gen $ \kvs -> do
+    property $ forAll gen $ \kvs -> ioProperty $ do
         seqStore <- mkSeqStore
         mapM_ (uncurry $ mtsInsert seqStore) kvs
         h1 <- mtsRootHash seqStore
@@ -170,12 +176,13 @@ propBatchEqualsSequential mkSeqStore mkBatchStore gen =
 propInsertDeleteAllEmpty
     :: ( Show (MtsKey imp)
        , Show (MtsValue imp)
+       , Eq (MtsHash imp)
        )
     => IO (MerkleTreeStore imp IO)
     -> Gen [(MtsKey imp, MtsValue imp)]
     -> Property
 propInsertDeleteAllEmpty mkStore gen =
-    property $ forAll gen $ \kvs -> do
+    property $ forAll gen $ \kvs -> ioProperty $ do
         store <- mkStore
         mapM_ (uncurry $ mtsInsert store) kvs
         mapM_ (mtsDelete store . fst) kvs
@@ -184,25 +191,24 @@ propInsertDeleteAllEmpty mkStore gen =
 
 -- | Empty tree has no root hash.
 propEmptyTreeNoRoot
-    :: Eq (MtsHash imp)
-    => IO (MerkleTreeStore imp IO)
+    :: IO (MerkleTreeStore imp IO)
     -> Property
-propEmptyTreeNoRoot mkStore = property $ do
+propEmptyTreeNoRoot mkStore = ioProperty $ do
     store <- mkStore
     h <- mtsRootHash store
-    pure $ h === (Nothing :: Maybe (MtsHash imp))
+    pure $ maybe True (const False) h
 
 -- | Single insert produces a root hash.
 propSingleInsertHasRoot
     :: ( Show (MtsKey imp)
        , Show (MtsValue imp)
-       , Show (MtsHash imp)
+       , Eq (MtsHash imp)
        )
     => IO (MerkleTreeStore imp IO)
     -> Gen (MtsKey imp, MtsValue imp)
     -> Property
 propSingleInsertHasRoot mkStore gen =
-    property $ forAll gen $ \(k, v) -> do
+    property $ forAll gen $ \(k, v) -> ioProperty $ do
         store <- mkStore
         mtsInsert store k v
         h <- mtsRootHash store
@@ -217,7 +223,7 @@ propWrongValueRejects
     -> Gen (MtsKey imp, MtsValue imp, MtsValue imp)
     -> Property
 propWrongValueRejects mkStore gen =
-    property $ forAll gen $ \(k, v, v') -> do
+    property $ forAll gen $ \(k, v, v') -> ioProperty $ do
         store <- mkStore
         mtsInsert store k v
         mp <- mtsMkProof store k
@@ -225,3 +231,63 @@ propWrongValueRejects mkStore gen =
             Nothing -> pure False
             Just proof ->
                 not <$> mtsVerifyProof store v' proof
+
+-- | Insert N pairs, collect leaves, generate completeness
+-- proof, verify it returns True.
+propCompletenessRoundTrip
+    :: ( Show (MtsKey imp)
+       , Show (MtsValue imp)
+       )
+    => IO (MerkleTreeStore imp IO)
+    -> Gen [(MtsKey imp, MtsValue imp)]
+    -> Property
+propCompletenessRoundTrip mkStore gen =
+    property $ forAll gen $ \kvs -> ioProperty $ do
+        store <- mkStore
+        mapM_ (uncurry $ mtsInsert store) kvs
+        leaves <- mtsCollectLeaves store
+        mp <- mtsMkCompletenessProof store
+        case mp of
+            Nothing -> pure False
+            Just proof ->
+                mtsVerifyCompletenessProof store leaves proof
+
+-- | Empty tree has no completeness proof.
+propCompletenessEmpty
+    :: IO (MerkleTreeStore imp IO)
+    -> Property
+propCompletenessEmpty mkStore = ioProperty $ do
+    store <- mkStore
+    mp <- mtsMkCompletenessProof store
+    pure $ case mp of
+        Nothing -> True
+        Just _ -> False
+
+-- | Insert N, delete some, completeness proof still
+-- verifies for remaining tree.
+propCompletenessAfterDelete
+    :: ( Show (MtsKey imp)
+       , Show (MtsValue imp)
+       )
+    => IO (MerkleTreeStore imp IO)
+    -> Gen [(MtsKey imp, MtsValue imp)]
+    -> Property
+propCompletenessAfterDelete mkStore gen =
+    property $ forAll gen $ \kvs -> ioProperty $ do
+        store <- mkStore
+        mapM_ (uncurry $ mtsInsert store) kvs
+        let toDelete = take (length kvs `div` 2) kvs
+        mapM_ (mtsDelete store . fst) toDelete
+        root' <- mtsRootHash store
+        case root' of
+            Nothing -> pure True
+            Just _ -> do
+                leaves <- mtsCollectLeaves store
+                mp <- mtsMkCompletenessProof store
+                case mp of
+                    Nothing -> pure False
+                    Just proof ->
+                        mtsVerifyCompletenessProof
+                            store
+                            leaves
+                            proof

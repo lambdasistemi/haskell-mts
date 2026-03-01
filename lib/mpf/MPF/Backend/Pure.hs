@@ -241,13 +241,16 @@ mpfPureDatabase
     :: MPFStandaloneCodecs k v a
     -> Database MPFPure MPFStandaloneCF (MPFStandalone k v a) MPFStandaloneOp
 mpfPureDatabase codecs =
-    Database
-        { valueAt = pureValueAt
-        , applyOps = pureApplyOps
-        , columns = standaloneMPFPureCols codecs
-        , mkOperation = mkMPFStandaloneOp
-        , newIterator = pureIterator
-        }
+    let db =
+            Database
+                { valueAt = pureValueAt
+                , applyOps = pureApplyOps
+                , columns = standaloneMPFPureCols codecs
+                , mkOperation = mkMPFStandaloneOp
+                , newIterator = pureIterator
+                , withSnapshot = \f -> f db
+                }
+    in  db
 
 runMPFPureTransaction
     :: MPFStandaloneCodecs k v a

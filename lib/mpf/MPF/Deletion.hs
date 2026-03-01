@@ -82,7 +82,7 @@ deletionPathToOps
     -> [(HexKey, Maybe (HexIndirect a))]
 deletionPathToOps hashing@MPFHashing{leafHash} = snd . go []
   where
-    -- | Compute the NODE hash from a HexIndirect
+    -- \| Compute the NODE hash from a HexIndirect
     -- Leaf: compute leafHash from value hash
     -- Branch: use the stored branch hash directly
     nodeHash :: HexIndirect a -> a
@@ -139,7 +139,10 @@ deletionPathToOps hashing@MPFHashing{leafHash} = snd . go []
                                     -- Single BRANCH child remaining: cannot collapse because
                                     -- branchHash includes the jump and we'd need to recompute
                                     -- Just update the parent branch hash with remaining child
-                                    let sparseArray = [if HexDigit n == onlyD then Just onlyChild else Nothing | n <- [0 .. 15]]
+                                    let sparseArray =
+                                            [ if HexDigit n == onlyD then Just onlyChild else Nothing
+                                            | n <- [0 .. 15]
+                                            ]
                                         childHashes = map (fmap nodeHash) sparseArray
                                         mr = merkleRoot hashing childHashes
                                         value = branchHash hashing j mr

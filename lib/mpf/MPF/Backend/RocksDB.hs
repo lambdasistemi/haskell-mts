@@ -10,7 +10,6 @@ where
 import Control.Concurrent (newEmptyMVar, putMVar, readMVar)
 import Control.Concurrent.Async (async, link)
 import Control.Monad ((<=<))
-import Control.Monad.IO.Class (MonadIO (..))
 import Control.Monad.Trans.Reader (ReaderT (..), ask)
 import Database.KV.Database (Database (..))
 import Database.KV.RocksDB (mkRocksDBDatabase)
@@ -33,6 +32,7 @@ import MPF.Backend.Standalone
     , MPFStandaloneCodecs (..)
     )
 import MPF.Interface (mpfCodecs)
+import UnliftIO (MonadUnliftIO)
 
 -- | The RocksDB monad for MPF
 type MPFRocksDB = ReaderT DB IO
@@ -62,7 +62,7 @@ mpfStandaloneRocksDBCols _ _ =
 
 -- | Create a RocksDB database for MPF
 mpfStandaloneRocksDBDatabase
-    :: MonadIO m
+    :: MonadUnliftIO m
     => MPFStandaloneCodecs k v a
     -> MPFRocksDB (Database m ColumnFamily (MPFStandalone k v a) BatchOp)
 mpfStandaloneRocksDBDatabase codecs = do

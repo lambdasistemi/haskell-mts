@@ -110,37 +110,39 @@ spec = describe "MPF.Insertion" $ do
                         `shouldBe` "6a00036a5182ad02098cc99e00ab679263571dbec847b12aa7abde525affbe39"
 
         it
-            "produces expected root hash for 3 fruits (order: apple, apricot, banana)" $ do
-            let (mroot, dbA) = runMPFPure' $ do
-                    insertByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e" -- 🍎
-                    insertByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7" -- 🤷
-                    insertByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c" -- 🍌
-                    getRootHashM
-            let (_mroot2, dbB) = runMPFPure' $ do
-                    insertByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c" -- 🍌
-                    insertByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e" -- 🍎
-                    insertByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7" -- 🤷
-                    getRootHashM
-            -- Verify database is identical regardless of insertion order
-            mpfInMemoryMPF dbA `shouldBe` mpfInMemoryMPF dbB
-            case mroot of
-                Nothing -> expectationFailure "Expected root hash, got Nothing"
-                Just root ->
-                    encodeHex (renderMPFHash root)
-                        `shouldBe` "3b9c8a23238aeef2bee260daec21acfdad07cb7d8f23bb5b97147323ef65ff5f"
+            "produces expected root hash for 3 fruits (order: apple, apricot, banana)"
+            $ do
+                let (mroot, dbA) = runMPFPure' $ do
+                        insertByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e" -- 🍎
+                        insertByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7" -- 🤷
+                        insertByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c" -- 🍌
+                        getRootHashM
+                let (_mroot2, dbB) = runMPFPure' $ do
+                        insertByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c" -- 🍌
+                        insertByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e" -- 🍎
+                        insertByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7" -- 🤷
+                        getRootHashM
+                -- Verify database is identical regardless of insertion order
+                mpfInMemoryMPF dbA `shouldBe` mpfInMemoryMPF dbB
+                case mroot of
+                    Nothing -> expectationFailure "Expected root hash, got Nothing"
+                    Just root ->
+                        encodeHex (renderMPFHash root)
+                            `shouldBe` "3b9c8a23238aeef2bee260daec21acfdad07cb7d8f23bb5b97147323ef65ff5f"
 
         it
-            "produces expected root hash for 3 fruits (order: banana, apple, apricot)" $ do
-            let (mroot, _db) = runMPFPure' $ do
-                    insertByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c" -- 🍌
-                    insertByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e" -- 🍎
-                    insertByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7" -- 🤷
-                    getRootHashM
-            case mroot of
-                Nothing -> expectationFailure "Expected root hash, got Nothing"
-                Just root ->
-                    encodeHex (renderMPFHash root)
-                        `shouldBe` "3b9c8a23238aeef2bee260daec21acfdad07cb7d8f23bb5b97147323ef65ff5f"
+            "produces expected root hash for 3 fruits (order: banana, apple, apricot)"
+            $ do
+                let (mroot, _db) = runMPFPure' $ do
+                        insertByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c" -- 🍌
+                        insertByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e" -- 🍎
+                        insertByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7" -- 🤷
+                        getRootHashM
+                case mroot of
+                    Nothing -> expectationFailure "Expected root hash, got Nothing"
+                    Just root ->
+                        encodeHex (renderMPFHash root)
+                            `shouldBe` "3b9c8a23238aeef2bee260daec21acfdad07cb7d8f23bb5b97147323ef65ff5f"
 
         it "produces expected root hash for fruits dataset" $ do
             let (mroot, _db) = runMPFPure' $ do

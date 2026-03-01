@@ -68,7 +68,7 @@ import OptEnvConf
     , str
     )
 import OptEnvConf.Setting qualified as Opt
-import Paths_csmt (version)
+import Paths_mts (version)
 import System.Console.Haskeline
     ( defaultSettings
     , getInputLine

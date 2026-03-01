@@ -10,6 +10,8 @@ module MTS.Interface
     , MtsValue
     , MtsHash
     , MtsProof
+    , MtsLeaf
+    , MtsCompletenessProof
     )
 where
 
@@ -24,6 +26,12 @@ type family MtsHash imp
 
 -- | Proof type for an implementation.
 type family MtsProof imp
+
+-- | Leaf type for completeness proofs.
+type family MtsLeaf imp
+
+-- | Completeness proof type for an implementation.
+type family MtsCompletenessProof imp
 
 -- | A generic Merkle tree store providing insert, delete,
 -- proof generation and verification.
@@ -42,4 +50,14 @@ data MerkleTreeStore imp m = MerkleTreeStore
     -- ^ Compute root hash from a proof
     , mtsBatchInsert :: [(MtsKey imp, MtsValue imp)] -> m ()
     -- ^ Batch insert multiple key-value pairs
+    , mtsCollectLeaves :: m [MtsLeaf imp]
+    -- ^ Collect all leaves from the tree, sorted
+    , mtsMkCompletenessProof
+        :: m (Maybe (MtsCompletenessProof imp))
+    -- ^ Generate a completeness proof for the whole tree
+    , mtsVerifyCompletenessProof
+        :: [MtsLeaf imp]
+        -> MtsCompletenessProof imp
+        -> m Bool
+    -- ^ Verify a completeness proof against leaves
     }
