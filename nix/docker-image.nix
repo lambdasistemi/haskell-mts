@@ -1,11 +1,11 @@
 { pkgs, project, version, ... }:
 
 pkgs.dockerTools.buildImage {
-  name = "ghcr.io/paolino/csmt/csmt";
+  name = "ghcr.io/paolino/mts/mts";
   tag = version;
-  config = { EntryPoint = [ "csmt" ]; };
+  config = { EntryPoint = [ "mts" ]; };
   copyToRoot = pkgs.buildEnv {
     name = "image-root";
-    paths = [ project.packages.csmt.package.components.exes.csmt ];
+    paths = [ project.packages.mts.package.components.exes.mts ];
   };
 }

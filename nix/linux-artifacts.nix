@@ -1,12 +1,12 @@
 { pkgs, version, project, ... }:
 let
-  csmt = project.musl64.csmt.components.exes.csmt;
+  mts = project.musl64.mts.components.exes.mts;
   tarball-derivation = pkgs.stdenv.mkDerivation rec {
-    pname = "csmt";
+    pname = "mts";
     inherit version;
     unpackPhase = ''
       mkdir -p $out/unpacked
-      cp ${csmt}/bin/csmt $out/unpacked
+      cp ${mts}/bin/mts $out/unpacked
       chmod -R +w $out/unpacked/*
     '';
     installPhase = ''

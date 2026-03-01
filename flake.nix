@@ -1,5 +1,5 @@
 {
-  description = "CSMT UTxO, UTxO tracking via compact sparse merkle trees";
+  description = "MTS, Merkle tree store with pluggable trie implementations";
   nixConfig = {
     extra-substituters = [ "https://cache.iog.io" ];
     extra-trusted-public-keys =
@@ -63,7 +63,7 @@
 
         in {
 
-          packages = fullPackages // { default = fullPackages.csmt; };
+          packages = fullPackages // { default = fullPackages.mts; };
           inherit (project) devShells;
         };
 

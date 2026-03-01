@@ -118,7 +118,7 @@ clean:
 # Watch for changes and rebuild
 watch:
     #!/usr/bin/env bash
-    ghcid --command="cabal repl lib:csmt"
+    ghcid --command="cabal repl lib:mts"
 
 # Build Linux tarball via nix
 build-linux:
@@ -139,16 +139,16 @@ build-docker tag='latest':
     nix build .#proxy-docker-image
     docker load < result
     version=$(nix eval --raw .#version)
-    docker image tag ghcr.io/paolino/csmt/csmt-proxy:"$version" \
-        "ghcr.io/paolino/csmt/csmt-proxy:{{ tag }}"
-    docker image tag ghcr.io/paolino/csmt/csmt-proxy:"$version" \
-        "ghcr.io/paolino/csmt/csmt-proxy:latest"
+    docker image tag ghcr.io/paolino/mts/mts-proxy:"$version" \
+        "ghcr.io/paolino/mts/mts-proxy:{{ tag }}"
+    docker image tag ghcr.io/paolino/mts/mts-proxy:"$version" \
+        "ghcr.io/paolino/mts/mts-proxy:latest"
     nix build .#source-docker-image
     docker load < result
-    docker image tag ghcr.io/paolino/csmt/csmt-source:"$version" \
-        "ghcr.io/paolino/csmt/csmt-source:{{ tag }}"
-    docker image tag ghcr.io/paolino/csmt/csmt-source:"$version" \
-        "ghcr.io/paolino/csmt/csmt-source:latest"
+    docker image tag ghcr.io/paolino/mts/mts-source:"$version" \
+        "ghcr.io/paolino/mts/mts-source:{{ tag }}"
+    docker image tag ghcr.io/paolino/mts/mts-source:"$version" \
+        "ghcr.io/paolino/mts/mts-source:latest"
 
 # Start docker compose
 start-docker bg="false":
@@ -181,10 +181,10 @@ stop-docker:
 push-docker tag='latest':
     #!/usr/bin/env bash
     set -euo pipefail
-    docker push "ghcr.io/paolino/csmt/csmt-source:{{ tag }}"
-    docker push "ghcr.io/paolino/csmt/csmt-source:latest"
-    docker push "ghcr.io/paolino/csmt/csmt-proxy:{{ tag }}"
-    docker push "ghcr.io/paolino/csmt/csmt-proxy:latest"
+    docker push "ghcr.io/paolino/mts/mts-source:{{ tag }}"
+    docker push "ghcr.io/paolino/mts/mts-source:latest"
+    docker push "ghcr.io/paolino/mts/mts-proxy:{{ tag }}"
+    docker push "ghcr.io/paolino/mts/mts-proxy:latest"
 
 # Create a release
 release version arch:

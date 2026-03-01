@@ -28,7 +28,7 @@ let
       pkgs.asciinema
     ];
     shellHook = ''
-      echo "Entering shell for csmt CLI development"
+      echo "Entering shell for MTS development"
     '';
   };
 
@@ -40,11 +40,11 @@ let
       configureFlags = map (l: "--ghc-option=-optl=-L${l}/lib") (libs);
     };
   musl = { pkgs, ... }: {
-    packages.csmt.components.exes.csmt = (fullyStaticOptions { inherit pkgs; });
+    packages.mts.components.exes.mts = (fullyStaticOptions { inherit pkgs; });
     doHaddock = false;
   };
   mkProject = ctx@{ lib, pkgs, ... }: {
-    name = "csmt";
+    name = "mts";
     src = ./..;
     compiler-nix-name = "ghc984";
     shell = shell { inherit pkgs; };
@@ -56,8 +56,8 @@ let
 in {
   devShells.default = project.shell;
   inherit project;
-  packages.csmt = project.hsPkgs.csmt.components.exes.csmt;
-  packages.bench = project.hsPkgs.csmt.components.benchmarks.bench;
-  packages.unit-tests = project.hsPkgs.csmt.components.tests.unit-tests;
+  packages.mts = project.hsPkgs.mts.components.exes.mts;
+  packages.bench = project.hsPkgs.mts.components.benchmarks.bench;
+  packages.unit-tests = project.hsPkgs.mts.components.tests.unit-tests;
   musl64 = project.projectCross.musl64.hsPkgs;
 }

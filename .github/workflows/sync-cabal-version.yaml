@@ -18,7 +18,7 @@ jobs:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Sync version to csmt.cabal
+      - name: Sync version to mts.cabal
         run: |
           # Read version from release-please manifest
           NEW_VERSION=$(jq -r '."."' .release-please-manifest.json 2>/dev/null || echo "")
@@ -31,7 +31,7 @@ jobs:
             NEW_VERSION="${NEW_VERSION}.0"
           fi
 
-          OLD_VERSION=$(grep -oP '^version:\s*\K[0-9.]+' csmt.cabal | head -1)
+          OLD_VERSION=$(grep -oP '^version:\s*\K[0-9.]+' mts.cabal | head -1)
 
           echo "Old version: $OLD_VERSION"
           echo "New version: $NEW_VERSION"
@@ -41,11 +41,11 @@ jobs:
             exit 0
           fi
 
-          echo "Updating csmt.cabal..."
-          sed -i "s/^version:.*$/version:         $NEW_VERSION/" csmt.cabal
+          echo "Updating mts.cabal..."
+          sed -i "s/^version:.*$/version:         $NEW_VERSION/" mts.cabal
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add csmt.cabal
+          git add mts.cabal
           git commit -m "chore: sync cabal version to $NEW_VERSION"
           git push

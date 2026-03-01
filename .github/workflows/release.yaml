@@ -37,16 +37,16 @@ jobs:
           cachix-auth-token: "${{ secrets.CACHIX_AUTH_TOKEN }}"
 
       - name: Build docker image
-        run: nix --quiet build .#docker-image -o csmt-image
+        run: nix --quiet build .#docker-image -o mts-image
 
       - name: Build AppImage
-        run: nix --quiet bundle --bundler github:ralismark/nix-appimage .#csmt -o csmt.AppImage
+        run: nix --quiet bundle --bundler github:ralismark/nix-appimage .#mts -o mts.AppImage
 
       - name: Build RPM
-        run: nix --quiet bundle --bundler github:NixOS/bundlers#toRPM -o csmt.rpm
+        run: nix --quiet bundle --bundler github:NixOS/bundlers#toRPM -o mts.rpm
 
       - name: Build DEB
-        run: nix --quiet bundle --bundler github:NixOS/bundlers#toDEB -o csmt.deb
+        run: nix --quiet bundle --bundler github:NixOS/bundlers#toDEB -o mts.deb
 
       - name: Upload release artifacts
         env:
@@ -54,13 +54,13 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           # Copy actual files from bundler outputs (bundlers create directories)
-          cp csmt.deb/*.deb csmt-${TAG}.deb
-          cp csmt.rpm/*.rpm csmt-${TAG}.rpm
-          cp -L csmt.AppImage csmt-${TAG}.AppImage
-          cp -L csmt-image csmt-${TAG}-docker.tar.gz
+          cp mts.deb/*.deb mts-${TAG}.deb
+          cp mts.rpm/*.rpm mts-${TAG}.rpm
+          cp -L mts.AppImage mts-${TAG}.AppImage
+          cp -L mts-image mts-${TAG}-docker.tar.gz
 
           gh release upload ${TAG} \
-            csmt-${TAG}.deb \
-            csmt-${TAG}.rpm \
-            csmt-${TAG}.AppImage \
-            csmt-${TAG}-docker.tar.gz
+            mts-${TAG}.deb \
+            mts-${TAG}.rpm \
+            mts-${TAG}.AppImage \
+            mts-${TAG}-docker.tar.gz
