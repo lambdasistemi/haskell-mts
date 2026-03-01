@@ -141,6 +141,7 @@ fromHexKVHashes =
     FromHexKV
         { fromHexK = byteStringToHexKey
         , fromHexV = mkMPFHash
+        , hexTreePrefix = const []
         }
 
 -- | Alias for byteStringToHexKey for convenient import
