@@ -131,15 +131,15 @@ library mpf
     MPF.Proof.Insertion
 
   build-depends:
+    , async                                    >=2.2  && <2.3
     , base                                     >=4.19 && <5
     , bytestring                               >=0.12 && <0.13
     , cereal                                   >=0.5  && <0.6
     , containers                               >=0.6  && <0.7
     , crypton                                  >=1.0  && <1.1
+    , exceptions                               >=0.10 && <0.11
     , lens                                     >=5.3  && <5.4
     , memory                                   >=0.18 && <0.19
-    , async                                    >=2.2  && <2.3
-    , exceptions                               >=0.10 && <0.11
     , mts
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
     , rocksdb-kv-transactions                  >=0.1  && <0.2
