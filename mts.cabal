@@ -1,20 +1,19 @@
 cabal-version:   3.4
-name:            csmt
-version:         0.3.1.0
-synopsis:
-  An http service around a compact sparse merkle tree implementation
-
+name:            mts
+version:         0.4.0.0
+synopsis:        Merkle Tree Store with pluggable trie implementations
 description:
-  CSMT is a Haskell library implementing a Compact Sparse Merkle Tree (CSMT)
-  data structure with support for persistent storage backends.
-  It provides efficient insertion, deletion, and proof generation functionalities.
+  MTS is a Haskell library providing a shared Merkle tree store
+  interface with two implementations: CSMT (binary trie) and
+  MPF (16-ary Merkle Patricia Forest). Both share a common
+  interface with QuickCheck properties proving feature parity.
 
 license:         Apache-2.0
 license-file:    LICENSE
 author:          Paolo Veronelli
 maintainer:      paolo.veronelli@gmail.com
-homepage:        https://github.com/paolino/haskell-csmt
-bug-reports:     https://github.com/paolino/haskell-csmt/issues
+homepage:        https://github.com/paolino/haskell-mts
+bug-reports:     https://github.com/paolino/haskell-mts/issues
 category:        Cryptography, Data
 stability:       experimental
 build-type:      Simple
@@ -31,7 +30,6 @@ common warnings
   default-extensions:
     DataKinds
     DerivingStrategies
-    DerivingVia
     DerivingVia
     DuplicateRecordFields
     FlexibleContexts
@@ -54,10 +52,27 @@ common warnings
     TypeFamilies
     TypeOperators
 
+-- Shared interface: type families + MerkleTreeStore record + properties
 library
   import:           warnings
-  autogen-modules:  Paths_csmt
-  other-modules:    Paths_csmt
+  exposed-modules:
+    Data.Serialize.Extra
+    MTS.Interface
+    MTS.Properties
+
+  build-depends:
+    , base        >=4.19 && <5
+    , bytestring  >=0.12 && <0.13
+    , cereal      >=0.5  && <0.6
+    , QuickCheck  >=2.14 && <2.18
+
+  hs-source-dirs:   lib/mts/
+  default-language: Haskell2010
+
+-- CSMT (binary trie) implementation
+library csmt
+  import:           warnings
+  visibility:       public
   exposed-modules:
     CSMT
     CSMT.Backend.Pure
@@ -70,9 +85,9 @@ library
     CSMT.Hashes.Types
     CSMT.Insertion
     CSMT.Interface
+    CSMT.MTS
     CSMT.Proof.Completeness
     CSMT.Proof.Insertion
-    Data.Serialize.Extra
 
   build-depends:
     , async                                    >=2.2  && <2.3
@@ -86,6 +101,7 @@ library
     , haskeline                                >=0.8  && <0.9
     , lens                                     >=5.3  && <5.4
     , memory                                   >=0.18 && <0.19
+    , mts
     , opt-env-conf                             >=0.11 && <0.14
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
     , rocksdb-kv-transactions                  >=0.1  && <0.2
@@ -93,20 +109,44 @@ library
     , transformers                             >=0.6  && <0.7
     , unliftio                                 >=0.2  && <0.3
 
-  hs-source-dirs:   src/csmt/
+  hs-source-dirs:   lib/csmt/
   default-language: Haskell2010
 
-executable csmt
+-- MPF (16-ary trie) implementation
+library mpf
   import:           warnings
-  ghc-options:      -threaded -rtsopts -with-rtsopts=-N -O2
-  main-is:          app/cli/main.hs
-  build-depends:
-    , base  >=4.19 && <5
-    , csmt
+  visibility:       public
+  exposed-modules:
+    MPF
+    MPF.Backend.Pure
+    MPF.Backend.RocksDB
+    MPF.Backend.Standalone
+    MPF.Deletion
+    MPF.Hashes
+    MPF.Insertion
+    MPF.Interface
+    MPF.MTS
+    MPF.Proof.Insertion
 
+  build-depends:
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
+    , cereal                                   >=0.5  && <0.6
+    , containers                               >=0.6  && <0.7
+    , crypton                                  >=1.0  && <1.1
+    , lens                                     >=5.3  && <5.4
+    , memory                                   >=0.18 && <0.19
+    , mts
+    , rocksdb-haskell-jprupp                   >=2.1  && <2.2
+    , rocksdb-kv-transactions                  >=0.1  && <0.2
+    , rocksdb-kv-transactions:kv-transactions
+    , transformers                             >=0.6  && <0.7
+
+  hs-source-dirs:   lib/mpf/
   default-language: Haskell2010
 
-library test-lib
+-- CSMT test utility library
+library csmt-test-lib
   import:           warnings
   visibility:       public
   exposed-modules:  CSMT.Test.Lib
@@ -114,13 +154,39 @@ library test-lib
     , base                                     >=4.19 && <5
     , bytestring                               >=0.12 && <0.13
     , cereal                                   >=0.5  && <0.6
-    , csmt
     , free                                     >=5.2  && <5.3
     , lens                                     >=5.3  && <5.4
+    , mts:csmt
     , QuickCheck                               >=2.14 && <2.18
     , rocksdb-kv-transactions:kv-transactions
 
-  hs-source-dirs:   test-lib
+  hs-source-dirs:   test-lib/csmt
+  default-language: Haskell2010
+
+-- MPF test utility library
+library mpf-test-lib
+  import:           warnings
+  visibility:       public
+  exposed-modules:  MPF.Test.Lib
+  build-depends:
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
+    , lens                                     >=5.3  && <5.4
+    , mts:mpf
+    , rocksdb-kv-transactions:kv-transactions
+    , text                                     >=2.1  && <2.2
+
+  hs-source-dirs:   test-lib/mpf
+  default-language: Haskell2010
+
+executable mts
+  import:           warnings
+  ghc-options:      -threaded -rtsopts -with-rtsopts=-N -O2
+  main-is:          app/cli/main.hs
+  build-depends:
+    , base      >=4.19 && <5
+    , mts:csmt
+
   default-language: Haskell2010
 
 test-suite unit-tests
@@ -132,12 +198,15 @@ test-suite unit-tests
     , bytestring                               >=0.12 && <0.13
     , cereal                                   >=0.5  && <0.6
     , containers                               >=0.6  && <0.7
-    , csmt
-    , csmt:test-lib
     , data-default                             >=0.8  && <0.9
     , filepath                                 >=1.4  && <1.5
     , hspec                                    >=2.11 && <2.12
     , lens                                     >=5.3  && <5.4
+    , mts
+    , mts:csmt
+    , mts:csmt-test-lib
+    , mts:mpf
+    , mts:mpf-test-lib
     , QuickCheck                               >=2.14 && <2.18
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
     , rocksdb-kv-transactions                  >=0.1  && <0.2
@@ -158,6 +227,12 @@ test-suite unit-tests
     CSMT.Proof.CompletenessSpec
     CSMT.Proof.InsertionSpec
     CSMT.TreePrefixSpec
+    MPF.HashesSpec
+    MPF.InsertionSpec
+    MPF.InterfaceSpec
+    MPF.Proof.InsertionSpec
+    MPF.PropertySpec
+    MTS.PropertySpec
 
 benchmark bench
   import:           warnings
@@ -169,20 +244,20 @@ benchmark bench
   build-depends:
     , base                                     >=4.19 && <5
     , bytestring                               >=0.12 && <0.13
-    , csmt
     , deepseq                                  >=1.5  && <1.6
     , filepath                                 >=1.4  && <1.5
     , miniterion                               >=0.1  && <0.2
+    , mts:csmt
     , rocksdb-kv-transactions:kv-transactions
     , temporary                                >=1.3  && <1.4
 
 executable space-leak
   import:           warnings
-  main-is:          src/csmt/CSMT/Frontend/CLI/SpaceLeak.hs
+  main-is:          lib/csmt/CSMT/Frontend/CLI/SpaceLeak.hs
   build-depends:
     , base                                     >=4.19 && <5
     , bytestring                               >=0.12 && <0.13
-    , csmt
+    , mts:csmt
     , rocksdb-kv-transactions:kv-transactions
 
   default-language: Haskell2010
