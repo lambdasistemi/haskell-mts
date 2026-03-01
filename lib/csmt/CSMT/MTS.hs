@@ -76,10 +76,10 @@ csmtMerkleTreeStore run db fromKV hashing =
             run
                 $ runTransactionUnguarded db
                 $ inserting fromKV hashing StandaloneKVCol StandaloneCSMTCol k v
-        , mtsDelete = \k ->
+        , mtsDelete =
             run
-                $ runTransactionUnguarded db
-                $ deleting fromKV hashing StandaloneKVCol StandaloneCSMTCol k
+                . runTransactionUnguarded db
+                . deleting fromKV hashing StandaloneKVCol StandaloneCSMTCol
         , mtsRootHash =
             run
                 $ runTransactionUnguarded db
@@ -97,13 +97,13 @@ csmtMerkleTreeStore run db fromKV hashing =
                     && verifyInclusionProof hashing proof
         , mtsFoldProof = \_ proof ->
             computeRootHash hashing proof
-        , mtsBatchInsert = \kvs ->
+        , mtsBatchInsert =
             run
-                $ runTransactionUnguarded db
-                $ mapM_
-                    ( \(k, v) -> inserting fromKV hashing StandaloneKVCol StandaloneCSMTCol k v
+                . runTransactionUnguarded db
+                . mapM_
+                    ( uncurry
+                        (inserting fromKV hashing StandaloneKVCol StandaloneCSMTCol)
                     )
-                    kvs
         , mtsCollectLeaves =
             run
                 $ runTransactionUnguarded db

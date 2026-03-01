@@ -104,7 +104,7 @@ insertingChunked fhkv hashing kvCol mpfCol chunkSize kvs = do
     go !n [] = pure n
     go !n (chunk : rest) = do
         -- Insert this chunk item by item
-        mapM_ (\(k, v) -> inserting fhkv hashing kvCol mpfCol k v) chunk
+        mapM_ (uncurry (inserting fhkv hashing kvCol mpfCol)) chunk
         -- Continue with rest
         go (n + 1) rest
 

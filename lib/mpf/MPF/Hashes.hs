@@ -26,6 +26,7 @@ import Data.ByteArray.Encoding (Base (Base64), convertToBase)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.ByteString.Char8 qualified as BC
+import Data.Maybe (fromMaybe)
 import Data.Word (Word8)
 import MPF.Interface
     ( FromHexKV (..)
@@ -110,7 +111,7 @@ computeMerkleRoot children =
         -- Ensure exactly 16 elements, pad with Nothing
         padded = take 16 $ children ++ repeat Nothing
         -- Convert Nothing to nullHash
-        hashes = map (maybe nullHash id) padded
+        hashes = map (fromMaybe nullHash) padded
     in
         pairwiseReduce hashes
 

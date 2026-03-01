@@ -1,10 +1,11 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | MPF Benchmark - Haskell Implementation
 module Main where
 
-import Control.Monad (forM, when)
+import Control.Monad (forM, unless, when)
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as B8
 import Data.Time.Clock (diffUTCTime, getCurrentTime)
@@ -29,7 +30,9 @@ import Text.Printf (printf)
 -- | Generate deterministic test data
 generateTestData :: Int -> [(ByteString, ByteString)]
 generateTestData count =
-    [ (B8.pack $ "key-" <> padLeft 8 '0' (show i), B8.pack $ "value-" <> show i)
+    [ ( B8.pack $ "key-" <> padLeft 8 '0' (show i)
+      , B8.pack $ "value-" <> show i
+      )
     | i <- [0 .. count - 1]
     ]
   where
@@ -48,7 +51,8 @@ benchmark name action = do
     pure (result, durationMs)
 
 -- | Run all insertions using batch insert (divide-and-conquer)
-insertAllBatch :: [(ByteString, ByteString)] -> (Maybe ByteString, MPFInMemoryDB)
+insertAllBatch
+    :: [(ByteString, ByteString)] -> (Maybe ByteString, MPFInMemoryDB)
 insertAllBatch testData =
     let action :: MPFPure (Maybe ByteString)
         action = do
@@ -59,7 +63,8 @@ insertAllBatch testData =
     in  runMPFPure emptyMPFInMemoryDB action
 
 -- | Run all insertions using streaming insert (groups by first hex digit)
-insertAllStream :: [(ByteString, ByteString)] -> (Maybe ByteString, MPFInMemoryDB)
+insertAllStream
+    :: [(ByteString, ByteString)] -> (Maybe ByteString, MPFInMemoryDB)
 insertAllStream testData =
     let action :: MPFPure (Maybe ByteString)
         action = do
@@ -70,21 +75,40 @@ insertAllStream testData =
     in  runMPFPure emptyMPFInMemoryDB action
 
 -- | Run insertions using chunked insert with progress
-insertAllChunked :: Int -> [(ByteString, ByteString)] -> IO (Maybe ByteString, MPFInMemoryDB)
+insertAllChunked
+    :: Int
+    -> [(ByteString, ByteString)]
+    -> IO (Maybe ByteString, MPFInMemoryDB)
 insertAllChunked chunkSize testData = do
     let totalChunks = (length testData + chunkSize - 1) `div` chunkSize
-    putStrLn $ "Inserting " ++ show (length testData) ++ " items in " ++ show totalChunks ++ " chunks..."
+    putStrLn
+        $ "Inserting "
+            ++ show (length testData)
+            ++ " items in "
+            ++ show totalChunks
+            ++ " chunks..."
 
     -- Process chunks with progress
-    let go :: MPFInMemoryDB -> [[(ByteString, ByteString)]] -> Int -> IO (MPFInMemoryDB, Int)
+    let go
+            :: MPFInMemoryDB
+            -> [[(ByteString, ByteString)]]
+            -> Int
+            -> IO (MPFInMemoryDB, Int)
         go db [] !n = pure (db, n)
-        go db (chunk:rest) !n = do
+        go db (chunk : rest) !n = do
             let (_, db') = runMPFPure db $ do
                     let kvs = [(byteStringToHexKey k, mkMPFHash v) | (k, v) <- chunk]
                     mapM_ (uncurry insertMPFM) kvs
-            putStrLn $ "  Chunk " ++ show (n+1) ++ "/" ++ show totalChunks ++ " (" ++ show (length chunk) ++ " items)"
+            putStrLn
+                $ "  Chunk "
+                    ++ show (n + 1)
+                    ++ "/"
+                    ++ show totalChunks
+                    ++ " ("
+                    ++ show (length chunk)
+                    ++ " items)"
             hFlush stdout
-            go db' rest (n+1)
+            go db' rest (n + 1)
 
     let chunks = chunksOf chunkSize testData
     (finalDb, _) <- go emptyMPFInMemoryDB chunks 0
@@ -139,7 +163,12 @@ methodName (Chunked n) = "chunked-" ++ show n
 -- | Run benchmark for a given count
 runBenchmark :: InsertMethod -> Bool -> Int -> IO ()
 runBenchmark method skipProofs count = do
-    putStrLn $ "\n=== Haskell MPF Benchmark (n=" ++ show count ++ ", method=" ++ methodName method ++ ") ===\n"
+    putStrLn
+        $ "\n=== Haskell MPF Benchmark (n="
+            ++ show count
+            ++ ", method="
+            ++ methodName method
+            ++ ") ===\n"
 
     -- Generate test data
     putStr $ "Generating " ++ show count ++ " test items... "
@@ -172,7 +201,7 @@ runBenchmark method skipProofs count = do
         Nothing -> putStrLn "Root hash: (empty)"
 
     -- For very large datasets, skip proof generation/verification
-    when (not skipProofs) $ do
+    unless skipProofs $ do
         (proofsGenerated, proofGenTime) <- benchmark ("Generate " ++ show count ++ " proofs") $ do
             pure $! generateProofs testData db
 
@@ -183,12 +212,18 @@ runBenchmark method skipProofs count = do
 
         printf "Verified: %d/%d\n" verified count
 
-        printf "Proof gen rate: %.0f ops/sec\n" (fromIntegral count / proofGenTime * 1000 :: Double)
-        printf "Verify rate: %.0f ops/sec\n" (fromIntegral count / verifyTime * 1000 :: Double)
+        printf
+            "Proof gen rate: %.0f ops/sec\n"
+            (fromIntegral count / proofGenTime * 1000 :: Double)
+        printf
+            "Verify rate: %.0f ops/sec\n"
+            (fromIntegral count / verifyTime * 1000 :: Double)
 
     -- Summary
     putStrLn "\n--- Summary ---"
-    printf "Insert rate: %.0f ops/sec\n" (fromIntegral count / insertTime * 1000 :: Double)
+    printf
+        "Insert rate: %.0f ops/sec\n"
+        (fromIntegral count / insertTime * 1000 :: Double)
     printf "Total insert time: %.2fs\n" (insertTime / 1000)
 
 main :: IO ()
@@ -209,12 +244,12 @@ parseArgs args =
         useChunked = "--chunked" `elem` args
         skipProofs = "--skip-proofs" `elem` args
         chunkSize = case [read (drop 8 x) | x <- args, take 8 x == "--chunk="] of
-            (n:_) -> n
-            [] -> 50000  -- Default chunk size
+            (n : _) -> n
+            [] -> 50000 -- Default chunk size
         method
             | useStream = Stream
             | useChunked = Chunked chunkSize
             | otherwise = Batch
-        nums = [read x | x <- args, all (`elem` ['0'..'9']) x, not (null x)]
+        nums = [read x | x <- args, all (`elem` ['0' .. '9']) x, not (null x)]
         counts = if null nums then [100, 1000] else nums
-    in (method, skipProofs, counts)
+    in  (method, skipProofs, counts)

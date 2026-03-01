@@ -69,10 +69,10 @@ mpfMerkleTreeStore run db fromKV hashing =
             run
                 $ runTransactionUnguarded db
                 $ inserting fromKV hashing MPFStandaloneKVCol MPFStandaloneMPFCol k v
-        , mtsDelete = \k ->
+        , mtsDelete =
             run
-                $ runTransactionUnguarded db
-                $ deleting fromKV hashing MPFStandaloneKVCol MPFStandaloneMPFCol k
+                . runTransactionUnguarded db
+                . deleting fromKV hashing MPFStandaloneKVCol MPFStandaloneMPFCol
         , mtsRootHash =
             run
                 $ runTransactionUnguarded db
@@ -85,25 +85,24 @@ mpfMerkleTreeStore run db fromKV hashing =
                                 $ if hexIsLeaf i
                                     then leafHash hashing (hexJump i) (hexValue i)
                                     else hexValue i
-        , mtsMkProof = \k ->
+        , mtsMkProof =
             run
-                $ runTransactionUnguarded db
-                $ mkMPFInclusionProof fromKV hashing MPFStandaloneMPFCol k
+                . runTransactionUnguarded db
+                . mkMPFInclusionProof fromKV hashing MPFStandaloneMPFCol
         , mtsVerifyProof = \v proof ->
             run
                 $ runTransactionUnguarded db
                 $ verifyMPFInclusionProof fromKV MPFStandaloneMPFCol hashing v proof
         , mtsFoldProof = \_ proof ->
             foldMPFProof hashing (fromHexV fromKV undefined) proof
-        , mtsBatchInsert = \kvs ->
+        , mtsBatchInsert =
             run
-                $ runTransactionUnguarded db
-                $ insertingBatch
+                . runTransactionUnguarded db
+                . insertingBatch
                     fromKV
                     hashing
                     MPFStandaloneKVCol
                     MPFStandaloneMPFCol
-                    kvs
         , mtsCollectLeaves =
             fail "MPF completeness proofs not implemented"
         , mtsMkCompletenessProof =

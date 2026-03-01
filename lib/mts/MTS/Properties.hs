@@ -19,6 +19,7 @@ module MTS.Properties
 where
 
 import Data.List (sortBy)
+import Data.Maybe (isJust, isNothing)
 import Data.Ord (comparing)
 import MTS.Interface
     ( MerkleTreeStore (..)
@@ -32,6 +33,7 @@ import Test.QuickCheck
     , forAll
     , ioProperty
     , property
+    , (==>)
     )
 
 -- | After inserting k v, verify k v returns True.
@@ -117,10 +119,11 @@ propDeleteRemovesKey mkStore gen =
             Just proof ->
                 not <$> mtsVerifyProof store v proof
 
--- | Insert 3, delete one, other two still verify.
+-- | Insert 3 distinct keys, delete one, other two still verify.
 propDeletePreservesSiblings
     :: ( Show (MtsKey imp)
        , Show (MtsValue imp)
+       , Eq (MtsKey imp)
        )
     => IO (MerkleTreeStore imp IO)
     -> Gen (MtsKey imp, MtsValue imp)
@@ -132,25 +135,27 @@ propDeletePreservesSiblings mkStore gen1 gen2 gen3 =
         $ forAll gen1
         $ \(k1, v1) ->
             forAll gen2 $ \(k2, v2) ->
-                forAll gen3 $ \(k3, v3) -> ioProperty $ do
-                    store <- mkStore
-                    mtsInsert store k1 v1
-                    mtsInsert store k2 v2
-                    mtsInsert store k3 v3
-                    mtsDelete store k2
-                    r1 <- do
-                        mp <- mtsMkProof store k1
-                        case mp of
-                            Nothing -> pure False
-                            Just proof ->
-                                mtsVerifyProof store v1 proof
-                    r3 <- do
-                        mp <- mtsMkProof store k3
-                        case mp of
-                            Nothing -> pure False
-                            Just proof ->
-                                mtsVerifyProof store v3 proof
-                    pure $ r1 && r3
+                forAll gen3 $ \(k3, v3) ->
+                    k1 /= k2 && k2 /= k3 && k1 /= k3 ==>
+                        ioProperty $ do
+                            store <- mkStore
+                            mtsInsert store k1 v1
+                            mtsInsert store k2 v2
+                            mtsInsert store k3 v3
+                            mtsDelete store k2
+                            r1 <- do
+                                mp <- mtsMkProof store k1
+                                case mp of
+                                    Nothing -> pure False
+                                    Just proof ->
+                                        mtsVerifyProof store v1 proof
+                            r3 <- do
+                                mp <- mtsMkProof store k3
+                                case mp of
+                                    Nothing -> pure False
+                                    Just proof ->
+                                        mtsVerifyProof store v3 proof
+                            pure $ r1 && r3
 
 -- | Batch insert produces same root as sequential.
 propBatchEqualsSequential
@@ -187,7 +192,7 @@ propInsertDeleteAllEmpty mkStore gen =
         mapM_ (uncurry $ mtsInsert store) kvs
         mapM_ (mtsDelete store . fst) kvs
         h <- mtsRootHash store
-        pure $ h == Nothing
+        pure $ isNothing h
 
 -- | Empty tree has no root hash.
 propEmptyTreeNoRoot
@@ -196,7 +201,7 @@ propEmptyTreeNoRoot
 propEmptyTreeNoRoot mkStore = ioProperty $ do
     store <- mkStore
     h <- mtsRootHash store
-    pure $ maybe True (const False) h
+    pure $ isNothing h
 
 -- | Single insert produces a root hash.
 propSingleInsertHasRoot
@@ -212,7 +217,7 @@ propSingleInsertHasRoot mkStore gen =
         store <- mkStore
         mtsInsert store k v
         h <- mtsRootHash store
-        pure $ h /= Nothing
+        pure $ isJust h
 
 -- | Insert k v, verify k v' where v /= v' returns False.
 propWrongValueRejects
