@@ -100,11 +100,11 @@ isoMPFHash = iso parseMPFHashUnsafe renderMPFHash
 
 -- | Identity FromHexKV for testing with HexKey and MPFHash
 fromHexKVIdentity :: FromHexKV HexKey MPFHash MPFHash
-fromHexKVIdentity = FromHexKV{fromHexK = id, fromHexV = id}
+fromHexKVIdentity = FromHexKV{fromHexK = id, fromHexV = id, hexTreePrefix = const []}
 
 -- | FromHexKV for ByteString keys and values
 fromHexKVByteString :: FromHexKV ByteString ByteString MPFHash
-fromHexKVByteString = FromHexKV{fromHexK = byteStringToHexKey, fromHexV = mkMPFHash}
+fromHexKVByteString = FromHexKV{fromHexK = byteStringToHexKey, fromHexV = mkMPFHash, hexTreePrefix = const []}
 
 -- | Insert a key-value pair into an MPF database
 insertMPF

@@ -100,6 +100,8 @@ prefixHex q HexIndirect{hexJump, hexValue, hexIsLeaf} = HexIndirect{hexJump = q 
 data FromHexKV k v a = FromHexKV
     { fromHexK :: k -> HexKey
     , fromHexV :: v -> a
+    , hexTreePrefix :: v -> HexKey
+    -- ^ Prefix prepended to tree key (for secondary indexing)
     }
 
 -- | Compare two hex keys and return their common prefix and the remaining suffixes

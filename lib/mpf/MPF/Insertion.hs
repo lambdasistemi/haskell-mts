@@ -53,9 +53,10 @@ inserting
     -> k
     -> v
     -> Transaction m cf d ops ()
-inserting FromHexKV{fromHexK, fromHexV} hashing kvCol mpfCol k v = do
+inserting FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol k v = do
     insert kvCol k v
-    c <- mkMPFCompose mpfCol (fromHexK k) (fromHexV v)
+    let treeKey = hexTreePrefix v <> fromHexK k
+    c <- mkMPFCompose mpfCol treeKey (fromHexV v)
     mapM_ (uncurry $ insert mpfCol) $ snd $ scanMPFCompose hashing c
 
 -- | Batch insert multiple key-value pairs into an empty MPF structure
@@ -69,11 +70,11 @@ insertingBatch
     -> Selector d HexKey (HexIndirect a)
     -> [(k, v)]
     -> Transaction m cf d ops ()
-insertingBatch FromHexKV{fromHexK, fromHexV} hashing kvCol mpfCol kvs = do
+insertingBatch FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol kvs = do
     -- Insert all key-value pairs into the KV store
     mapM_ (uncurry $ insert kvCol) kvs
     -- Build the MPF tree in one pass and insert all nodes
-    let hexKvs = [(fromHexK k, fromHexV v) | (k, v) <- kvs]
+    let hexKvs = [(hexTreePrefix v <> fromHexK k, fromHexV v) | (k, v) <- kvs]
         compose = buildComposeFromList hexKvs
     case compose of
         Nothing -> pure () -- Empty list
@@ -127,12 +128,12 @@ insertingStream
     -> Selector d HexKey (HexIndirect a)
     -> [(k, v)]
     -> Transaction m cf d ops ()
-insertingStream FromHexKV{fromHexK, fromHexV} hashing kvCol mpfCol kvs = do
+insertingStream FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol kvs = do
     -- Insert all key-value pairs into the KV store first
     mapM_ (uncurry $ insert kvCol) kvs
 
     -- Convert to hex keys and group by first digit
-    let hexKvs = [(fromHexK k, fromHexV v) | (k, v) <- kvs]
+    let hexKvs = [(hexTreePrefix v <> fromHexK k, fromHexV v) | (k, v) <- kvs]
         grouped = groupByFirstDigit' hexKvs
 
     -- Process each group independently and collect root nodes

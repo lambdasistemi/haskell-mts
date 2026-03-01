@@ -52,13 +52,18 @@ deleting
     -> Selector d HexKey (HexIndirect a)
     -> k
     -> Transaction m cf d ops ()
-deleting FromHexKV{fromHexK} hashing kvSel mpfSel key = do
-    mpath <- newMPFDeletionPath mpfSel (fromHexK key)
-    case mpath of
+deleting FromHexKV{fromHexK, hexTreePrefix} hashing kvSel mpfSel key = do
+    mv <- query kvSel key
+    case mv of
         Nothing -> pure ()
-        Just path -> do
-            delete kvSel key
-            mapM_ (applyOp mpfSel) $ deletionPathToOps hashing path
+        Just v -> do
+            let treeKey = hexTreePrefix v <> fromHexK key
+            mpath <- newMPFDeletionPath mpfSel treeKey
+            case mpath of
+                Nothing -> pure ()
+                Just path -> do
+                    delete kvSel key
+                    mapM_ (applyOp mpfSel) $ deletionPathToOps hashing path
 
 -- | Apply a single deletion operation
 applyOp
