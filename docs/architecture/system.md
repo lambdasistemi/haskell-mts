@@ -1,33 +1,44 @@
 # System Overview
 
-The CSMT system provides multiple interfaces for interacting with the tree.
+The MTS system provides a shared interface with two trie implementations
+and multiple ways to interact with them.
 
-## Current Architecture
-
-```mermaid
-graph TD
-    L[CSMT CLI] -->|CSMT Operations| C[CSMT Library]
-    H[Haskell Application] -->|CSMT Operations| C
-    C -->|Read/Write Nodes & Preimages| D[RocksDB Storage]
-```
-
-A CSMT instance consists of:
-
-- **RocksDB Storage**: Persistent backend for tree nodes and preimages
-- **CSMT Library**: Core Haskell implementation of the data structure
-- **CLI Tool**: Interactive command-line interface for tree operations
-
-## Planned Architecture
+## Architecture
 
 ```mermaid
 graph TD
-    A[Client] -->|HTTP Requests| B[CSMT HTTP Service]
-    B -->|CSMT Operations| C[CSMT Library]
-    L[CSMT CLI] -->|CSMT Operations| C
-    H[Haskell Application] -->|CSMT Operations| C
-    C -->|Read/Write Nodes & Preimages| D[RocksDB Storage]
+    CLI[MTS CLI] -->|CSMT ops| CSMT[CSMT Library]
+    App[Haskell Application] -->|MTS Interface| MTS[MerkleTreeStore]
+    MTS --> CSMT
+    MTS --> MPF[MPF Library]
+    CSMT -->|Read/Write| RDB1[RocksDB / In-Memory]
+    MPF -->|Read/Write| RDB2[RocksDB / In-Memory]
+    TS[TypeScript Verifier] -.->|Verify CSMT proofs| Client[Browser / Node.js]
 ```
 
-A future HTTP service will expose the CSMT functionalities via a RESTful API.
+### Layers
 
+| Layer | Description |
+|-------|-------------|
+| **MTS Interface** | Shared `MerkleTreeStore` record with type families. Application code targets this layer. |
+| **CSMT Implementation** | Binary trie with path compression, CBOR proofs, completeness proofs, CLI. |
+| **MPF Implementation** | 16-ary trie with hex nibble keys, batch/streaming inserts, Aiken-compatible hashes. |
+| **Storage Backends** | RocksDB (persistent) and in-memory (testing) for both implementations. |
 
+### Components
+
+- **MTS Interface** (`MTS.Interface`, `MTS.Properties`): Shared record and
+  QuickCheck properties. No storage dependency.
+- **CSMT Library** (`mts:csmt`): Binary trie implementation with CLI,
+  TypeScript verifier, and completeness proofs.
+- **MPF Library** (`mts:mpf`): 16-ary trie implementation with batch inserts
+  and Aiken compatibility.
+- **CLI Tool** (`mts` executable): Interactive command-line interface for CSMT
+  operations. Uses `CSMT_DB_PATH` for the RocksDB database path.
+- **TypeScript Verifier** (`@paolino/csmt-verify`): Client-side CSMT proof
+  verification for browser/Node.js.
+
+## Planned
+
+- HTTP service exposing MTS operations via a RESTful API
+- MPF completeness proofs

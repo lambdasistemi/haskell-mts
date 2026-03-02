@@ -1,6 +1,6 @@
-site_name: CSMT Documentation
-site_url: https://paolino.github.io/haskell-csmt/
-repo_url: https://github.com/paolino/haskell-csmt
+site_name: MTS Documentation
+site_url: https://paolino.github.io/haskell-mts/
+repo_url: https://github.com/paolino/haskell-mts
 
 theme:
   name: material
@@ -42,6 +42,10 @@ nav:
   - Getting Started:
     - Installation: installation.md
     - Concepts: concepts.md
+  - MTS Interface: interface.md
+  - Implementations:
+    - CSMT (Binary Trie): csmt.md
+    - MPF (16-ary Trie): mpf.md
   - Architecture:
     - System: architecture/system.md
     - Storage: architecture/storage.md

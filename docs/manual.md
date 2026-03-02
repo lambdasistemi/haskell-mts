@@ -1,5 +1,9 @@
 # Manual
 
+!!! note
+    The `mts` CLI operates on a **CSMT** instance. MPF does not currently
+    have a dedicated CLI.
+
 ## Demos
 
 ### Basic Operations
@@ -30,7 +34,7 @@ Generate and verify self-contained inclusion proofs:
 
 ## CLI Usage
 
-The CSMT library comes with a command-line interface (CLI) tool that allows users to interact with the Compact Sparse Merkle Tree. The CLI provides various commands to perform operations such as adding and removing elements, generating proofs, and verifying membership within the tree.
+The MTS package includes a command-line interface (CLI) tool for interacting with the CSMT tree. The CLI provides commands for adding/removing elements, generating proofs, and verifying membership.
 
 CLI works in interactive mode by default. You can also pass commands directly as stdin as we are doing in this manual.
 
@@ -61,7 +65,7 @@ Setup the environment variable `CSMT_DB_PATH` to point to a directory where the 
 
 === "Input"
     ```bash
-    csmt <<$
+    mts <<$
     i key1 value1
     q key1
     $
@@ -79,7 +83,7 @@ Now the database contains the value for `key1`, and you can query its inclusion 
 
 === "Input"
     ```bash
-    csmt <<$
+    mts <<$
     v AQDjun1C8tTl1kdY1oon8sAQWL86/UMiJyZFswQ9Sf49XQAA
     $
     ```
@@ -96,7 +100,7 @@ Currently you cannot inspect the keys, but you can ask for the values:
 
 === "Input"
     ```bash
-    csmt <<< 'w key1'
+    mts <<< 'w key1'
     ```
 === "Output"
     ```text
@@ -109,7 +113,7 @@ You can delete keys as well:
 
 === "Input"
     ```bash
-    csmt <<< 'd key1'
+    mts <<< 'd key1'
     ```
 === "Output"
     ```text
@@ -118,7 +122,7 @@ You can delete keys as well:
 Now if you try to query for the inclusion proof of `key1` again:
 === "Input"
     ```bash
-    csmt <<< 'q key1'
+    mts <<< 'q key1'
     ```
 === "Output"
     ```text
@@ -131,7 +135,7 @@ Or if you try to get the value for `key1`:
 
 === "Input"
     ```bash
-    csmt <<< 'w key1'
+    mts <<< 'w key1'
     ```
 === "Output"
     ```text
@@ -144,7 +148,7 @@ You can get the current root of the CSMT tree with the `r` command:
 
 === "Input"
     ```bash
-    csmt <<< 'r'
+    mts <<< 'r'
     ```
 === "Output"
     ```text
@@ -155,7 +159,7 @@ If you insert some keys first:
 
 === "Input"
     ```bash
-    csmt <<$
+    mts <<$
     i key1 value1
     r
     i key2 value2

@@ -1,5 +1,9 @@
 # Inclusion Proof Format
 
+!!! note
+    This page describes the **CSMT** inclusion proof format. For MPF inclusion
+    proofs, see [MPF (16-ary Trie)](../mpf.md#inclusion-proofs).
+
 Inclusion proofs allow verifying that a key-value pair exists in a CSMT without
 access to the full tree. Proofs are serialized using CBOR for compact,
 portable representation.

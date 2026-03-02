@@ -1,212 +1,201 @@
 # Library API
 
-This page covers using the CSMT library in Haskell applications.
+This page covers using the MTS library in Haskell applications. There are
+three levels of API:
 
-## Overview
+1. **MTS Interface** (recommended) - Implementation-agnostic
+2. **CSMT Direct API** - CSMT-specific operations
+3. **MPF Direct API** - MPF-specific operations
 
-The library provides:
+## 1. MTS Interface API (Recommended)
 
-- `CSMT` - Main module re-exporting the public API
-- `CSMT.Hashes` - Blake2b-256 based operations
-- `CSMT.Backend.RocksDB` - Persistent storage backend
-- `CSMT.Backend.Pure` - In-memory backend for testing
+The `MerkleTreeStore` record provides a uniform API for both
+implementations. See [MTS Interface](interface.md) for the full type
+definition.
 
-## Basic Setup
-
-### With RocksDB (Production)
-
-```haskell
-import CSMT
-import CSMT.Hashes
-import CSMT.Backend.RocksDB
-import CSMT.Backend.Standalone
-
--- Open database and run operations
-main :: IO ()
-main = withRocksDB "path/to/db" 256 256 $ \(RunRocksDB runDB) -> do
-    db <- runDB $ standaloneRocksDBDatabase codecs
-    -- Use db for transactions
-```
-
-### With Pure Backend (Testing)
+### Basic Usage
 
 ```haskell
-import CSMT
-import CSMT.Backend.Pure
-import CSMT.Backend.Standalone
+import MTS.Interface (MerkleTreeStore(..))
 
--- Run in-memory operations
-example :: (result, InMemoryDB)
-example = runPure emptyInMemoryDB $ do
-    runPureTransaction codecs $ do
-        -- Your operations here
+example :: MerkleTreeStore imp IO -> IO ()
+example store = do
+    -- Insert
+    mtsInsert store "key1" "value1"
+    mtsInsert store "key2" "value2"
+
+    -- Root hash
+    mroot <- mtsRootHash store
+    print mroot
+
+    -- Inclusion proof
+    mp <- mtsMkProof store "key1"
+    case mp of
+        Nothing -> putStrLn "Key not found"
+        Just proof -> do
+            ok <- mtsVerifyProof store "value1" proof
+            print ok  -- True
+
+    -- Batch insert
+    mtsBatchInsert store [("key3", "value3"), ("key4", "value4")]
+
+    -- Delete
+    mtsDelete store "key1"
 ```
 
-## Core Operations
+### Constructing Stores
 
-### Inserting Values
+See [MTS Interface](interface.md#constructors) for `csmtMerkleTreeStore`
+and `mpfMerkleTreeStore` constructor signatures and examples.
+
+## 2. CSMT Direct API
+
+For CSMT-specific features (completeness proofs, CBOR proof format, CLI
+integration), use the `mts:csmt` sub-library directly.
+
+### Modules
+
+| Module | Purpose |
+|--------|---------|
+| `CSMT` | Re-exports the public API |
+| `CSMT.Hashes` | Blake2b-256 operations, `fromKVHashes`, `hashHashing` |
+| `CSMT.Interface` | `FromKV`, `Hashing`, `Indirect`, `root` |
+| `CSMT.Insertion` | `inserting` |
+| `CSMT.Deletion` | `deleting` |
+| `CSMT.Proof.Insertion` | `buildInclusionProof`, `verifyInclusionProof`, `computeRootHash` |
+| `CSMT.Proof.Completeness` | `generateProof`, `collectValues`, `foldProof` |
+| `CSMT.Backend.RocksDB` | RocksDB persistent backend |
+| `CSMT.Backend.Pure` | In-memory backend for testing |
+| `CSMT.Backend.Standalone` | Column selectors and codecs |
+| `CSMT.MTS` | `CsmtImpl`, `csmtMerkleTreeStore` |
+
+### Insert and Delete
 
 ```haskell
-import CSMT.Hashes (insert, fromKVHashes)
+import CSMT.Hashes (fromKVHashes)
+import CSMT.Insertion (inserting)
+import CSMT.Deletion (deleting)
 
--- Insert a key-value pair
-insertExample :: Transaction m cf d ops ()
-insertExample =
-    insert fromKVHashes kvCol csmtCol "mykey" "myvalue"
+-- In a transaction context:
+inserting fromKVHashes hashing StandaloneKVCol StandaloneCSMTCol "key" "value"
+deleting  fromKVHashes hashing StandaloneKVCol StandaloneCSMTCol "key"
 ```
 
-The `insert` function:
-
-1. Stores the key-value pair in the KV column
-2. Computes the tree key as `treePrefix(value) <> fromK(key)`
-3. Computes the value hash
-4. Updates the CSMT structure at the tree key
-5. Recomputes affected node hashes
-
-### Deleting Values
+### Inclusion Proofs
 
 ```haskell
-import CSMT.Hashes (delete, fromKVHashes)
+import CSMT.Proof.Insertion (buildInclusionProof, verifyInclusionProof)
 
--- Delete a key
-deleteExample :: Transaction m cf d ops ()
-deleteExample =
-    delete fromKVHashes kvCol csmtCol "mykey"
+-- Generate (in transaction)
+result <- buildInclusionProof fromKVHashes StandaloneKVCol StandaloneCSMTCol hashing "key"
+-- result :: Maybe (ByteString, InclusionProof Hash)
+
+-- Verify (pure)
+verifyInclusionProof hashing proof  -- :: Bool
 ```
 
-Deletion:
-
-1. Looks up the value from the KV column (needed to compute the tree key
-   via `treePrefix(value) <> fromK(key)`)
-2. Removes the key from the KV column
-3. Updates the tree structure (may compact nodes)
-4. Recomputes affected hashes
-
-### Querying the Root
+### Completeness Proofs
 
 ```haskell
-import CSMT.Hashes (root)
+import CSMT.Proof.Completeness (generateProof, collectValues, foldProof)
 
--- Get current root hash
-getRootExample :: Transaction m cf d ops (Maybe ByteString)
-getRootExample = root csmtCol
+-- Collect leaves under a prefix
+leaves <- collectValues StandaloneCSMTCol prefix
+
+-- Generate proof
+mproof <- generateProof StandaloneCSMTCol prefix
+
+-- Verify
+let computed = foldProof (combineHash hashing) leaves proof
 ```
 
-Returns `Nothing` if the tree is empty.
-
-## Merkle Proofs
-
-### Generating Inclusion Proofs
-
-```haskell
-import CSMT.Hashes (generateInclusionProof, fromKVHashes)
-
--- Generate proof for a key
-proofExample :: Transaction m cf d ops (Maybe (ByteString, ByteString))
-proofExample =
-    generateInclusionProof fromKVHashes kvCol csmtCol "mykey"
-```
-
-Returns `Maybe (value, proofBytes)`:
-
-- Looks up the value from the KV column
-- Returns both the value and serialized proof
-- Returns `Nothing` if the key doesn't exist
-
-This ensures the proof is always consistent with the current tree state.
-
-### Verifying Inclusion Proofs
-
-```haskell
-import CSMT.Hashes (verifyInclusionProof)
-
--- Verify a proof (pure function, no database access needed)
-verifyExample :: ByteString -> Bool
-verifyExample proofBytes = verifyInclusionProof proofBytes
-```
-
-Returns `True` if the proof is internally consistent. The proof is self-contained
-with the key, value hash, and root hash embedded.
-
-To verify against a trusted root, parse the proof and compare `proofRootHash`
-with your known root.
-
-## Custom Key/Value Types
-
-The library supports custom types via `FromKV`:
+### Custom Key/Value Types
 
 ```haskell
 import CSMT.Interface (FromKV(..))
 
--- Define conversion for your types
 myFromKV :: FromKV MyKey MyValue Hash
 myFromKV = FromKV
-    { fromK = myKeyToPath      -- Convert key to tree path
-    , fromV = myValueToHash    -- Convert value to hash
-    , treePrefix = const []    -- No prefix (default)
+    { fromK      = myKeyToPath
+    , fromV      = myValueToHash
+    , treePrefix = const []
     }
 ```
 
-The `treePrefix` field allows secondary indexing by prepending a prefix
-derived from the value to the tree key. For example, to index UTxOs by
-address:
+The `treePrefix` field enables secondary indexing by prepending a prefix
+derived from the value to the tree key.
+
+### Column Selectors
+
+CSMT uses type-safe GADT column selectors:
+
+- `StandaloneKVCol` - Key-value column
+- `StandaloneCSMTCol` - CSMT tree column
+
+## 3. MPF Direct API
+
+For MPF-specific features (batch/streaming inserts, hex key manipulation),
+use the `mts:mpf` sub-library directly.
+
+### Modules
+
+| Module | Purpose |
+|--------|---------|
+| `MPF` | Re-exports the public API |
+| `MPF.Hashes` | Blake2b-256 operations, `fromHexKVHashes`, `mpfHashing` |
+| `MPF.Interface` | `FromHexKV`, `HexIndirect`, `HexKey`, `HexDigit` |
+| `MPF.Insertion` | `inserting`, `insertingBatch`, `insertingChunked`, `insertingStream` |
+| `MPF.Deletion` | `deleting` |
+| `MPF.Proof.Insertion` | `mkMPFInclusionProof`, `verifyMPFInclusionProof`, `foldMPFProof` |
+| `MPF.Backend.RocksDB` | RocksDB persistent backend |
+| `MPF.Backend.Pure` | In-memory backend for testing |
+| `MPF.Backend.Standalone` | Column selectors and codecs |
+| `MPF.MTS` | `MpfImpl`, `mpfMerkleTreeStore` |
+
+### Insert Modes
 
 ```haskell
-addressIndexed :: FromKV TxIn TxOut Hash
-addressIndexed = FromKV
-    { fromK = txInToKey
-    , fromV = txOutToHash
-    , treePrefix = addressToKey . extractAddress
-    }
+import MPF.Insertion (inserting, insertingBatch, insertingChunked, insertingStream)
+
+-- Sequential (small datasets)
+inserting fromKV hashing kvCol mpfCol key value
+
+-- Batch (medium datasets, O(n log n))
+insertingBatch fromKV hashing kvCol mpfCol [(k1, v1), (k2, v2)]
+
+-- Chunked (large datasets, bounded memory)
+insertingChunked fromKV hashing kvCol mpfCol chunkSize pairs
+
+-- Streaming (very large datasets, ~16x lower peak memory)
+insertingStream fromKV hashing kvCol mpfCol pairs
 ```
 
-This makes the tree key `treePrefix(value) <> fromK(key)`, enabling
-completeness proofs over all entries sharing a prefix.
-
-## Codecs
-
-For storage, define codecs using Prisms:
+### Hex Key Operations
 
 ```haskell
-import CSMT.Backend.Standalone (StandaloneCodecs(..))
-import Control.Lens (prism')
+import MPF.Interface (byteStringToHexKey, hexKeyToByteString, HexDigit(..), HexKey)
 
-myCodecs :: StandaloneCodecs MyKey MyValue Hash
-myCodecs = StandaloneCodecs
-    { keyCodec = prism' encodeKey decodeKey
-    , valueCodec = prism' encodeValue decodeValue
-    , nodeCodec = prism' encodeHash decodeHash
-    }
+let key = byteStringToHexKey "hello"  -- [HexDigit 6, HexDigit 8, ...]
+let bs  = hexKeyToByteString key       -- round-trips back
 ```
 
-## Column Selectors
+### Column Selectors
 
-Operations use type-safe column selectors from `CSMT.Backend.Standalone`:
+MPF uses its own GADT column selectors:
 
-```haskell
-import CSMT.Backend.Standalone (Standalone(..))
-
--- Use directly as selectors
-insert fromKVHashes StandaloneKVCol StandaloneCSMTCol key value
-delete fromKVHashes StandaloneKVCol StandaloneCSMTCol key
-generateInclusionProof fromKVHashes StandaloneKVCol StandaloneCSMTCol key
-```
-
-The GADT constructors serve as selectors:
-
-- `StandaloneKVCol` - Selects the key-value column
-- `StandaloneCSMTCol` - Selects the CSMT tree column
+- `MPFStandaloneKVCol` - Key-value column
+- `MPFStandaloneMPFCol` - MPF tree column
 
 ## Error Handling
 
-Most operations return `Maybe` or are in a `Transaction` monad:
-
-- `Nothing` typically means "key not found"
+- `Nothing` from proof/root operations means "key not found" or "tree empty"
 - Invalid proofs return `False` from verification
 - Database errors surface as exceptions
+- MPF completeness proof operations currently `fail`
 
 ## Performance Tips
 
-1. **Batch operations**: Group multiple inserts/deletes in a single transaction
-2. **Column family tuning**: Adjust `maxFiles` parameters for your workload
-3. **Parallel insertion**: Future versions will support parallel batch inserts
+1. **Use the MTS interface** when you don't need implementation-specific features
+2. **Batch inserts** for MPF are significantly faster than sequential for large datasets
+3. **Streaming inserts** reduce peak memory by ~16x by processing subtrees independently
+4. **Group transactions** to amortize RocksDB write overhead

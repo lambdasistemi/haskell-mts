@@ -5,30 +5,30 @@ There is currently no releasing in place, but you can install via the provided a
 ## Docker images
 
 ```bash
-gh run download -n csmt-image
-i=$(docker load < csmt-image | sed -e 's/Loaded image: //')
+gh run download -n mts-image
+i=$(docker load < mts-image | sed -e 's/Loaded image: //')
 docker run $i
 ```
 
-## Arx self-executable bundles
+## AppImage bundles
 
 ```bash
-gh run download -n csmt.arx
-./csmt.arx
+gh run download -n mts.AppImage
+./mts.AppImage
 ```
 
 ## RPM packages
 
 ```bash
-gh run download -n csmt-rpm
-sudo rpm -i csmt.rpm
+gh run download -n mts-rpm
+sudo rpm -i mts.rpm
 ```
 
 ## DEB packages
 
 ```bash
-gh run download -n csmt-deb
-sudo dpkg -i csmt.deb
+gh run download -n mts-deb
+sudo dpkg -i mts.deb
 ```
 
 ## Building from source
@@ -46,7 +46,7 @@ You can build with nix
 
 ```bash
 nix shell nixpkgs#cachix -c cachix use paolino
-nix shell github:paolino/csmt --refresh
+nix shell github:paolino/haskell-mts --refresh
 ```
 
 Or via cabal provided you have a working Haskell environment and rocksdb development files installed.
