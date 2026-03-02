@@ -1,13 +1,13 @@
 # Concepts
 
-This page explains the key concepts behind Compact Sparse Merkle Trees.
+This page explains the key concepts behind MTS and its two trie implementations.
 
 ## Merkle Trees
 
-A Merkle tree is a binary tree where:
+A Merkle tree is a tree where:
 
 - Each leaf node contains the hash of a data block
-- Each internal node contains the hash of its two children
+- Each internal node contains the hash of its children
 
 ```mermaid
 graph TD
@@ -27,6 +27,24 @@ This structure enables **Merkle proofs** - compact proofs that a specific piece 
 
 With these three hashes, anyone can recompute the root and verify the proof.
 
+## MTS: The Shared Interface
+
+MTS defines a common `MerkleTreeStore` record that abstracts over the trie
+implementation. Type families determine the concrete key, value, hash, proof,
+leaf, and completeness proof types for each backend:
+
+| Operation | Type |
+|-----------|------|
+| `mtsInsert` | `MtsKey imp -> MtsValue imp -> m ()` |
+| `mtsDelete` | `MtsKey imp -> m ()` |
+| `mtsRootHash` | `m (Maybe (MtsHash imp))` |
+| `mtsMkProof` | `MtsKey imp -> m (Maybe (MtsProof imp))` |
+| `mtsVerifyProof` | `MtsValue imp -> MtsProof imp -> m Bool` |
+| `mtsBatchInsert` | `[(MtsKey imp, MtsValue imp)] -> m ()` |
+
+Application code written against `MerkleTreeStore imp m` works with either
+CSMT or MPF. See [MTS Interface](interface.md) for the full API.
+
 ## Sparse Merkle Trees
 
 A Sparse Merkle Tree (SMT) is a Merkle tree where:
@@ -37,9 +55,9 @@ A Sparse Merkle Tree (SMT) is a Merkle tree where:
 
 For a 256-bit key, a naive SMT would have 2^256 possible leaves - far too large to store explicitly.
 
-## Compact Sparse Merkle Trees
+## CSMT: Compact Sparse Merkle Tree
 
-A **Compact** SMT optimizes storage by:
+The CSMT is a **binary trie** that optimizes storage through path compression:
 
 1. **Path compression**: Empty subtrees are not stored
 2. **Jump paths**: Instead of storing each node on the path, we store a "jump" directly to where the data diverges
@@ -50,52 +68,86 @@ Consider inserting keys `LLRR` and `LRRL`:
 
 **Without compression** (naive SMT):
 ```
-Root → L → L → R → R → value1
-     ↘ R → R → L → value2
+Root -> L -> L -> R -> R -> value1
+     -> R -> R -> L -> value2
 ```
 
 **With compression** (CSMT):
 ```
-Root → L (jump to divergence point)
-       ├── L,RR → value1  (jump = RR)
-       └── R,RL → value2  (jump = RL)
+Root -> L (jump to divergence point)
+       +-- L,RR -> value1  (jump = RR)
+       +-- R,RL -> value2  (jump = RL)
 ```
 
 The CSMT stores only the nodes where paths actually diverge, plus "jump" metadata indicating how many levels to skip.
 
-## Key Components
+### CSMT Key Components
 
-### Keys
+**Keys**: Sequences of directions (`L` = left = 0, `R` = right = 1). A 256-bit hash becomes a 256-element path.
 
-Keys are represented as sequences of directions (`L` = left = 0, `R` = right = 1). A 256-bit hash becomes a 256-element path through the tree.
+**Indirect references**: Each node stores an `Indirect` value containing a `jump` (path prefix to skip) and a `value` (hash).
 
-### Indirect References
+**Hashing**: Blake2b-256. Internal node hashes are computed by hashing the serialized left and right children.
 
-Each node stores an `Indirect` value containing:
+For CSMT-specific details, see [CSMT (Binary Trie)](csmt.md).
 
-- **jump**: The path prefix to skip (path compression)
-- **value**: Either a hash (for internal nodes) or the actual value hash (for leaves)
+## MPF: Merkle Patricia Forest
 
-### Hashing
+The MPF is a **16-ary trie** where each node branches on a hex nibble (4 bits)
+rather than a single bit. This gives a much shallower tree for the same key
+length: a 32-byte key produces a trie of depth 64 (nibbles) rather than 256
+(bits).
 
-The library uses Blake2b-256 for hashing. Internal node hashes are computed by hashing the concatenation of the encoded left and right children.
+### Hex Nibble Keys
+
+Keys are represented as sequences of `HexDigit` values (0-15). A
+`ByteString` key is converted to a `HexKey` by splitting each byte into its
+high and low nibbles:
+
+```
+byte 0xa3 -> [HexDigit 0xa, HexDigit 0x3]
+```
+
+### 16-ary Branching
+
+Each branch node holds a sparse 16-element array of children (one per
+nibble). Path compression works similarly to CSMT: a `hexJump` field on
+each `HexIndirect` node records the key suffix to skip.
+
+Nodes are tagged as **leaf** (`hexIsLeaf = True`) or **branch**
+(`hexIsLeaf = False`), which determines the hashing scheme.
+
+### MPF Hashing
+
+MPF uses a different hash construction from CSMT to achieve Aiken
+compatibility:
+
+- **Leaf hash**: `blake2b(hashHead || hashTail || valueDigest)` where
+  `hashHead`/`hashTail` encode the suffix nibbles with even/odd length
+  handling
+- **Branch hash**: `blake2b(nibbleBytes(prefix) || merkleRoot(children))`
+  where `merkleRoot` reduces the 16-slot sparse array via pairwise hashing
+- **Merkle root**: Pairwise reduction of 16 child hashes (missing children
+  use a null hash of 32 zero bytes)
+
+For MPF-specific details, see [MPF (16-ary Trie)](mpf.md).
 
 ## Proofs
 
 ### Inclusion Proofs
 
-An inclusion proof demonstrates that a key-value pair exists in the tree. It contains:
+An inclusion proof demonstrates that a key-value pair exists in the tree.
+Both CSMT and MPF support inclusion proofs through the shared
+`mtsMkProof`/`mtsVerifyProof` interface, though the internal proof
+format differs.
 
-- The key and value being proven
-- The expected root hash
-- Sibling hashes along the path from leaf to root
-- Jump paths at each level
+**CSMT proofs** are CBOR-encoded and contain the key, value hash, root hash,
+sibling hashes along the path, and jump paths at each level. See
+[Inclusion Proof Format](architecture/inclusion-proof.md) for the wire
+format specification.
 
-To verify, recompute the root hash from the value and siblings, then compare
-with the expected root.
-
-See [Inclusion Proof Format](architecture/inclusion-proof.md) for the complete
-CBOR wire format specification.
+**MPF proofs** contain the key, value, a sequence of proof steps (each with
+a node type tag, sibling hash, and SMT proof hashes), and the root hash.
 
 ### Completeness Proofs
 
@@ -108,25 +160,22 @@ a given set of entries is **all** entries under that prefix. It consists of:
 2. A sequence of merge operations to reconstruct the subtree
 3. Sibling hashes at the boundary to connect back to the root
 
+Completeness proofs are currently implemented for CSMT only. MPF
+completeness proofs are planned.
+
 ## Storage Model
 
-The CSMT uses two storage columns:
+Both implementations use a dual-column storage model:
 
-| Column | Key | Value |
-|--------|-----|-------|
-| KV | Original key | Original value |
-| CSMT | `treePrefix(value) <> fromK(key)` | Indirect (jump + hash) |
+| Column | Key | Value | Purpose |
+|--------|-----|-------|---------|
+| KV | User key | User value | Original key-value pairs |
+| Trie | Derived tree key | Node (jump + hash) | Merkle tree structure |
 
-The tree key in CSMTCol is computed as `treePrefix(value) <> fromK(key)`,
-where `treePrefix` is a configurable function that derives a prefix from
-the value. When `treePrefix = const []` (the default), the tree key is
-simply `fromK(key)`, preserving the original behavior.
+The tree key is derived from the user key (and optionally a prefix from
+the value) using the `FromKV`/`FromHexKV` conversion records. This dual
+storage allows efficient tree operations, original value retrieval, and
+proof generation.
 
-This dual storage allows:
-
-- Efficient tree operations via the CSMT column
-- Retrieval of original values via the KV column
-- Proof generation using both columns
-- **Prefix-based queries**: all entries sharing a `treePrefix` are grouped
-  in the same subtree, enabling completeness proofs over subsets (e.g. all
-  UTxOs at a given address)
+See [Storage Layer](architecture/storage.md) for implementation-specific
+details.

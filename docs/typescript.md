@@ -1,5 +1,9 @@
 # TypeScript Verifier
 
+!!! note
+    The TypeScript verifier supports **CSMT** proofs only. MPF proof
+    verification is not yet available in TypeScript.
+
 A TypeScript library for verifying CSMT inclusion proofs client-side.
 This enables browser and Node.js applications to verify proofs without
 a Haskell runtime.

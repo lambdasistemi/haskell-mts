@@ -1,5 +1,9 @@
 # Worked Example
 
+!!! note
+    This example uses the **CSMT** (binary trie) implementation. For MPF
+    concepts, see [MPF (16-ary Trie)](../mpf.md).
+
 This example demonstrates how the CSMT stores data and computes hashes,
 applying the concepts from [Storage](./storage.md).
 

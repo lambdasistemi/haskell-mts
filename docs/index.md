@@ -1,65 +1,96 @@
 !!! warning
     This project is in early development and is not production-ready. Use at your own risk.
 
-# CSMT - Compact Sparse Merkle Tree
+# MTS - Merkle Tree Store
 
-## What is CSMT?
+## What is MTS?
 
-A Compact Sparse Merkle Tree is a space-efficient variant of a Merkle tree optimized for sparse key spaces. It enables cryptographic proofs of inclusion (or exclusion) while minimizing storage requirements through path compression.
+MTS (Merkle Tree Store) is a Haskell library providing a shared interface for
+authenticated key-value stores backed by Merkle tries. It ships with two
+implementations:
+
+- **CSMT** - Compact Sparse Merkle Tree: a binary trie with path compression,
+  CBOR-encoded inclusion proofs, and completeness proofs via secondary
+  indexing.
+- **MPF** - Merkle Patricia Forest: a 16-ary trie using hex nibble keys,
+  with batch/streaming inserts and root hashes compatible with the Aiken
+  reference implementation.
+
+Both implementations conform to a single `MerkleTreeStore` record type
+parameterised by an implementation tag and a monad, so application code
+can be written once and run against either backend.
 
 ## Features
 
-This package provides:
-
-- **Haskell Library**: A CSMT implementation with persistent storage backends, offering efficient insertion, deletion, and proof generation for applications requiring verifiable data structures.
-- **Secondary Indexing**: Configurable `treePrefix` allows grouping entries by a value-derived prefix (e.g. address), enabling completeness proofs over subsets of the tree.
-- **CLI Tool**: Interactive command-line interface for tree operations including adding/removing elements, generating proofs, and verifying membership.
-- **Preimage Storage**: Automatic storage of key-value preimages in sync with the CSMT, enabling value retrieval alongside proof verification.
-
-## Performance
-
-Preliminary benchmarks indicate that the CSMT library sustains a throughput of 900 insertions per second on a standard development machine over a 3.5M cardano UTxOs dataset.
-
-There is room for optimization via parallel insertions, but these results are promising for an initial implementation.
+- **Shared interface**: `MerkleTreeStore` record with type families for key,
+  value, hash, proof, leaf, and completeness proof types
+  ([MTS Interface](interface.md))
+- **12 QuickCheck properties**: Verify feature parity across implementations
+  (insert-verify, order independence, batch equivalence, completeness
+  round-trip, etc.)
+- **Two trie backends**: Binary (CSMT) and 16-ary (MPF), each with RocksDB
+  and in-memory storage
+- **Merkle proofs**: Inclusion proofs for both implementations; CSMT also
+  supports completeness proofs over prefix-grouped subtrees
+- **Batch and streaming inserts**: MPF supports `insertingBatch`,
+  `insertingChunked`, and `insertingStream` for large datasets
+- **Aiken compatibility**: MPF produces root hashes matching the Aiken
+  `MerkleTree` implementation (verified against the 30-fruit test vector)
+- **CLI tool**: Interactive command-line interface for CSMT tree operations
+- **TypeScript verifier**: Client-side CSMT proof verification for
+  browser/Node.js
 
 ## Quick Start
+
+=== "MTS Interface"
+    ```haskell
+    import MTS.Interface (MerkleTreeStore(..))
+
+    example :: MerkleTreeStore imp IO -> IO ()
+    example store = do
+        mtsInsert store "key" "value"
+        proof <- mtsMkProof store "key"
+        root  <- mtsRootHash store
+        print (proof, root)
+    ```
 
 === "CLI"
     ```bash
     export CSMT_DB_PATH=./mydb
-    csmt
+    mts
     > i key1 value1
     > q key1
     AQDjun1C8tTl1kdY1oon8sAQWL86/UMiJyZFswQ9Sf49XQAA
     ```
 
-=== "Library"
-    ```haskell
-    import CSMT
-    import CSMT.Backend.RocksDB
-
-    main = withRocksDB "mydb" 256 256 $ \runDB -> do
-        runDB $ runTransaction $
-            insert fromKVHashes kvCol csmtCol "key" "value"
-    ```
-
 ## Status
 
-### Library
-- [x] Insertion and deletion
-- [x] Proof generation and verification
-- [x] Persistent storage (RocksDB)
-- [x] Comprehensive tests
-- [x] Insertion benchmarks
-- [ ] Deletion/proof benchmarks
-- [ ] Production-grade testing
-- [ ] Raw key support (vs hashed keys)
+### Shared Interface (`mts`)
+- [x] `MerkleTreeStore` record with type families
+- [x] 12 shared QuickCheck properties
+- [x] CSMT passes all 12 properties
+- [x] MPF passes 9 of 12 (completeness proofs pending)
 
-### CLI Tool
-- [x] Add/remove elements
-- [x] Query elements
-- [x] Generate and verify proofs
+### CSMT Implementation (`mts:csmt`)
+- [x] Insertion and deletion
+- [x] Inclusion proof generation and verification (CBOR)
+- [x] Completeness proofs (prefix-based subtrees)
+- [x] Persistent storage (RocksDB)
+- [x] Secondary indexing via `treePrefix`
+- [x] CLI tool
+- [x] TypeScript proof verifier
+- [x] Insertion benchmarks
+
+### MPF Implementation (`mts:mpf`)
+- [x] Insertion and deletion
+- [x] Inclusion proof generation and verification
+- [x] Batch, chunked, and streaming inserts
+- [x] Aiken-compatible root hashes
+- [x] Persistent storage (RocksDB)
+- [ ] Completeness proofs
+- [ ] Benchmarks
 
 ### Planned
 - [ ] HTTP service with RESTful API
-- [ ] Parallel batch insertions
+- [ ] MPF completeness proofs
+- [ ] Production-grade testing
