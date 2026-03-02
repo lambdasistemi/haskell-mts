@@ -1,17 +1,32 @@
 -- | MPF implementation of the MTS interface.
 --
 -- Defines @MpfImpl@ phantom type with type family instances
--- and a constructor that wraps MPF operations into
+-- and constructors that wrap MPF operations into
 -- 'MerkleTreeStore'.
+--
+-- Two constructors are provided:
+--
+-- * 'mpfMerkleTreeStoreT' — operations live in the
+--   'Transaction' monad, composable within a single atomic
+--   transaction.
+-- * 'mpfMerkleTreeStore' — convenience wrapper that commits
+--   each operation in its own transaction (suitable for simple
+--   use cases and tests).
 module MPF.MTS
     ( MpfImpl
+    , mpfMerkleTreeStoreT
     , mpfMerkleTreeStore
     )
 where
 
+import Control.Monad.Trans.Class (lift)
 import Data.ByteString (ByteString)
 import Database.KV.Database (Database)
-import Database.KV.Transaction (query, runTransactionUnguarded)
+import Database.KV.Transaction
+    ( Transaction
+    , query
+    , runTransactionUnguarded
+    )
 import MPF.Backend.Standalone
     ( MPFStandalone (..)
     , MPFStandaloneCF
@@ -39,6 +54,7 @@ import MTS.Interface
     , MtsLeaf
     , MtsProof
     , MtsValue
+    , hoistMTS
     )
 
 -- | Phantom type tag for the MPF implementation.
@@ -51,7 +67,95 @@ type instance MtsProof MpfImpl = MPFProof MPFHash
 type instance MtsLeaf MpfImpl = HexIndirect MPFHash
 type instance MtsCompletenessProof MpfImpl = ()
 
--- | Build a 'MerkleTreeStore' for MPF.
+-- | Compute the MPF root hash from the root node.
+mpfRootFromNode
+    :: MPFHashing MPFHash -> HexIndirect MPFHash -> MPFHash
+mpfRootFromNode hashing i =
+    if hexIsLeaf i
+        then leafHash hashing (hexJump i) (hexValue i)
+        else hexValue i
+
+-- | Build a transactional 'MerkleTreeStore' for MPF.
+--
+-- Operations live in the 'Transaction' monad so multiple
+-- calls can be composed into a single atomic transaction:
+--
+-- @
+-- runTransactionUnguarded db $ do
+--     mtsInsert store k1 v1
+--     mtsDelete store k2
+--     mtsRootHash store
+-- @
+mpfMerkleTreeStoreT
+    :: (MonadFail m)
+    => FromHexKV ByteString ByteString MPFHash
+    -> MPFHashing MPFHash
+    -> MerkleTreeStore
+        MpfImpl
+        ( Transaction
+            m
+            MPFStandaloneCF
+            (MPFStandalone ByteString ByteString MPFHash)
+            MPFStandaloneOp
+        )
+mpfMerkleTreeStoreT fromKV hashing =
+    MerkleTreeStore
+        { mtsInsert =
+            inserting
+                fromKV
+                hashing
+                MPFStandaloneKVCol
+                MPFStandaloneMPFCol
+        , mtsDelete =
+            deleting
+                fromKV
+                hashing
+                MPFStandaloneKVCol
+                MPFStandaloneMPFCol
+        , mtsRootHash = do
+            mi <- query MPFStandaloneMPFCol ([] :: HexKey)
+            pure $ fmap (mpfRootFromNode hashing) mi
+        , mtsMkProof = \k -> do
+            mp <-
+                mkMPFInclusionProof
+                    fromKV
+                    hashing
+                    MPFStandaloneMPFCol
+                    k
+            case mp of
+                Nothing -> pure Nothing
+                Just proof -> do
+                    mi <-
+                        query MPFStandaloneMPFCol ([] :: HexKey)
+                    pure $ case mi of
+                        Nothing -> Nothing
+                        Just i ->
+                            Just (mpfRootFromNode hashing i, proof)
+        , mtsVerifyProof =
+            verifyMPFInclusionProof
+                fromKV
+                MPFStandaloneMPFCol
+                hashing
+        , mtsFoldProof =
+            foldMPFProof hashing
+        , mtsBatchInsert =
+            insertingBatch
+                fromKV
+                hashing
+                MPFStandaloneKVCol
+                MPFStandaloneMPFCol
+        , mtsCollectLeaves =
+            lift $ fail "MPF completeness proofs not implemented"
+        , mtsMkCompletenessProof =
+            lift $ fail "MPF completeness proofs not implemented"
+        , mtsVerifyCompletenessProof = \_ _ ->
+            lift $ fail "MPF completeness proofs not implemented"
+        }
+
+-- | Build an IO 'MerkleTreeStore' for MPF.
+--
+-- Each operation commits in its own transaction. For atomic
+-- multi-operation sequences, use 'mpfMerkleTreeStoreT' instead.
 mpfMerkleTreeStore
     :: (MonadFail m)
     => (forall b. m b -> IO b)
@@ -64,62 +168,6 @@ mpfMerkleTreeStore
     -> MPFHashing MPFHash
     -> MerkleTreeStore MpfImpl IO
 mpfMerkleTreeStore run db fromKV hashing =
-    MerkleTreeStore
-        { mtsInsert = \k v ->
-            run
-                $ runTransactionUnguarded db
-                $ inserting fromKV hashing MPFStandaloneKVCol MPFStandaloneMPFCol k v
-        , mtsDelete =
-            run
-                . runTransactionUnguarded db
-                . deleting fromKV hashing MPFStandaloneKVCol MPFStandaloneMPFCol
-        , mtsRootHash =
-            run
-                $ runTransactionUnguarded db
-                $ do
-                    mi <- query MPFStandaloneMPFCol ([] :: HexKey)
-                    pure $ case mi of
-                        Nothing -> Nothing
-                        Just i ->
-                            Just
-                                $ if hexIsLeaf i
-                                    then leafHash hashing (hexJump i) (hexValue i)
-                                    else hexValue i
-        , mtsMkProof = \k ->
-            run
-                $ runTransactionUnguarded db
-                $ do
-                    mp <- mkMPFInclusionProof fromKV hashing MPFStandaloneMPFCol k
-                    case mp of
-                        Nothing -> pure Nothing
-                        Just proof -> do
-                            mi <- query MPFStandaloneMPFCol ([] :: HexKey)
-                            pure $ case mi of
-                                Nothing -> Nothing
-                                Just i ->
-                                    let r =
-                                            if hexIsLeaf i
-                                                then leafHash hashing (hexJump i) (hexValue i)
-                                                else hexValue i
-                                    in  Just (r, proof)
-        , mtsVerifyProof = \v proof ->
-            run
-                $ runTransactionUnguarded db
-                $ verifyMPFInclusionProof fromKV MPFStandaloneMPFCol hashing v proof
-        , mtsFoldProof =
-            foldMPFProof hashing
-        , mtsBatchInsert =
-            run
-                . runTransactionUnguarded db
-                . insertingBatch
-                    fromKV
-                    hashing
-                    MPFStandaloneKVCol
-                    MPFStandaloneMPFCol
-        , mtsCollectLeaves =
-            fail "MPF completeness proofs not implemented"
-        , mtsMkCompletenessProof =
-            fail "MPF completeness proofs not implemented"
-        , mtsVerifyCompletenessProof = \_ _ ->
-            fail "MPF completeness proofs not implemented"
-        }
+    hoistMTS
+        (run . runTransactionUnguarded db)
+        (mpfMerkleTreeStoreT fromKV hashing)

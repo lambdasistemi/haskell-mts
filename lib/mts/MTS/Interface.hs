@@ -6,6 +6,7 @@
 -- by just the implementation tag and the monad.
 module MTS.Interface
     ( MerkleTreeStore (..)
+    , hoistMTS
     , MtsKey
     , MtsValue
     , MtsHash
@@ -61,3 +62,25 @@ data MerkleTreeStore imp m = MerkleTreeStore
         -> m Bool
     -- ^ Verify a completeness proof against leaves
     }
+
+-- | Transform the monad of a 'MerkleTreeStore' via a natural
+-- transformation. Use this to run a transactional store in 'IO'
+-- by supplying @run . runTransactionUnguarded db@.
+hoistMTS
+    :: (forall a. m a -> n a)
+    -> MerkleTreeStore imp m
+    -> MerkleTreeStore imp n
+hoistMTS f s =
+    MerkleTreeStore
+        { mtsInsert = \k v -> f (mtsInsert s k v)
+        , mtsDelete = f . mtsDelete s
+        , mtsRootHash = f (mtsRootHash s)
+        , mtsMkProof = f . mtsMkProof s
+        , mtsVerifyProof = \v p -> f (mtsVerifyProof s v p)
+        , mtsFoldProof = mtsFoldProof s
+        , mtsBatchInsert = f . mtsBatchInsert s
+        , mtsCollectLeaves = f (mtsCollectLeaves s)
+        , mtsMkCompletenessProof = f (mtsMkCompletenessProof s)
+        , mtsVerifyCompletenessProof =
+            \ls p -> f (mtsVerifyCompletenessProof s ls p)
+        }
