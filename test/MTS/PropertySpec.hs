@@ -31,7 +31,7 @@ import MPF.Interface (FromHexKV (..), byteStringToHexKey)
 import MPF.MTS (MpfImpl, mpfMerkleTreeStore)
 import MTS.Interface (MerkleTreeStore)
 import MTS.Properties
-import Test.Hspec (Spec, describe, it, pending)
+import Test.Hspec (Spec, describe, it)
 import Test.QuickCheck
     ( Gen
     , arbitrary
@@ -176,6 +176,9 @@ spec = do
             $ propWrongValueRejects mkMpfStore genBSTriple
         it "proof anchored to root"
             $ propProofAnchoredToRoot mkMpfStore genBSPair
-        it "completeness round-trip" pending
-        it "completeness empty" pending
-        it "completeness after delete" pending
+        it "completeness round-trip"
+            $ propCompletenessRoundTrip mkMpfStore genBSPairs
+        it "completeness empty"
+            $ propCompletenessEmpty mkMpfStore
+        it "completeness after delete"
+            $ propCompletenessAfterDelete mkMpfStore genBSPairs

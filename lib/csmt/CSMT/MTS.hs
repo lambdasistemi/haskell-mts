@@ -34,9 +34,9 @@ import CSMT.Interface
     , root
     )
 import CSMT.Proof.Completeness
-    ( CompletenessProof
+    ( CompletenessProof (..)
     , collectValues
-    , foldProof
+    , foldCompletenessProof
     , generateProof
     )
 import CSMT.Proof.Insertion
@@ -70,7 +70,7 @@ type instance MtsValue CsmtImpl = ByteString
 type instance MtsHash CsmtImpl = Hash
 type instance MtsProof CsmtImpl = InclusionProof Hash
 type instance MtsLeaf CsmtImpl = Indirect Hash
-type instance MtsCompletenessProof CsmtImpl = CompletenessProof
+type instance MtsCompletenessProof CsmtImpl = CompletenessProof Hash
 
 -- | Build a transactional 'MerkleTreeStore' for CSMT.
 --
@@ -141,10 +141,10 @@ csmtMerkleTreeStoreT fromKV hashing =
         , mtsVerifyCompletenessProof = \leaves proof -> do
             currentRoot <- root hashing StandaloneCSMTCol
             let computed =
-                    foldProof (combineHash hashing) leaves proof
+                    foldCompletenessProof hashing [] leaves proof
             pure $ case (currentRoot, computed) of
-                (Just r, Just indirect) ->
-                    rootHash hashing indirect == r
+                (Just r, Just computedRoot) ->
+                    computedRoot == r
                 _ -> False
         }
 

@@ -9,6 +9,7 @@ module MPF.Insertion
     , insertingStream
     , mkMPFCompose
     , scanMPFCompose
+    , fetchChildTree
     , MPFCompose (..)
     )
 where
