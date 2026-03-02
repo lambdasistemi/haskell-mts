@@ -1,5 +1,5 @@
 {
-  "description": "Test fixtures generated from haskell-csmt CLI",
+  "description": "Test fixtures generated from mts CLI",
   "rootHash": "1e98af87b522eead4102425223ef5174599933b9dbe848fa0c4731553a31e6a6",
   "proofs": [
     {
