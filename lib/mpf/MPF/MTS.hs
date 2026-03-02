@@ -34,11 +34,16 @@ import MPF.Backend.Standalone
     )
 import MPF.Deletion (deleting)
 import MPF.Hashes (MPFHash, MPFHashing (..))
-import MPF.Insertion (inserting, insertingBatch)
+import MPF.Insertion (MPFCompose, inserting, insertingBatch)
 import MPF.Interface
     ( FromHexKV (..)
     , HexIndirect (..)
     , HexKey
+    )
+import MPF.Proof.Completeness
+    ( collectMPFLeaves
+    , foldMPFCompletenessProof
+    , generateMPFCompletenessProof
     )
 import MPF.Proof.Insertion
     ( MPFProof
@@ -65,7 +70,7 @@ type instance MtsValue MpfImpl = ByteString
 type instance MtsHash MpfImpl = MPFHash
 type instance MtsProof MpfImpl = MPFProof MPFHash
 type instance MtsLeaf MpfImpl = HexIndirect MPFHash
-type instance MtsCompletenessProof MpfImpl = ()
+type instance MtsCompletenessProof MpfImpl = MPFCompose MPFHash
 
 -- | Compute the MPF root hash from the root node.
 mpfRootFromNode
@@ -145,11 +150,18 @@ mpfMerkleTreeStoreT fromKV hashing =
                 MPFStandaloneKVCol
                 MPFStandaloneMPFCol
         , mtsCollectLeaves =
-            lift $ fail "MPF completeness proofs not implemented"
+            collectMPFLeaves MPFStandaloneMPFCol
         , mtsMkCompletenessProof =
-            lift $ fail "MPF completeness proofs not implemented"
-        , mtsVerifyCompletenessProof = \_ _ ->
-            lift $ fail "MPF completeness proofs not implemented"
+            generateMPFCompletenessProof MPFStandaloneMPFCol
+        , mtsVerifyCompletenessProof = \leaves proof -> do
+            mi <- query MPFStandaloneMPFCol ([] :: HexKey)
+            let currentRoot = fmap (mpfRootFromNode hashing) mi
+                computed =
+                    foldMPFCompletenessProof hashing leaves proof
+            pure $ case (currentRoot, computed) of
+                (Just r, Just computedRoot) ->
+                    computedRoot == r
+                _ -> False
         }
 
 -- | Build an IO 'MerkleTreeStore' for MPF.

@@ -8,7 +8,6 @@ import CSMT
     , Indirect (..)
     , Key
     , Standalone (StandaloneCSMTCol)
-    , combineHash
     )
 import CSMT.Backend.Pure
     ( InMemoryDB
@@ -17,10 +16,10 @@ import CSMT.Backend.Pure
     , runPure
     , runPureTransaction
     )
-import CSMT.Interface (FromKV (..))
+import CSMT.Interface (FromKV (..), Hashing (..))
 import CSMT.Proof.Completeness
     ( collectValues
-    , foldProof
+    , foldCompletenessProof
     , generateProof
     , queryPrefix
     )
@@ -266,27 +265,36 @@ spec = do
                 forAll (genSomePaths n) $ \keys -> do
                     let kvs = zip keys [1 :: Word64 ..]
                         db = foldl' (\d (k, v) -> insertP k v d) emptyInMemoryDB kvs
-                        verify p =
+                        treeRoot =
+                            fst
+                                $ runPure db
+                                $ runPureTransaction word64Codecs
+                                $ queryPrefix StandaloneCSMTCol []
+                        verifyP p =
                             fst
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
                                 $ do
                                     c <- collectValues StandaloneCSMTCol p
                                     pr <- generateProof StandaloneCSMTCol p
-                                    r <- queryPrefix StandaloneCSMTCol p
-                                    pure (c, pr, r)
+                                    pure (c, pr)
                     -- Verify both [L] and [R] subtrees
                     mapM_
                         ( \p -> do
-                            let (collected, proof, subtreeRoot) = verify p
+                            let (collected, proof) = verifyP p
                             case proof of
                                 Nothing -> collected `shouldBe` []
                                 Just pr ->
-                                    foldProof
-                                        (combineHash word64Hashing)
+                                    foldCompletenessProof
+                                        word64Hashing
+                                        p
                                         (sort collected)
                                         pr
-                                        `shouldBe` subtreeRoot
+                                        `shouldBe` fmap
+                                            ( rootHash
+                                                word64Hashing
+                                            )
+                                            treeRoot
                         )
                         ([[L], [R]] :: [Key])
 
@@ -297,7 +305,7 @@ spec = do
                 forAll (genSomePaths n) $ \keys -> do
                     let kvs = zip keys [1 :: Word64 ..]
                         db = foldl' (\d (k, v) -> insertP k v d) emptyInMemoryDB kvs
-                        (collected, proof, root) =
+                        (collected, proof, treeRoot) =
                             fst
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
@@ -309,11 +317,14 @@ spec = do
                     case proof of
                         Nothing -> collected `shouldBe` []
                         Just p ->
-                            foldProof
-                                (combineHash word64Hashing)
+                            foldCompletenessProof
+                                word64Hashing
+                                []
                                 (sort collected)
                                 p
-                                `shouldBe` root
+                                `shouldBe` fmap
+                                    (rootHash word64Hashing)
+                                    treeRoot
 
         it "generateProof is Nothing iff collectValues is empty"
             $ property

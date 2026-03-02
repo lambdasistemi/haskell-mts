@@ -128,6 +128,7 @@ library mpf
     MPF.Insertion
     MPF.Interface
     MPF.MTS
+    MPF.Proof.Completeness
     MPF.Proof.Insertion
 
   build-depends:

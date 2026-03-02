@@ -6,15 +6,16 @@ where
 import CSMT
     ( Direction (..)
     , Standalone (StandaloneCSMTCol)
-    , combineHash
     )
 import CSMT.Backend.Pure
     ( runPureTransaction
     )
 import CSMT.Hashes (hashHashing)
+import CSMT.Interface (Hashing (..))
 import CSMT.Proof.Completeness
-    ( collectValues
-    , foldProof
+    ( CompletenessProof (..)
+    , collectValues
+    , foldCompletenessProof
     , generateProof
     )
 import CSMT.Test.Lib
@@ -72,7 +73,7 @@ spec = do
                     runPureTransaction word64Codecs
                         $ generateProof StandaloneCSMTCol []
               in
-                mp `shouldBe` Just []
+                fmap cpMergeOps mp `shouldBe` Just []
         it "can generate proof for larger tree"
             $ let
                 mp = evalPureFromEmptyDB $ do
@@ -83,7 +84,7 @@ spec = do
                     runPureTransaction word64Codecs
                         $ generateProof StandaloneCSMTCol []
               in
-                mp `shouldBe` Just [(0, 1)]
+                fmap cpMergeOps mp `shouldBe` Just [(0, 1)]
         it "can generate proof for even larger tree"
             $ let
                 mp = evalPureFromEmptyDB $ do
@@ -96,7 +97,8 @@ spec = do
                     runPureTransaction word64Codecs
                         $ generateProof StandaloneCSMTCol []
               in
-                mp `shouldBe` Just [(1, 2), (0, 1), (0, 3)]
+                fmap cpMergeOps mp
+                    `shouldBe` Just [(1, 2), (0, 1), (0, 3)]
     describe "verifyProof" $ do
         it "can verify completeness proof for larger tree"
             $ let
@@ -118,9 +120,15 @@ spec = do
               in
                 case mp of
                     Nothing -> error "expected a proof"
-                    Just proof -> do
-                        foldProof (combineHash word64Hashing) values proof
-                            `shouldBe` r
+                    Just proof ->
+                        foldCompletenessProof
+                            word64Hashing
+                            []
+                            values
+                            proof
+                            `shouldBe` fmap
+                                (rootHash word64Hashing)
+                                r
         it "can verify completeness proof for random trees"
             $ property
             $ forAll manyRandomPaths
@@ -137,9 +145,15 @@ spec = do
                         return (mp', r')
                 case mp of
                     Nothing -> error "expected a proof"
-                    Just proof -> do
-                        foldProof (combineHash word64Hashing) (sort values) proof
-                            `shouldBe` r
+                    Just proof ->
+                        foldCompletenessProof
+                            word64Hashing
+                            []
+                            (sort values)
+                            proof
+                            `shouldBe` fmap
+                                (rootHash word64Hashing)
+                                r
         it "can verify completeness proof for random trees of hashes"
             $ property
             $ forAll manyRandomPaths
@@ -156,6 +170,12 @@ spec = do
                         return (mp', r')
                 case mp of
                     Nothing -> error "expected a proof"
-                    Just proof -> do
-                        foldProof (combineHash hashHashing) (sort values) proof
-                            `shouldBe` r
+                    Just proof ->
+                        foldCompletenessProof
+                            hashHashing
+                            []
+                            (sort values)
+                            proof
+                            `shouldBe` fmap
+                                (rootHash hashHashing)
+                                r
