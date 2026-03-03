@@ -26,6 +26,7 @@ let
       asciinema.compress
       asciinema.resize
       pkgs.asciinema
+      pkgs.elan
     ];
     shellHook = ''
       echo "Entering shell for MTS development"

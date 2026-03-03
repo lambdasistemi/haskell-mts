@@ -82,12 +82,30 @@ bench:
     set -euo pipefail
     cabal bench
 
+# Build Lean proofs
+lean:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd lean && lake build
+
+# Check Lean proofs have no sorry
+lean-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd lean && lake build
+    if grep -r 'sorry' lean/ --include='*.lean' \
+        | grep -v '^\s*--' | grep -v 'TODO'; then
+        echo "ERROR: sorry found in Lean proofs"
+        exit 1
+    fi
+
 # Full CI pipeline
 ci:
     #!/usr/bin/env bash
     set -euo pipefail
     just build
     just test
+    just lean
     just format-check
     just hlint
 
