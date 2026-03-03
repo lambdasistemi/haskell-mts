@@ -42,14 +42,17 @@ import MPF.Interface
 
 -- |
 -- Collect all leaf values from the MPF trie.
+-- The prefix scopes the query to a subtree.
 --
 -- Returns leaves with their full key path as 'hexJump' and
 -- their value hash as 'hexValue'.
 collectMPFLeaves
     :: (Monad m, GCompare d)
     => Selector d HexKey (HexIndirect a)
+    -> HexKey
+    -- ^ Prefix (use @[]@ for root)
     -> Transaction m cf d op [HexIndirect a]
-collectMPFLeaves sel = navigate []
+collectMPFLeaves sel prefix = navigate prefix
   where
     navigate currentKey = do
         mi <- query sel currentKey
@@ -74,15 +77,18 @@ collectMPFLeaves sel = navigate []
 
 -- |
 -- Generate a completeness proof for the entire MPF trie.
+-- The prefix scopes the query to a subtree.
 --
 -- Returns the trie as an 'MPFCompose' tree, or 'Nothing' if
 -- the tree is empty.
 generateMPFCompletenessProof
     :: (Monad m, GCompare d)
     => Selector d HexKey (HexIndirect a)
+    -> HexKey
+    -- ^ Prefix (use @[]@ for root)
     -> Transaction m cf d op (Maybe (MPFCompose a))
-generateMPFCompletenessProof sel = do
-    mi <- query sel []
+generateMPFCompletenessProof sel prefix = do
+    mi <- query sel prefix
     case mi of
         Nothing -> pure Nothing
         Just HexIndirect{hexJump, hexValue, hexIsLeaf}
@@ -92,7 +98,7 @@ generateMPFCompletenessProof sel = do
                     $ MPFComposeLeaf
                     $ mkLeafIndirect hexJump hexValue
             | otherwise -> do
-                children <- fetchChildTree sel hexJump
+                children <- fetchChildTree sel (prefix <> hexJump)
                 pure $ Just $ MPFComposeBranch hexJump children
 
 -- |
@@ -109,7 +115,7 @@ foldMPFCompletenessProof
     -> Maybe a
 foldMPFCompletenessProof hashing leaves proof =
     let extracted = extractLeaves proof
-        (rootIndirect, _) = scanMPFCompose hashing proof
+        (rootIndirect, _) = scanMPFCompose [] hashing proof
         computedRoot = hexValue rootIndirect
     in  if sort extracted == sort leaves
             then Just computedRoot

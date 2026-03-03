@@ -82,6 +82,7 @@ mkMpfStore = do
             pure a
     pure
         $ mpfMerkleTreeStore
+            []
             run
             (mpfPureDatabase mpfCodecs)
             fromHexKVBS

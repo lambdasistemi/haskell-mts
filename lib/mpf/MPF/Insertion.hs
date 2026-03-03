@@ -44,34 +44,41 @@ data MPFCompose a
       MPFComposeBranch HexKey (Map HexDigit (MPFCompose a))
     deriving (Show, Eq)
 
--- | Insert a key-value pair into the MPF structure
+-- | Insert a key-value pair into the MPF structure.
+-- The prefix scopes the operation to a subtree.
 inserting
     :: (Monad m, Ord k, GCompare d)
-    => FromHexKV k v a
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> FromHexKV k v a
     -> MPFHashing a
     -> Selector d k v
     -> Selector d HexKey (HexIndirect a)
     -> k
     -> v
     -> Transaction m cf d ops ()
-inserting FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol k v = do
+inserting prefix FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol k v = do
     insert kvCol k v
     let treeKey = hexTreePrefix v <> fromHexK k
-    c <- mkMPFCompose mpfCol treeKey (fromHexV v)
-    mapM_ (uncurry $ insert mpfCol) $ snd $ scanMPFCompose hashing c
+    c <- mkMPFCompose mpfCol prefix treeKey (fromHexV v)
+    mapM_ (uncurry $ insert mpfCol)
+        $ snd
+        $ scanMPFCompose prefix hashing c
 
--- | Batch insert multiple key-value pairs into an empty MPF structure
--- This is much faster than sequential inserts as it builds the tree in one pass
--- using divide-and-conquer (O(n log n) vs O(n²))
+-- | Batch insert multiple key-value pairs into an empty MPF structure.
+-- This is much faster than sequential inserts as it builds the tree
+-- in one pass using divide-and-conquer (O(n log n) vs O(n²)).
 insertingBatch
     :: (Monad m, Ord k, GCompare d)
-    => FromHexKV k v a
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> FromHexKV k v a
     -> MPFHashing a
     -> Selector d k v
     -> Selector d HexKey (HexIndirect a)
     -> [(k, v)]
     -> Transaction m cf d ops ()
-insertingBatch FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol kvs = do
+insertingBatch prefix FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol kvs = do
     -- Insert all key-value pairs into the KV store
     mapM_ (uncurry $ insert kvCol) kvs
     -- Build the MPF tree in one pass and insert all nodes
@@ -79,18 +86,24 @@ insertingBatch FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol
         compose = buildComposeFromList hexKvs
     case compose of
         Nothing -> pure () -- Empty list
-        Just c -> mapM_ (uncurry $ insert mpfCol) $ snd $ scanMPFCompose hashing c
+        Just c ->
+            mapM_ (uncurry $ insert mpfCol)
+                $ snd
+                $ scanMPFCompose prefix hashing c
 
--- | Chunked insert for very large datasets (millions of items)
--- Processes items in chunks to bound memory usage. Works with any backend.
+-- | Chunked insert for very large datasets (millions of items).
+-- Processes items in chunks to bound memory usage. Works with any
+-- backend.
 --
--- For truly large datasets (10M+), use this with the RocksDB backend which
--- persists data to disk between chunks, keeping memory bounded.
+-- For truly large datasets (10M+), use this with the RocksDB backend
+-- which persists data to disk between chunks, keeping memory bounded.
 --
 -- Returns the number of chunks processed.
 insertingChunked
     :: (Monad m, Ord k, GCompare d)
-    => FromHexKV k v a
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> FromHexKV k v a
     -> MPFHashing a
     -> Selector d k v
     -> Selector d HexKey (HexIndirect a)
@@ -98,14 +111,14 @@ insertingChunked
     -- ^ Chunk size (e.g., 50000)
     -> [(k, v)]
     -> Transaction m cf d ops Int
-insertingChunked fhkv hashing kvCol mpfCol chunkSize kvs = do
+insertingChunked prefix fhkv hashing kvCol mpfCol chunkSize kvs = do
     let chunks = chunksOf chunkSize kvs
     go 0 chunks
   where
     go !n [] = pure n
     go !n (chunk : rest) = do
         -- Insert this chunk item by item
-        mapM_ (uncurry (inserting fhkv hashing kvCol mpfCol)) chunk
+        mapM_ (uncurry (inserting prefix fhkv hashing kvCol mpfCol)) chunk
         -- Continue with rest
         go (n + 1) rest
 
@@ -116,20 +129,23 @@ chunksOf n xs =
     let (chunk, rest) = splitAt n xs
     in  chunk : chunksOf n rest
 
--- | Streaming batch insert for very large datasets
--- Groups items by first hex digit and processes each group separately,
--- reducing peak memory by ~16x compared to full batch insert.
--- Still requires O(n) memory for the input list and one group at a time.
+-- | Streaming batch insert for very large datasets.
+-- Groups items by first hex digit and processes each group
+-- separately, reducing peak memory by ~16x compared to full batch
+-- insert. Still requires O(n) memory for the input list and one
+-- group at a time.
 insertingStream
     :: forall m k v a d cf ops
      . (Monad m, Ord k, GCompare d)
-    => FromHexKV k v a
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> FromHexKV k v a
     -> MPFHashing a
     -> Selector d k v
     -> Selector d HexKey (HexIndirect a)
     -> [(k, v)]
     -> Transaction m cf d ops ()
-insertingStream FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol kvs = do
+insertingStream prefix FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCol kvs = do
     -- Insert all key-value pairs into the KV store first
     mapM_ (uncurry $ insert kvCol) kvs
 
@@ -151,7 +167,7 @@ insertingStream FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCo
                 mr = merkleRoot hashing childHashes
                 rootValue = branchHash hashing [] mr
                 rootNode = mkBranchIndirect [] rootValue
-            insert mpfCol [] rootNode
+            insert mpfCol prefix rootNode
   where
     processGroup
         :: (HexDigit, [(HexKey, a)])
@@ -160,9 +176,10 @@ insertingStream FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing kvCol mpfCo
         case buildComposeFromList items of
             Nothing -> pure (digit, Nothing)
             Just compose -> do
-                let (rootInd, inserts) = scanMPFCompose hashing compose
-                -- Write all nodes for this subtree with digit prefix
-                mapM_ (\(k, v) -> insert mpfCol ([digit] <> k) v) inserts
+                let (rootInd, inserts) =
+                        scanMPFCompose (prefix <> [digit]) hashing compose
+                -- Write all nodes for this subtree
+                mapM_ (uncurry $ insert mpfCol) inserts
                 pure (digit, Just rootInd)
 
 -- | Group by first hex digit, keeping remaining key
@@ -182,17 +199,17 @@ buildComposeFromList [(key, value)] =
     Just $ MPFComposeLeaf $ mkLeafIndirect key value
 buildComposeFromList kvs =
     -- Multiple elements: find common prefix, then branch
-    let prefix = commonPrefixAll (map fst kvs)
-        prefixLen = length prefix
+    let pfx = commonPrefixAll (map fst kvs)
+        pfxLen = length pfx
         -- Strip prefix and group by first digit
-        stripped = [(drop prefixLen k, v) | (k, v) <- kvs]
+        stripped = [(drop pfxLen k, v) | (k, v) <- kvs]
         -- Group by first digit
         grouped = groupByFirstDigit stripped
         -- Recursively build children
         children = Map.mapMaybe buildComposeFromList grouped
     in  if Map.null children
             then Nothing
-            else Just $ MPFComposeBranch prefix children
+            else Just $ MPFComposeBranch pfx children
 
 -- | Find the common prefix of all keys
 commonPrefixAll :: [HexKey] -> HexKey
@@ -216,15 +233,18 @@ groupByFirstDigit = foldl' addToGroup Map.empty
     addToGroup acc (d : rest, v) =
         Map.insertWith (++) d [(rest, v)] acc
 
--- | Build a compose tree by traversing the existing trie
+-- | Build a compose tree by traversing the existing trie.
+-- The prefix scopes the query to a subtree.
 mkMPFCompose
     :: forall a d ops cf m
      . (Monad m, GCompare d)
     => Selector d HexKey (HexIndirect a)
     -> HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> HexKey
     -> a
     -> Transaction m cf d ops (MPFCompose a)
-mkMPFCompose mpfCol key h = go key [] pure
+mkMPFCompose mpfCol prefix key h = go key prefix pure
   where
     go
         :: HexKey
@@ -279,20 +299,20 @@ fetchSiblings
     -> HexKey
     -> HexDigit
     -> Transaction m cf d ops (Map HexDigit (MPFCompose a))
-fetchSiblings mpfCol prefix exclude = do
+fetchSiblings mpfCol pfx exclude = do
     let allDigits = [HexDigit n | n <- [0 .. 15], HexDigit n /= exclude]
     pairs <- mapM fetchSibling allDigits
     Map.fromList <$> sequence [wrapNode d i | (d, Just i) <- pairs]
   where
     fetchSibling d = do
-        mi <- query mpfCol (prefix <> [d])
+        mi <- query mpfCol (pfx <> [d])
         pure (d, mi)
     wrapNode d HexIndirect{hexIsLeaf, hexJump, hexValue}
         | hexIsLeaf =
             pure (d, MPFComposeLeaf $ mkLeafIndirect hexJump hexValue)
         | otherwise = do
             -- Branch: fetch its children to rebuild structure
-            children <- fetchChildTree mpfCol (prefix <> [d] <> hexJump)
+            children <- fetchChildTree mpfCol (pfx <> [d] <> hexJump)
             pure (d, MPFComposeBranch hexJump children)
 
 -- | Fetch all children of a branch node and wrap them as MPFCompose
@@ -301,28 +321,32 @@ fetchChildTree
     => Selector d HexKey (HexIndirect a)
     -> HexKey
     -> Transaction m cf d ops (Map HexDigit (MPFCompose a))
-fetchChildTree mpfCol prefix = do
+fetchChildTree mpfCol pfx = do
     let allDigits = [HexDigit n | n <- [0 .. 15]]
     pairs <- mapM fetchChild allDigits
     Map.fromList <$> sequence [wrapNode d node | (d, Just node) <- pairs]
   where
     fetchChild d = do
-        mi <- query mpfCol (prefix <> [d])
+        mi <- query mpfCol (pfx <> [d])
         pure (d, mi)
     wrapNode d HexIndirect{hexIsLeaf, hexJump, hexValue}
         | hexIsLeaf =
             pure (d, MPFComposeLeaf $ mkLeafIndirect hexJump hexValue)
         | otherwise = do
             -- Recursively fetch children for nested branches
-            children <- fetchChildTree mpfCol (prefix <> [d] <> hexJump)
+            children <- fetchChildTree mpfCol (pfx <> [d] <> hexJump)
             pure (d, MPFComposeBranch hexJump children)
 
--- | Scan a compose tree and produce the resulting hash and list of inserts
+-- | Scan a compose tree and produce the resulting hash and list of
+-- inserts. The prefix determines where nodes are stored in the
+-- database.
 scanMPFCompose
-    :: MPFHashing a
+    :: HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> MPFHashing a
     -> MPFCompose a
     -> (HexIndirect a, [(HexKey, HexIndirect a)])
-scanMPFCompose MPFHashing{leafHash, merkleRoot, branchHash} = go []
+scanMPFCompose prefix MPFHashing{leafHash, merkleRoot, branchHash} = go prefix
   where
     go k (MPFComposeLeaf i) =
         -- NEW leaf: compute leaf hash from value hash, store value hash

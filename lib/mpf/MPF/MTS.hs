@@ -4,22 +4,23 @@
 -- and constructors that wrap MPF operations into
 -- 'MerkleTreeStore'.
 --
--- Two constructors are provided:
+-- Four constructors are provided:
 --
--- * 'mpfMerkleTreeStoreT' — operations live in the
---   'Transaction' monad, composable within a single atomic
---   transaction.
+-- * 'mpfMerkleTreeStoreT' — prefix-scoped transactional store,
+--   composable within a single atomic transaction.
 -- * 'mpfMerkleTreeStore' — convenience wrapper that commits
---   each operation in its own transaction (suitable for simple
---   use cases and tests).
+--   each operation in its own transaction.
+-- * 'mpfNamespacedMTST' — transactional namespaced store.
+-- * 'mpfNamespacedMTS' — IO namespaced store.
 module MPF.MTS
     ( MpfImpl
     , mpfMerkleTreeStoreT
     , mpfMerkleTreeStore
+    , mpfNamespacedMTST
+    , mpfNamespacedMTS
     )
 where
 
-import Control.Monad.Trans.Class (lift)
 import Data.ByteString (ByteString)
 import Database.KV.Database (Database)
 import Database.KV.Transaction
@@ -32,7 +33,7 @@ import MPF.Backend.Standalone
     , MPFStandaloneCF
     , MPFStandaloneOp
     )
-import MPF.Deletion (deleting)
+import MPF.Deletion (deleteSubtree, deleting)
 import MPF.Hashes (MPFHash, MPFHashing (..))
 import MPF.Insertion (MPFCompose, inserting, insertingBatch)
 import MPF.Interface
@@ -57,9 +58,12 @@ import MTS.Interface
     , MtsHash
     , MtsKey
     , MtsLeaf
+    , MtsPrefix
     , MtsProof
     , MtsValue
+    , NamespacedMTS (..)
     , hoistMTS
+    , hoistNamespacedMTS
     )
 
 -- | Phantom type tag for the MPF implementation.
@@ -71,6 +75,7 @@ type instance MtsHash MpfImpl = MPFHash
 type instance MtsProof MpfImpl = MPFProof MPFHash
 type instance MtsLeaf MpfImpl = HexIndirect MPFHash
 type instance MtsCompletenessProof MpfImpl = MPFCompose MPFHash
+type instance MtsPrefix MpfImpl = HexKey
 
 -- | Compute the MPF root hash from the root node.
 mpfRootFromNode
@@ -80,7 +85,8 @@ mpfRootFromNode hashing i =
         then leafHash hashing (hexJump i) (hexValue i)
         else hexValue i
 
--- | Build a transactional 'MerkleTreeStore' for MPF.
+-- | Build a transactional 'MerkleTreeStore' for MPF scoped to a
+-- prefix.
 --
 -- Operations live in the 'Transaction' monad so multiple
 -- calls can be composed into a single atomic transaction:
@@ -93,7 +99,9 @@ mpfRootFromNode hashing i =
 -- @
 mpfMerkleTreeStoreT
     :: (MonadFail m)
-    => FromHexKV ByteString ByteString MPFHash
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> FromHexKV ByteString ByteString MPFHash
     -> MPFHashing MPFHash
     -> MerkleTreeStore
         MpfImpl
@@ -103,26 +111,29 @@ mpfMerkleTreeStoreT
             (MPFStandalone ByteString ByteString MPFHash)
             MPFStandaloneOp
         )
-mpfMerkleTreeStoreT fromKV hashing =
+mpfMerkleTreeStoreT prefix fromKV hashing =
     MerkleTreeStore
         { mtsInsert =
             inserting
+                prefix
                 fromKV
                 hashing
                 MPFStandaloneKVCol
                 MPFStandaloneMPFCol
         , mtsDelete =
             deleting
+                prefix
                 fromKV
                 hashing
                 MPFStandaloneKVCol
                 MPFStandaloneMPFCol
         , mtsRootHash = do
-            mi <- query MPFStandaloneMPFCol ([] :: HexKey)
+            mi <- query MPFStandaloneMPFCol prefix
             pure $ fmap (mpfRootFromNode hashing) mi
         , mtsMkProof = \k -> do
             mp <-
                 mkMPFInclusionProof
+                    prefix
                     fromKV
                     hashing
                     MPFStandaloneMPFCol
@@ -131,13 +142,14 @@ mpfMerkleTreeStoreT fromKV hashing =
                 Nothing -> pure Nothing
                 Just proof -> do
                     mi <-
-                        query MPFStandaloneMPFCol ([] :: HexKey)
+                        query MPFStandaloneMPFCol prefix
                     pure $ case mi of
                         Nothing -> Nothing
                         Just i ->
                             Just (mpfRootFromNode hashing i, proof)
         , mtsVerifyProof =
             verifyMPFInclusionProof
+                prefix
                 fromKV
                 MPFStandaloneMPFCol
                 hashing
@@ -145,16 +157,17 @@ mpfMerkleTreeStoreT fromKV hashing =
             foldMPFProof hashing
         , mtsBatchInsert =
             insertingBatch
+                prefix
                 fromKV
                 hashing
                 MPFStandaloneKVCol
                 MPFStandaloneMPFCol
         , mtsCollectLeaves =
-            collectMPFLeaves MPFStandaloneMPFCol
+            collectMPFLeaves MPFStandaloneMPFCol prefix
         , mtsMkCompletenessProof =
-            generateMPFCompletenessProof MPFStandaloneMPFCol
+            generateMPFCompletenessProof MPFStandaloneMPFCol prefix
         , mtsVerifyCompletenessProof = \leaves proof -> do
-            mi <- query MPFStandaloneMPFCol ([] :: HexKey)
+            mi <- query MPFStandaloneMPFCol prefix
             let currentRoot = fmap (mpfRootFromNode hashing) mi
                 computed =
                     foldMPFCompletenessProof hashing leaves proof
@@ -164,11 +177,56 @@ mpfMerkleTreeStoreT fromKV hashing =
                 _ -> False
         }
 
--- | Build an IO 'MerkleTreeStore' for MPF.
+-- | Build an IO 'MerkleTreeStore' for MPF scoped to a prefix.
 --
 -- Each operation commits in its own transaction. For atomic
 -- multi-operation sequences, use 'mpfMerkleTreeStoreT' instead.
 mpfMerkleTreeStore
+    :: (MonadFail m)
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> (forall b. m b -> IO b)
+    -> Database
+        m
+        MPFStandaloneCF
+        (MPFStandalone ByteString ByteString MPFHash)
+        MPFStandaloneOp
+    -> FromHexKV ByteString ByteString MPFHash
+    -> MPFHashing MPFHash
+    -> MerkleTreeStore MpfImpl IO
+mpfMerkleTreeStore prefix run db fromKV hashing =
+    hoistMTS
+        (run . runTransactionUnguarded db)
+        (mpfMerkleTreeStoreT prefix fromKV hashing)
+
+-- | Build a transactional 'NamespacedMTS' for MPF.
+--
+-- Each namespace is a prefix-scoped 'MerkleTreeStore'.
+mpfNamespacedMTST
+    :: (MonadFail m)
+    => FromHexKV ByteString ByteString MPFHash
+    -> MPFHashing MPFHash
+    -> NamespacedMTS
+        MpfImpl
+        ( Transaction
+            m
+            MPFStandaloneCF
+            (MPFStandalone ByteString ByteString MPFHash)
+            MPFStandaloneOp
+        )
+mpfNamespacedMTST fromKV hashing =
+    NamespacedMTS
+        { nsStore = \prefix ->
+            mpfMerkleTreeStoreT prefix fromKV hashing
+        , nsDelete = \prefix ->
+            deleteSubtree MPFStandaloneMPFCol prefix
+        }
+
+-- | Build an IO 'NamespacedMTS' for MPF.
+--
+-- Each namespace is a prefix-scoped 'MerkleTreeStore' that
+-- commits each operation in its own transaction.
+mpfNamespacedMTS
     :: (MonadFail m)
     => (forall b. m b -> IO b)
     -> Database
@@ -178,8 +236,8 @@ mpfMerkleTreeStore
         MPFStandaloneOp
     -> FromHexKV ByteString ByteString MPFHash
     -> MPFHashing MPFHash
-    -> MerkleTreeStore MpfImpl IO
-mpfMerkleTreeStore run db fromKV hashing =
-    hoistMTS
+    -> NamespacedMTS MpfImpl IO
+mpfNamespacedMTS run db fromKV hashing =
+    hoistNamespacedMTS
         (run . runTransactionUnguarded db)
-        (mpfMerkleTreeStoreT fromKV hashing)
+        (mpfNamespacedMTST fromKV hashing)

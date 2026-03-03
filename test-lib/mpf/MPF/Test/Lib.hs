@@ -17,6 +17,14 @@ module MPF.Test.Lib
     , fromHexKVIdentity
     , fromHexKVByteString
 
+      -- * Prefix-aware Utilities
+    , insertMPFMAt
+    , deleteMPFMAt
+    , getRootHashMAt
+    , proofMPFMAt
+    , verifyMPFMAt
+    , deleteSubtreeMAt
+
       -- * Pure Backend (for benchmarking)
     , MPFInMemoryDB
     , MPFPure
@@ -57,7 +65,7 @@ import MPF.Backend.Standalone
     ( MPFStandalone (..)
     , MPFStandaloneCodecs (..)
     )
-import MPF.Deletion (deleting)
+import MPF.Deletion (deleteSubtree, deleting)
 import MPF.Hashes
     ( MPFHash
     , MPFHashing (..)
@@ -136,9 +144,18 @@ deleteMPF db k =
 
 -- | Insert in the Pure monad
 insertMPFM :: HexKey -> MPFHash -> MPFPure ()
-insertMPFM k v =
+insertMPFM = insertMPFMAt []
+
+-- | Delete in the Pure monad
+deleteMPFM :: HexKey -> MPFPure ()
+deleteMPFM = deleteMPFMAt []
+
+-- | Insert at a prefix in the Pure monad
+insertMPFMAt :: HexKey -> HexKey -> MPFHash -> MPFPure ()
+insertMPFMAt prefix k v =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
         $ inserting
+            prefix
             fromHexKVIdentity
             mpfHashing
             MPFStandaloneKVCol
@@ -146,11 +163,12 @@ insertMPFM k v =
             k
             v
 
--- | Delete in the Pure monad
-deleteMPFM :: HexKey -> MPFPure ()
-deleteMPFM k =
+-- | Delete at a prefix in the Pure monad
+deleteMPFMAt :: HexKey -> HexKey -> MPFPure ()
+deleteMPFMAt prefix k =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
         $ deleting
+            prefix
             fromHexKVIdentity
             mpfHashing
             MPFStandaloneKVCol
@@ -171,6 +189,7 @@ insertBatchMPFM :: [(HexKey, MPFHash)] -> MPFPure ()
 insertBatchMPFM kvs =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
         $ insertingBatch
+            []
             fromHexKVIdentity
             mpfHashing
             MPFStandaloneKVCol
@@ -183,6 +202,7 @@ insertChunkedMPFM :: Int -> [(HexKey, MPFHash)] -> MPFPure Int
 insertChunkedMPFM chunkSize kvs =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
         $ insertingChunked
+            []
             fromHexKVIdentity
             mpfHashing
             MPFStandaloneKVCol
@@ -196,6 +216,7 @@ insertStreamMPFM :: [(HexKey, MPFHash)] -> MPFPure ()
 insertStreamMPFM kvs =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
         $ insertingStream
+            []
             fromHexKVIdentity
             mpfHashing
             MPFStandaloneKVCol
@@ -204,20 +225,39 @@ insertStreamMPFM kvs =
 
 -- | Generate a membership proof for a key in the Pure monad
 proofMPFM :: HexKey -> MPFPure (Maybe (MPFProof MPFHash))
-proofMPFM k =
+proofMPFM = proofMPFMAt []
+
+-- | Generate a membership proof at a prefix
+proofMPFMAt :: HexKey -> HexKey -> MPFPure (Maybe (MPFProof MPFHash))
+proofMPFMAt prefix k =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
-        $ mkMPFInclusionProof fromHexKVIdentity mpfHashing MPFStandaloneMPFCol k
+        $ mkMPFInclusionProof
+            prefix
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneMPFCol
+            k
 
 -- | Verify a membership proof for a key-value pair in the Pure monad
 verifyMPFM :: HexKey -> MPFHash -> MPFPure Bool
-verifyMPFM k v =
+verifyMPFM = verifyMPFMAt []
+
+-- | Verify a membership proof at a prefix
+verifyMPFMAt :: HexKey -> HexKey -> MPFHash -> MPFPure Bool
+verifyMPFMAt prefix k v =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs) $ do
         mProof <-
-            mkMPFInclusionProof fromHexKVIdentity mpfHashing MPFStandaloneMPFCol k
+            mkMPFInclusionProof
+                prefix
+                fromHexKVIdentity
+                mpfHashing
+                MPFStandaloneMPFCol
+                k
         case mProof of
             Nothing -> pure False
             Just proof ->
                 verifyMPFInclusionProof
+                    prefix
                     fromHexKVIdentity
                     MPFStandaloneMPFCol
                     mpfHashing
@@ -226,16 +266,26 @@ verifyMPFM k v =
 
 -- | Get the root hash from the MPF trie
 getRootHashM :: MPFPure (Maybe MPFHash)
-getRootHashM =
+getRootHashM = getRootHashMAt []
+
+-- | Get the root hash at a prefix
+getRootHashMAt :: HexKey -> MPFPure (Maybe MPFHash)
+getRootHashMAt prefix =
     runTransactionUnguarded (mpfPureDatabase mpfHashCodecs) $ do
-        mi <- query MPFStandaloneMPFCol []
+        mi <- query MPFStandaloneMPFCol prefix
         pure $ case mi of
             Nothing -> Nothing
             Just i ->
                 Just
                     $ if hexIsLeaf i
-                        then leafHash mpfHashing (hexJump i) (hexValue i) -- Leaf: compute from value hash
-                        else hexValue i -- Branch: already has branch hash
+                        then leafHash mpfHashing (hexJump i) (hexValue i)
+                        else hexValue i
+
+-- | Delete an entire subtree at a prefix
+deleteSubtreeMAt :: HexKey -> MPFPure ()
+deleteSubtreeMAt prefix =
+    runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
+        $ deleteSubtree MPFStandaloneMPFCol prefix
 
 -- | Evaluate a pure MPF computation from empty database
 evalMPFPure' :: MPFPure a -> a
@@ -249,36 +299,36 @@ runMPFPure' = runMPFPure emptyMPFInMemoryDB
 -- 30 fruit key-value pairs (must match exactly for compatible root hash)
 fruitsTestData :: [(ByteString, ByteString)]
 fruitsTestData =
-    [ ("apple[uid: 58]", encodeUtf8 "🍎")
-    , ("apricot[uid: 0]", encodeUtf8 "🤷")
-    , ("banana[uid: 218]", encodeUtf8 "🍌")
-    , ("blueberry[uid: 0]", encodeUtf8 "🫐")
-    , ("cherry[uid: 0]", encodeUtf8 "🍒")
-    , ("coconut[uid: 0]", encodeUtf8 "🥥")
-    , ("cranberry[uid: 0]", encodeUtf8 "🤷")
-    , ("fig[uid: 68267]", encodeUtf8 "🤷")
-    , ("grapefruit[uid: 0]", encodeUtf8 "🤷")
-    , ("grapes[uid: 0]", encodeUtf8 "🍇")
-    , ("guava[uid: 344]", encodeUtf8 "🤷")
-    , ("kiwi[uid: 0]", encodeUtf8 "🥝")
-    , ("kumquat[uid: 0]", encodeUtf8 "🤷")
-    , ("lemon[uid: 0]", encodeUtf8 "🍋")
-    , ("lime[uid: 0]", encodeUtf8 "🤷")
-    , ("mango[uid: 0]", encodeUtf8 "🥭")
-    , ("orange[uid: 0]", encodeUtf8 "🍊")
-    , ("papaya[uid: 0]", encodeUtf8 "🤷")
-    , ("passionfruit[uid: 0]", encodeUtf8 "🤷")
-    , ("peach[uid: 0]", encodeUtf8 "🍑")
-    , ("pear[uid: 0]", encodeUtf8 "🍐")
-    , ("pineapple[uid: 12577]", encodeUtf8 "🍍")
-    , ("plum[uid: 15492]", encodeUtf8 "🤷")
-    , ("pomegranate[uid: 0]", encodeUtf8 "🤷")
-    , ("raspberry[uid: 0]", encodeUtf8 "🤷")
-    , ("strawberry[uid: 2532]", encodeUtf8 "🍓")
-    , ("tangerine[uid: 11]", encodeUtf8 "🍊")
-    , ("tomato[uid: 83468]", encodeUtf8 "🍅")
-    , ("watermelon[uid: 0]", encodeUtf8 "🍉")
-    , ("yuzu[uid: 0]", encodeUtf8 "🤷")
+    [ ("apple[uid: 58]", encodeUtf8 "\127822")
+    , ("apricot[uid: 0]", encodeUtf8 "\129335")
+    , ("banana[uid: 218]", encodeUtf8 "\127820")
+    , ("blueberry[uid: 0]", encodeUtf8 "\129744")
+    , ("cherry[uid: 0]", encodeUtf8 "\127826")
+    , ("coconut[uid: 0]", encodeUtf8 "\129381")
+    , ("cranberry[uid: 0]", encodeUtf8 "\129335")
+    , ("fig[uid: 68267]", encodeUtf8 "\129335")
+    , ("grapefruit[uid: 0]", encodeUtf8 "\129335")
+    , ("grapes[uid: 0]", encodeUtf8 "\127815")
+    , ("guava[uid: 344]", encodeUtf8 "\129335")
+    , ("kiwi[uid: 0]", encodeUtf8 "\129373")
+    , ("kumquat[uid: 0]", encodeUtf8 "\129335")
+    , ("lemon[uid: 0]", encodeUtf8 "\127819")
+    , ("lime[uid: 0]", encodeUtf8 "\129335")
+    , ("mango[uid: 0]", encodeUtf8 "\129389")
+    , ("orange[uid: 0]", encodeUtf8 "\127818")
+    , ("papaya[uid: 0]", encodeUtf8 "\129335")
+    , ("passionfruit[uid: 0]", encodeUtf8 "\129335")
+    , ("peach[uid: 0]", encodeUtf8 "\127825")
+    , ("pear[uid: 0]", encodeUtf8 "\127824")
+    , ("pineapple[uid: 12577]", encodeUtf8 "\127821")
+    , ("plum[uid: 15492]", encodeUtf8 "\129335")
+    , ("pomegranate[uid: 0]", encodeUtf8 "\129335")
+    , ("raspberry[uid: 0]", encodeUtf8 "\129335")
+    , ("strawberry[uid: 2532]", encodeUtf8 "\127827")
+    , ("tangerine[uid: 11]", encodeUtf8 "\127818")
+    , ("tomato[uid: 83468]", encodeUtf8 "\127813")
+    , ("watermelon[uid: 0]", encodeUtf8 "\127817")
+    , ("yuzu[uid: 0]", encodeUtf8 "\129335")
     ]
 
 -- | Expected root hash after inserting all fruits

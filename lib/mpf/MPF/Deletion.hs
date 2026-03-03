@@ -5,10 +5,11 @@ module MPF.Deletion
     , newMPFDeletionPath
     , MPFDeletionPath (..)
     , deletionPathToOps
+    , deleteSubtree
     )
 where
 
-import Control.Monad (guard)
+import Control.Monad (guard, unless)
 import Control.Monad.Trans.Maybe (MaybeT (..))
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -43,27 +44,30 @@ data MPFDeletionPath a where
         -> MPFDeletionPath a
     deriving (Show, Eq)
 
--- | Delete a key from the MPF structure
+-- | Delete a key from the MPF structure.
+-- The prefix scopes the operation to a subtree.
 deleting
     :: (Monad m, Ord k, GCompare d)
-    => FromHexKV k v a
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> FromHexKV k v a
     -> MPFHashing a
     -> Selector d k v
     -> Selector d HexKey (HexIndirect a)
     -> k
     -> Transaction m cf d ops ()
-deleting FromHexKV{fromHexK, hexTreePrefix} hashing kvSel mpfSel key = do
+deleting prefix FromHexKV{fromHexK, hexTreePrefix} hashing kvSel mpfSel key = do
     mv <- query kvSel key
     case mv of
         Nothing -> pure ()
         Just v -> do
             let treeKey = hexTreePrefix v <> fromHexK key
-            mpath <- newMPFDeletionPath mpfSel treeKey
+            mpath <- newMPFDeletionPath prefix mpfSel treeKey
             case mpath of
                 Nothing -> pure ()
                 Just path -> do
                     delete kvSel key
-                    mapM_ (applyOp mpfSel) $ deletionPathToOps hashing path
+                    mapM_ (applyOp mpfSel) $ deletionPathToOps prefix hashing path
 
 -- | Apply a single deletion operation
 applyOp
@@ -74,13 +78,16 @@ applyOp
 applyOp mpfSel (k, Nothing) = delete mpfSel k
 applyOp mpfSel (k, Just i) = insert mpfSel k i
 
--- | Convert a deletion path to database operations
+-- | Convert a deletion path to database operations.
+-- The prefix determines where storage keys are rooted.
 deletionPathToOps
     :: forall a
-     . MPFHashing a
+     . HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> MPFHashing a
     -> MPFDeletionPath a
     -> [(HexKey, Maybe (HexIndirect a))]
-deletionPathToOps hashing@MPFHashing{leafHash} = snd . go []
+deletionPathToOps prefix hashing@MPFHashing{leafHash} = snd . go prefix
   where
     -- \| Compute the NODE hash from a HexIndirect
     -- Leaf: compute leafHash from value hash
@@ -162,14 +169,17 @@ deletionPathToOps hashing@MPFHashing{leafHash} = snd . go []
                                     , [(k, Just i''), (k <> j <> [d], Nothing)] <> ops
                                     )
 
--- | Build a deletion path by traversing the trie
+-- | Build a deletion path by traversing the trie.
+-- The prefix scopes the query to a subtree.
 newMPFDeletionPath
     :: forall a d ops cf m
      . (Monad m, GCompare d)
-    => Selector d HexKey (HexIndirect a)
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> Selector d HexKey (HexIndirect a)
     -> HexKey
     -> Transaction m cf d ops (Maybe (MPFDeletionPath a))
-newMPFDeletionPath mpfSel = runMaybeT . go []
+newMPFDeletionPath prefix mpfSel = runMaybeT . go prefix
   where
     go
         :: HexKey
@@ -189,6 +199,27 @@ newMPFDeletionPath mpfSel = runMaybeT . go []
                 subpath <- go (current' <> [r]) remaining''
                 pure $ MPFDPBranch j r subpath siblings
 
+-- | Delete all nodes under a prefix (entire namespace).
+-- Walks the trie from @prefix@, deleting every node encountered.
+deleteSubtree
+    :: (Monad m, GCompare d)
+    => Selector d HexKey (HexIndirect a)
+    -> HexKey
+    -> Transaction m cf d ops ()
+deleteSubtree mpfSel = go
+  where
+    go current = do
+        mi <- query mpfSel current
+        case mi of
+            Nothing -> pure ()
+            Just HexIndirect{hexJump, hexIsLeaf} -> do
+                delete mpfSel current
+                unless hexIsLeaf $ do
+                    let base = current <> hexJump
+                    mapM_
+                        (\d -> go (base <> [d]))
+                        [HexDigit n | n <- [0 .. 15]]
+
 -- | Fetch all sibling nodes at a branch point (excluding the given digit)
 fetchSiblings
     :: (Monad m, GCompare d)
@@ -196,11 +227,11 @@ fetchSiblings
     -> HexKey
     -> HexDigit
     -> Transaction m cf d ops (Map HexDigit (HexIndirect a))
-fetchSiblings mpfSel prefix exclude = do
+fetchSiblings mpfSel pfx exclude = do
     let digits = [HexDigit n | n <- [0 .. 15], HexDigit n /= exclude]
     pairs <- mapM fetchOne digits
     pure $ Map.fromList [(d, i) | (d, Just i) <- pairs]
   where
     fetchOne d = do
-        mi <- query mpfSel (prefix <> [d])
+        mi <- query mpfSel (pfx <> [d])
         pure (d, mi)

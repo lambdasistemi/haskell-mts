@@ -74,7 +74,7 @@ isoMPFHash = iso parseMPFHashUnsafe renderMPFHash
         Nothing -> mkMPFHash bs
 
 fromHexKVIdentity :: FromHexKV HexKey MPFHash MPFHash
-fromHexKVIdentity = FromHexKV{fromHexK = id, fromHexV = id}
+fromHexKVIdentity = FromHexKV{fromHexK = id, fromHexV = id, hexTreePrefix = const []}
 
 -- | Insert using streaming with RocksDB
 insertAllRocksDB
@@ -91,6 +91,7 @@ insertAllRocksDB chunkSize testData dbPath = do
             let kvs = [(byteStringToHexKey k, mkMPFHash v) | (k, v) <- chunk]
             runTransactionUnguarded db
                 $ insertingStream
+                    []
                     fromHexKVIdentity
                     mpfHashing
                     MPFStandaloneKVCol
@@ -191,6 +192,7 @@ verifyKeys dbPath kvs = do
         runTransactionUnguarded db $ do
             mProof <-
                 mkMPFInclusionProof
+                    []
                     fromHexKVIdentity
                     mpfHashing
                     MPFStandaloneMPFCol
@@ -199,6 +201,7 @@ verifyKeys dbPath kvs = do
                 Nothing -> pure False
                 Just proof ->
                     verifyMPFInclusionProof
+                        []
                         fromHexKVIdentity
                         MPFStandaloneMPFCol
                         mpfHashing

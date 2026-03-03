@@ -98,6 +98,7 @@ data MPFProof a = MPFProof
     deriving (Show, Eq)
 
 -- | Generate a membership proof for a key.
+-- The prefix scopes the query to a subtree.
 --
 -- When a branch has exactly one non-empty sibling:
 --
@@ -113,12 +114,14 @@ data MPFProof a = MPFProof
 -- validator format byte-for-byte.
 mkMPFInclusionProof
     :: (Monad m, GCompare d)
-    => FromHexKV k v a
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> FromHexKV k v a
     -> MPFHashing a
     -> Selector d HexKey (HexIndirect a)
     -> k
     -> Transaction m cf d ops (Maybe (MPFProof a))
-mkMPFInclusionProof FromHexKV{fromHexK} hashing sel k =
+mkMPFInclusionProof prefix FromHexKV{fromHexK} hashing sel k =
     runMaybeT $ do
         let key = fromHexK k
         HexIndirect
@@ -126,7 +129,7 @@ mkMPFInclusionProof FromHexKV{fromHexK} hashing sel k =
             , hexValue = rootValue
             , hexIsLeaf = rootIsLeaf
             } <-
-            MaybeT $ query sel []
+            MaybeT $ query sel prefix
         guard $ isPrefixOf rootJump key
         let remainingAfterRoot = drop (length rootJump) key
         if rootIsLeaf
@@ -140,7 +143,7 @@ mkMPFInclusionProof FromHexKV{fromHexK} hashing sel k =
                         }
             else do
                 (steps, leafSuffix, valHash) <-
-                    go [] rootJump remainingAfterRoot
+                    go prefix rootJump remainingAfterRoot
                 pure
                     $ MPFProof
                         { mpfProofSteps = reverse steps
@@ -269,7 +272,7 @@ fetchSiblingDetails
     -> HexKey
     -> HexDigit
     -> Transaction m cf d ops (Map HexDigit (HexIndirect a))
-fetchSiblingDetails sel prefix exclude = do
+fetchSiblingDetails sel pfx exclude = do
     let digits =
             [ HexDigit n
             | n <- [0 .. 15]
@@ -281,7 +284,7 @@ fetchSiblingDetails sel prefix exclude = do
             [(d, hi) | (d, Just hi) <- pairs]
   where
     fetchOne d = do
-        mi <- query sel (prefix <> [d])
+        mi <- query sel (pfx <> [d])
         pure (d, mi)
 
 -- | Compute the merkle root of a branch's children
@@ -453,23 +456,27 @@ foldMPFProof
                                 psfBranchJump
                                 mr
 
--- | Verify a membership proof
+-- | Verify a membership proof.
+-- The prefix scopes the root query to a subtree.
 verifyMPFInclusionProof
     :: (Eq a, Monad m, GCompare d)
-    => FromHexKV k v a
+    => HexKey
+    -- ^ Prefix (use @[]@ for root)
+    -> FromHexKV k v a
     -> Selector d HexKey (HexIndirect a)
     -> MPFHashing a
     -> v
     -> MPFProof a
     -> Transaction m cf d ops Bool
 verifyMPFInclusionProof
+    prefix
     FromHexKV{fromHexV}
     sel
     hashing@MPFHashing{leafHash = lh}
     v
     proof = do
         let valueHash = fromHexV v
-        mv <- query sel []
+        mv <- query sel prefix
         pure $ case mv of
             Just
                 HexIndirect

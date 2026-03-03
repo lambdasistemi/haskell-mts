@@ -13,6 +13,9 @@ module MTS.Interface
     , MtsProof
     , MtsLeaf
     , MtsCompletenessProof
+    , MtsPrefix
+    , NamespacedMTS (..)
+    , hoistNamespacedMTS
     )
 where
 
@@ -83,4 +86,28 @@ hoistMTS f s =
         , mtsMkCompletenessProof = f (mtsMkCompletenessProof s)
         , mtsVerifyCompletenessProof =
             \ls p -> f (mtsVerifyCompletenessProof s ls p)
+        }
+
+-- | Namespace prefix type for an implementation.
+type family MtsPrefix imp
+
+-- | A namespaced Merkle tree store supporting multiple independent
+-- namespaces within one database.
+data NamespacedMTS imp m = NamespacedMTS
+    { nsStore :: MtsPrefix imp -> MerkleTreeStore imp m
+    -- ^ Get a scoped store for a namespace.
+    --   Creation is implicit on first insert.
+    , nsDelete :: MtsPrefix imp -> m ()
+    -- ^ Delete an entire namespace (all nodes under prefix).
+    }
+
+-- | Transform the monad of a 'NamespacedMTS'.
+hoistNamespacedMTS
+    :: (forall a. m a -> n a)
+    -> NamespacedMTS imp m
+    -> NamespacedMTS imp n
+hoistNamespacedMTS f ns =
+    NamespacedMTS
+        { nsStore = hoistMTS f . nsStore ns
+        , nsDelete = f . nsDelete ns
         }
