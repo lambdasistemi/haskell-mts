@@ -14,6 +14,12 @@ module MTS.Rollbacks.Types
 
       -- * Inverse computation
     , inverseOf
+
+      -- * Slot wrapper
+    , WithOrigin (..)
+
+      -- * Rollback point
+    , RollbackPoint (..)
     )
 where
 
@@ -62,3 +68,40 @@ inverseOf (Insert k _v) (Just old) =
     Just (Insert k old)
 inverseOf (Delete _k) Nothing = Nothing
 inverseOf (Delete k) (Just v) = Just (Insert k v)
+
+-- | Optional slot position. 'Origin' represents the
+-- genesis point before any block.
+--
+-- Own copy to avoid depending on @ouroboros-network@.
+-- Isomorphic to 'Maybe' but with explicit ordering:
+-- @Origin < At a@ for all @a@.
+data WithOrigin a
+    = -- | The genesis point (before any block).
+      Origin
+    | -- | A concrete slot.
+      At a
+    deriving stock (Eq, Show)
+
+instance (Ord a) => Ord (WithOrigin a) where
+    compare Origin Origin = EQ
+    compare Origin (At _) = LT
+    compare (At _) Origin = GT
+    compare (At x) (At y) = compare x y
+
+-- | A rollback point storing inverse operations
+-- and optional metadata at a given slot.
+--
+-- The @inv@ parameter is the inverse operation
+-- type — 'Operation' for simple key-value stores,
+-- or a domain-specific sum for richer state.
+--
+-- The @meta@ parameter carries per-point metadata
+-- (e.g. block hash, merkle root). Set to @()@ if
+-- not needed.
+data RollbackPoint inv meta = RollbackPoint
+    { rpInverses :: [inv]
+    -- ^ Inverse operations to replay on rollback.
+    , rpMeta :: Maybe meta
+    -- ^ Optional per-point metadata.
+    }
+    deriving stock (Eq, Show)
