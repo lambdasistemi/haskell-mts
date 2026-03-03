@@ -73,18 +73,20 @@ compose R j left right = Compose j right left
 -- 3. Computes hashes and applies all CSMT updates atomically
 inserting
     :: (Monad m, Ord k, GCompare d)
-    => FromKV k v a
+    => Key
+    -- ^ Prefix (use @[]@ for root)
+    -> FromKV k v a
     -> Hashing a
     -> Selector d k v
     -> Selector d Key (Indirect a)
     -> k
     -> v
     -> Transaction m cf d ops ()
-inserting FromKV{isoK, fromV, treePrefix} hashing kVCol csmtCol k v = do
+inserting pfx FromKV{isoK, fromV, treePrefix} hashing kVCol csmtCol k v = do
     insert kVCol k v
     let treeKey = treePrefix v <> view isoK k
-    c <- buildComposeTree csmtCol treeKey (fromV v)
-    mapM_ (uncurry $ insert csmtCol) $ snd $ scanCompose hashing c
+    c <- buildComposeTree csmtCol pfx treeKey (fromV v)
+    mapM_ (uncurry $ insert csmtCol) $ snd $ scanCompose pfx hashing c
 
 -- |
 -- Scan a Compose tree bottom-up, computing hashes and collecting database operations.
@@ -92,8 +94,12 @@ inserting FromKV{isoK, fromV, treePrefix} hashing kVCol csmtCol k v = do
 -- Returns the root indirect value and a list of (key, value) pairs to insert.
 -- Hashes are computed by combining child hashes at each internal node.
 scanCompose
-    :: Hashing a -> Compose a -> (Indirect a, [(Key, Indirect a)])
-scanCompose Hashing{combineHash} = go []
+    :: Key
+    -- ^ Prefix (use @[]@ for root)
+    -> Hashing a
+    -> Compose a
+    -> (Indirect a, [(Key, Indirect a)])
+scanCompose pfx Hashing{combineHash} = go pfx
   where
     go k (Leaf i) = (i, [(k, i)])
     go k (Compose jump left right) =
@@ -118,9 +124,11 @@ buildComposeTree
      . (Monad m, GCompare d)
     => Selector d Key (Indirect a)
     -> Key
+    -- ^ Prefix (use @[]@ for root)
+    -> Key
     -> a
     -> Transaction m cf d ops (Compose a)
-buildComposeTree csmtCol key h = go key [] pure
+buildComposeTree csmtCol pfx key h = go key pfx pure
   where
     go [] _ cont = cont $ Leaf $ Indirect [] h
     go target current cont = do

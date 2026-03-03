@@ -50,7 +50,7 @@ spec = do
                 (mp, _) = do
                     runPure rs0
                         $ runPureTransaction word64Codecs
-                        $ newDeletionPath StandaloneCSMTCol []
+                        $ newDeletionPath [] StandaloneCSMTCol []
               in
                 mp `shouldBe` Just (Value [] 1)
         it "constructs a deletion path for a tree with siblings"
@@ -269,7 +269,7 @@ spec = do
                 rs1 = insertWord64 rs0 [L, R] (2 :: Word64)
                 rs2 = insertWord64 rs1 [R, L] (3 :: Word64)
                 Just mp = mkDeletionPath word64Codecs rs2 [L, R]
-                ops = deletionPathToOps word64Hashing mp
+                ops = deletionPathToOps [] word64Hashing mp
               in
                 ops
                     `shouldBe` [ ([], Just $ node [R, L] 3)

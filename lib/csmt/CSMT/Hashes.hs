@@ -98,7 +98,7 @@ insert
     -> k
     -> v
     -> Transaction m cf d ops ()
-insert csmt = inserting csmt hashHashing
+insert csmt = inserting [] csmt hashHashing
 
 -- | Delete a key-value pair using Blake2b-256 hashing.
 delete
@@ -108,7 +108,7 @@ delete
     -> Selector d Key (Indirect Hash)
     -> k
     -> Transaction m cf d ops ()
-delete csmt = deleting csmt hashHashing
+delete csmt = deleting [] csmt hashHashing
 
 -- | Convert a ByteString to a Key by expanding each byte to 8 directions.
 byteStringToKey :: ByteString -> Key
@@ -139,7 +139,7 @@ root
     => Selector d Key (Indirect Hash)
     -> Transaction m cf d ops (Maybe ByteString)
 root csmt = do
-    mi <- Interface.root hashHashing csmt
+    mi <- Interface.root hashHashing csmt []
     case mi of
         Nothing -> return Nothing
         Just v -> return (Just $ renderHash v)
@@ -157,7 +157,7 @@ generateInclusionProof
     -> k
     -> Transaction m cf d ops (Maybe (v, ByteString))
 generateInclusionProof csmt kvSel csmtSel k = do
-    mp <- Proof.buildInclusionProof csmt kvSel csmtSel hashHashing k
+    mp <- Proof.buildInclusionProof [] csmt kvSel csmtSel hashHashing k
     pure $ fmap (second renderProof) mp
 
 -- | Verify an inclusion proof from a serialized ByteString.

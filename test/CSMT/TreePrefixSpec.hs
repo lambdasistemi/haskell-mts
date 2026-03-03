@@ -121,12 +121,12 @@ spec = do
                     fst
                         $ runPure db
                         $ runPureTransaction word64Codecs
-                        $ collectValues StandaloneCSMTCol [L]
+                        $ collectValues StandaloneCSMTCol [] [L]
                 collectedR =
                     fst
                         $ runPure db
                         $ runPureTransaction word64Codecs
-                        $ collectValues StandaloneCSMTCol [R]
+                        $ collectValues StandaloneCSMTCol [] [R]
             length collectedL `shouldBe` 2
             length collectedR `shouldBe` 1
 
@@ -139,7 +139,7 @@ spec = do
                     fst
                         $ runPure db
                         $ runPureTransaction word64Codecs
-                        $ collectValues StandaloneCSMTCol [L]
+                        $ collectValues StandaloneCSMTCol [] [L]
             length collected `shouldBe` 1
             map value collected `shouldBe` [2]
 
@@ -196,12 +196,12 @@ spec = do
                             fst
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
-                                $ collectValues StandaloneCSMTCol [L]
+                                $ collectValues StandaloneCSMTCol [] [L]
                         collectedR =
                             fst
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
-                                $ collectValues StandaloneCSMTCol [R]
+                                $ collectValues StandaloneCSMTCol [] [R]
                         actualEven = sort $ map value collectedL
                         actualOdd = sort $ map value collectedR
                     actualEven `shouldBe` expectedEven
@@ -218,7 +218,7 @@ spec = do
                             fst
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
-                                $ collectValues StandaloneCSMTCol p
+                                $ collectValues StandaloneCSMTCol [] p
                         allValues = sort $ map value $ collect []
                         partitioned =
                             sort
@@ -239,7 +239,7 @@ spec = do
                                 $ fst
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
-                                $ collectValues StandaloneCSMTCol []
+                                $ collectValues StandaloneCSMTCol [] []
                         expected = sort $ map snd kvs
                     collected `shouldBe` expected
 
@@ -255,7 +255,7 @@ spec = do
                             fst
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
-                                $ collectValues StandaloneCSMTCol [R]
+                                $ collectValues StandaloneCSMTCol [] [R]
                     collected `shouldBe` []
 
         it "completeness proof for both prefix subtrees verifies"
@@ -269,14 +269,14 @@ spec = do
                             fst
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
-                                $ queryPrefix StandaloneCSMTCol []
+                                $ queryPrefix StandaloneCSMTCol [] []
                         verifyP p =
                             fst
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
                                 $ do
-                                    c <- collectValues StandaloneCSMTCol p
-                                    pr <- generateProof StandaloneCSMTCol p
+                                    c <- collectValues StandaloneCSMTCol [] p
+                                    pr <- generateProof StandaloneCSMTCol [] p
                                     pure (c, pr)
                     -- Verify both [L] and [R] subtrees
                     mapM_
@@ -310,9 +310,9 @@ spec = do
                                 $ runPure db
                                 $ runPureTransaction word64Codecs
                                 $ do
-                                    c <- collectValues StandaloneCSMTCol []
-                                    p <- generateProof StandaloneCSMTCol []
-                                    r <- queryPrefix StandaloneCSMTCol []
+                                    c <- collectValues StandaloneCSMTCol [] []
+                                    p <- generateProof StandaloneCSMTCol [] []
+                                    r <- queryPrefix StandaloneCSMTCol [] []
                                     pure (c, p, r)
                     case proof of
                         Nothing -> collected `shouldBe` []
@@ -339,8 +339,8 @@ spec = do
                                         $ runPure db
                                         $ runPureTransaction word64Codecs
                                         $ do
-                                            c <- collectValues StandaloneCSMTCol p
-                                            pr <- generateProof StandaloneCSMTCol p
+                                            c <- collectValues StandaloneCSMTCol [] p
+                                            pr <- generateProof StandaloneCSMTCol [] p
                                             pure (null c, isJust pr)
                             in  isEmpty /= hasProof
                     all consistent ([[], [L], [R]] :: [Key])

@@ -89,7 +89,9 @@ data InclusionProof a = InclusionProof
 -- the current state of the tree.
 buildInclusionProof
     :: (Monad m, Ord k, GCompare d)
-    => FromKV k v a
+    => Key
+    -- ^ Prefix (use @[]@ for root)
+    -> FromKV k v a
     -> Selector d k v
     -- ^ KV column to look up the value
     -> Selector d Key (Indirect a)
@@ -97,12 +99,12 @@ buildInclusionProof
     -> Hashing a
     -> k
     -> Transaction m cf d ops (Maybe (v, InclusionProof a))
-buildInclusionProof FromKV{isoK, fromV, treePrefix} kvSel csmtSel hashing k =
+buildInclusionProof pfx FromKV{isoK, fromV, treePrefix} kvSel csmtSel hashing k =
     runMaybeT $ do
         v <- MaybeT $ query kvSel k
         let key = treePrefix v <> view isoK k
             value = fromV v
-        rootIndirect@(Indirect rootJump _) <- MaybeT $ query csmtSel []
+        rootIndirect@(Indirect rootJump _) <- MaybeT $ query csmtSel pfx
         guard $ isPrefixOf rootJump key
         steps <- go rootJump $ drop (length rootJump) key
         let proofData =

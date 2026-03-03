@@ -54,6 +54,7 @@ mkCsmtStore = do
             pure a
     pure
         $ csmtMerkleTreeStore
+            []
             run
             (pureDatabase csmtCodecs)
             fromKVHashes

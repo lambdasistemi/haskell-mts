@@ -43,6 +43,13 @@ module CSMT.Test.Lib
     , word64Codecs
     , hashCodecs
     , listOfWord64Codecs
+    , insertHashMAt
+    , deleteHashMAt
+    , deleteSubtreeHashMAt
+    , getRootHashMAt
+    , verifyHashMAt
+    , insertHashM
+    , getRootHashM
     )
 where
 
@@ -55,6 +62,7 @@ import CSMT
     , Standalone (..)
     , StandaloneCodecs (..)
     , buildInclusionProof
+    , deleteSubtree
     , inserting
     , keyPrism
     , verifyInclusionProof
@@ -72,7 +80,7 @@ import CSMT.Deletion
     , newDeletionPath
     )
 import CSMT.Hashes (Hash, hashHashing, isoHash, mkHash)
-import CSMT.Interface (FromKV (..), Hashing (..))
+import CSMT.Interface (FromKV (..), Hashing (..), root)
 import Control.Lens (Prism', prism', simple)
 import Control.Monad (replicateM)
 import Control.Monad.Free (Free (..), liftF)
@@ -157,7 +165,7 @@ insertM
     -> Pure ()
 insertM codecs fromKV hashing k v =
     runTransactionUnguarded (pureDatabase codecs)
-        $ inserting fromKV hashing StandaloneKVCol StandaloneCSMTCol k v
+        $ inserting [] fromKV hashing StandaloneKVCol StandaloneCSMTCol k v
 
 word64Prism :: Prism' ByteString Word64
 word64Prism = prism' encode decode
@@ -176,7 +184,7 @@ deleteM
     -> Pure ()
 deleteM codecs fromKV hashing k =
     runTransactionUnguarded (pureDatabase codecs)
-        $ deleting fromKV hashing StandaloneKVCol StandaloneCSMTCol k
+        $ deleting [] fromKV hashing StandaloneKVCol StandaloneCSMTCol k
 
 insertMWord64 :: Key -> Word64 -> Pure ()
 insertMWord64 = insertM word64Codecs identityFromKV word64Hashing
@@ -235,6 +243,7 @@ proofM
 proofM codecs fromKV hashing k =
     runTransactionUnguarded (pureDatabase codecs)
         $ buildInclusionProof
+            []
             fromKV
             StandaloneKVCol
             StandaloneCSMTCol
@@ -324,7 +333,7 @@ mkDeletionPath codecs s k =
     fst
         . runPure s
         $ runTransactionUnguarded (pureDatabase codecs)
-        $ newDeletionPath StandaloneCSMTCol k
+        $ newDeletionPath [] StandaloneCSMTCol k
 
 data List e a
     = Cons e a
@@ -371,3 +380,66 @@ insertHashes = mapM_ $ insertIndirectM hashCodecs hashHashing
 
 manyRandomPaths :: Gen [Key]
 manyRandomPaths = scale (* 10) $ genSomePaths 256
+
+-- | Insert a hash at a prefix in the Pure monad.
+insertHashMAt :: Key -> Key -> Hash -> Pure ()
+insertHashMAt prefix k v =
+    runTransactionUnguarded (pureDatabase hashCodecs)
+        $ inserting
+            prefix
+            identityFromKV
+            hashHashing
+            StandaloneKVCol
+            StandaloneCSMTCol
+            k
+            v
+
+-- | Insert a hash at root in the Pure monad.
+insertHashM :: Key -> Hash -> Pure ()
+insertHashM = insertHashMAt []
+
+-- | Delete a hash at a prefix in the Pure monad.
+deleteHashMAt :: Key -> Key -> Pure ()
+deleteHashMAt prefix k =
+    runTransactionUnguarded (pureDatabase hashCodecs)
+        $ deleting
+            prefix
+            identityFromKV
+            hashHashing
+            StandaloneKVCol
+            StandaloneCSMTCol
+            k
+
+-- | Delete an entire subtree at a prefix.
+deleteSubtreeHashMAt :: Key -> Pure ()
+deleteSubtreeHashMAt prefix =
+    runTransactionUnguarded (pureDatabase hashCodecs)
+        $ deleteSubtree StandaloneCSMTCol prefix
+
+-- | Get the root hash at a prefix.
+getRootHashMAt :: Key -> Pure (Maybe Hash)
+getRootHashMAt prefix =
+    runTransactionUnguarded (pureDatabase hashCodecs)
+        $ root hashHashing StandaloneCSMTCol prefix
+
+-- | Get the root hash at root.
+getRootHashM :: Pure (Maybe Hash)
+getRootHashM = getRootHashMAt []
+
+-- | Verify a membership proof at a prefix.
+verifyHashMAt :: Key -> Key -> Hash -> Pure Bool
+verifyHashMAt prefix k v =
+    runTransactionUnguarded (pureDatabase hashCodecs) $ do
+        mProof <-
+            buildInclusionProof
+                prefix
+                identityFromKV
+                StandaloneKVCol
+                StandaloneCSMTCol
+                hashHashing
+                k
+        pure $ case mProof of
+            Nothing -> False
+            Just (val, proof) ->
+                val == v
+                    && verifyInclusionProof hashHashing proof

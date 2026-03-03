@@ -84,6 +84,7 @@ rocksDBCodecs =
 iM :: ByteString -> ByteString -> T ()
 iM =
     inserting
+        []
         fromKVHashes
         hashHashing
         StandaloneKVCol
@@ -92,6 +93,7 @@ iM =
 dM :: ByteString -> T ()
 dM =
     deleting
+        []
         fromKVHashes
         hashHashing
         StandaloneKVCol
@@ -100,6 +102,7 @@ dM =
 pfM :: ByteString -> T (Maybe (ByteString, InclusionProof Hash))
 pfM =
     buildInclusionProof
+        []
         fromKVHashes
         StandaloneKVCol
         StandaloneCSMTCol

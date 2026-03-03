@@ -45,7 +45,7 @@ spec = do
                     collected = evalPureFromEmptyDB $ do
                         insertWord64s values
                         runPureTransaction word64Codecs
-                            $ collectValues StandaloneCSMTCol []
+                            $ collectValues StandaloneCSMTCol [] []
                 collected
                     `shouldBe` sort values
         it "collects all values for a simple tree of hashes"
@@ -56,7 +56,7 @@ spec = do
                     collected = evalPureFromEmptyDB $ do
                         insertHashes values
                         runPureTransaction hashCodecs
-                            $ collectValues StandaloneCSMTCol []
+                            $ collectValues StandaloneCSMTCol [] []
                 collected
                     `shouldBe` sort values
     describe "generateProof" $ do
@@ -64,14 +64,14 @@ spec = do
             $ let mp =
                     evalPureFromEmptyDB
                         $ runPureTransaction hashCodecs
-                        $ generateProof StandaloneCSMTCol []
+                        $ generateProof StandaloneCSMTCol [] []
               in  mp `shouldBe` Nothing
         it "can generate proof for simple tree"
             $ let
                 mp = evalPureFromEmptyDB $ do
                     insertWord64s [indirect [L] 1]
                     runPureTransaction word64Codecs
-                        $ generateProof StandaloneCSMTCol []
+                        $ generateProof StandaloneCSMTCol [] []
               in
                 fmap cpMergeOps mp `shouldBe` Just []
         it "can generate proof for larger tree"
@@ -82,7 +82,7 @@ spec = do
                         , indirect [R] 2
                         ]
                     runPureTransaction word64Codecs
-                        $ generateProof StandaloneCSMTCol []
+                        $ generateProof StandaloneCSMTCol [] []
               in
                 fmap cpMergeOps mp `shouldBe` Just [(0, 1)]
         it "can generate proof for even larger tree"
@@ -95,7 +95,7 @@ spec = do
                         , indirect [R, R, R, R] 16
                         ]
                     runPureTransaction word64Codecs
-                        $ generateProof StandaloneCSMTCol []
+                        $ generateProof StandaloneCSMTCol [] []
               in
                 fmap cpMergeOps mp
                     `shouldBe` Just [(1, 2), (0, 1), (0, 3)]
@@ -112,7 +112,7 @@ spec = do
                     insertWord64s values
                     mp' <-
                         runPureTransaction word64Codecs
-                            $ generateProof StandaloneCSMTCol []
+                            $ generateProof StandaloneCSMTCol [] []
                     r' <-
                         runPureTransaction word64Codecs
                             $ query StandaloneCSMTCol []
@@ -138,7 +138,7 @@ spec = do
                         insertWord64s values
                         mp' <-
                             runPureTransaction word64Codecs
-                                $ generateProof StandaloneCSMTCol []
+                                $ generateProof StandaloneCSMTCol [] []
                         r' <-
                             runPureTransaction word64Codecs
                                 $ query StandaloneCSMTCol []
@@ -163,7 +163,7 @@ spec = do
                         insertHashes values
                         mp' <-
                             runPureTransaction hashCodecs
-                                $ generateProof StandaloneCSMTCol []
+                                $ generateProof StandaloneCSMTCol [] []
                         r' <-
                             runPureTransaction hashCodecs
                                 $ query StandaloneCSMTCol []

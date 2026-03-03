@@ -52,7 +52,7 @@ collectMPFLeaves
     -> HexKey
     -- ^ Prefix (use @[]@ for root)
     -> Transaction m cf d op [HexIndirect a]
-collectMPFLeaves sel prefix = navigate prefix
+collectMPFLeaves sel = navigate
   where
     navigate currentKey = do
         mi <- query sel currentKey

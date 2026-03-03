@@ -19,12 +19,14 @@
 module CSMT
     ( module CSMT.Interface
     , module CSMT.Insertion
+    , module CSMT.Deletion
     , module CSMT.Proof.Insertion
     , module CSMT.Backend.Standalone
     )
 where
 
 import CSMT.Backend.Standalone
+import CSMT.Deletion
 import CSMT.Insertion
 import CSMT.Interface
 import CSMT.Proof.Insertion

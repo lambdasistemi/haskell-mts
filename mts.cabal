@@ -231,6 +231,7 @@ test-suite unit-tests
     CSMT.HashesSpec
     CSMT.InsertionSpec
     CSMT.InterfaceSpec
+    CSMT.NamespaceSpec
     CSMT.Proof.CompletenessSpec
     CSMT.Proof.InsertionSpec
     CSMT.TreePrefixSpec

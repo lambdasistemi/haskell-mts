@@ -145,9 +145,11 @@ root
     :: (Monad m, GCompare d)
     => Hashing a
     -> Selector d Key (Indirect a)
+    -> Key
+    -- ^ Prefix (use @[]@ for root)
     -> Transaction m cf d ops (Maybe a)
-root hsh sel = do
-    mi <- query sel []
+root hsh sel pfx = do
+    mi <- query sel pfx
     pure $ case mi of
         Nothing -> Nothing
         Just i -> Just $ rootHash hsh i

@@ -4,18 +4,20 @@
 -- and constructors that wrap CSMT operations into
 -- 'MerkleTreeStore'.
 --
--- Two constructors are provided:
+-- Four constructors are provided:
 --
--- * 'csmtMerkleTreeStoreT' — operations live in the
---   'Transaction' monad, composable within a single atomic
---   transaction.
+-- * 'csmtMerkleTreeStoreT' — prefix-scoped transactional store,
+--   composable within a single atomic transaction.
 -- * 'csmtMerkleTreeStore' — convenience wrapper that commits
---   each operation in its own transaction (suitable for simple
---   use cases and tests).
+--   each operation in its own transaction.
+-- * 'csmtNamespacedMTST' — transactional namespaced store.
+-- * 'csmtNamespacedMTS' — IO namespaced store.
 module CSMT.MTS
     ( CsmtImpl
     , csmtMerkleTreeStoreT
     , csmtMerkleTreeStore
+    , csmtNamespacedMTST
+    , csmtNamespacedMTS
     )
 where
 
@@ -24,13 +26,14 @@ import CSMT.Backend.Standalone
     , StandaloneCF
     , StandaloneOp
     )
-import CSMT.Deletion (deleting)
+import CSMT.Deletion (deleteSubtree, deleting)
 import CSMT.Hashes (Hash)
 import CSMT.Insertion (inserting)
 import CSMT.Interface
     ( FromKV (..)
     , Hashing (..)
     , Indirect (..)
+    , Key
     , root
     )
 import CSMT.Proof.Completeness
@@ -57,9 +60,12 @@ import MTS.Interface
     , MtsHash
     , MtsKey
     , MtsLeaf
+    , MtsPrefix
     , MtsProof
     , MtsValue
+    , NamespacedMTS (..)
     , hoistMTS
+    , hoistNamespacedMTS
     )
 
 -- | Phantom type tag for the CSMT implementation.
@@ -71,8 +77,10 @@ type instance MtsHash CsmtImpl = Hash
 type instance MtsProof CsmtImpl = InclusionProof Hash
 type instance MtsLeaf CsmtImpl = Indirect Hash
 type instance MtsCompletenessProof CsmtImpl = CompletenessProof Hash
+type instance MtsPrefix CsmtImpl = Key
 
--- | Build a transactional 'MerkleTreeStore' for CSMT.
+-- | Build a transactional 'MerkleTreeStore' for CSMT scoped to a
+-- prefix.
 --
 -- Operations live in the 'Transaction' monad so multiple
 -- calls can be composed into a single atomic transaction:
@@ -85,7 +93,9 @@ type instance MtsCompletenessProof CsmtImpl = CompletenessProof Hash
 -- @
 csmtMerkleTreeStoreT
     :: (Monad m)
-    => FromKV ByteString ByteString Hash
+    => Key
+    -- ^ Prefix (use @[]@ for root)
+    -> FromKV ByteString ByteString Hash
     -> Hashing Hash
     -> MerkleTreeStore
         CsmtImpl
@@ -95,17 +105,28 @@ csmtMerkleTreeStoreT
             (Standalone ByteString ByteString Hash)
             StandaloneOp
         )
-csmtMerkleTreeStoreT fromKV hashing =
+csmtMerkleTreeStoreT prefix fromKV hashing =
     MerkleTreeStore
         { mtsInsert =
-            inserting fromKV hashing StandaloneKVCol StandaloneCSMTCol
+            inserting
+                prefix
+                fromKV
+                hashing
+                StandaloneKVCol
+                StandaloneCSMTCol
         , mtsDelete =
-            deleting fromKV hashing StandaloneKVCol StandaloneCSMTCol
+            deleting
+                prefix
+                fromKV
+                hashing
+                StandaloneKVCol
+                StandaloneCSMTCol
         , mtsRootHash =
-            root hashing StandaloneCSMTCol
+            root hashing StandaloneCSMTCol prefix
         , mtsMkProof = \k -> do
             mp <-
                 buildInclusionProof
+                    prefix
                     fromKV
                     StandaloneKVCol
                     StandaloneCSMTCol
@@ -114,7 +135,7 @@ csmtMerkleTreeStoreT fromKV hashing =
             case mp of
                 Nothing -> pure Nothing
                 Just (_, proof) -> do
-                    mr <- root hashing StandaloneCSMTCol
+                    mr <- root hashing StandaloneCSMTCol prefix
                     pure $ case mr of
                         Nothing -> Nothing
                         Just r -> Just (r, proof)
@@ -128,6 +149,7 @@ csmtMerkleTreeStoreT fromKV hashing =
             mapM_
                 ( uncurry
                     ( inserting
+                        prefix
                         fromKV
                         hashing
                         StandaloneKVCol
@@ -135,11 +157,12 @@ csmtMerkleTreeStoreT fromKV hashing =
                     )
                 )
         , mtsCollectLeaves =
-            collectValues StandaloneCSMTCol []
+            collectValues StandaloneCSMTCol prefix []
         , mtsMkCompletenessProof =
-            generateProof StandaloneCSMTCol []
+            generateProof StandaloneCSMTCol prefix []
         , mtsVerifyCompletenessProof = \leaves proof -> do
-            currentRoot <- root hashing StandaloneCSMTCol
+            currentRoot <-
+                root hashing StandaloneCSMTCol prefix
             let computed =
                     foldCompletenessProof hashing [] leaves proof
             pure $ case (currentRoot, computed) of
@@ -148,11 +171,56 @@ csmtMerkleTreeStoreT fromKV hashing =
                 _ -> False
         }
 
--- | Build an IO 'MerkleTreeStore' for CSMT.
+-- | Build an IO 'MerkleTreeStore' for CSMT scoped to a prefix.
 --
 -- Each operation commits in its own transaction. For atomic
 -- multi-operation sequences, use 'csmtMerkleTreeStoreT' instead.
 csmtMerkleTreeStore
+    :: (MonadFail m)
+    => Key
+    -- ^ Prefix (use @[]@ for root)
+    -> (forall b. m b -> IO b)
+    -> Database
+        m
+        StandaloneCF
+        (Standalone ByteString ByteString Hash)
+        StandaloneOp
+    -> FromKV ByteString ByteString Hash
+    -> Hashing Hash
+    -> MerkleTreeStore CsmtImpl IO
+csmtMerkleTreeStore prefix run db fromKV hashing =
+    hoistMTS
+        (run . runTransactionUnguarded db)
+        (csmtMerkleTreeStoreT prefix fromKV hashing)
+
+-- | Build a transactional 'NamespacedMTS' for CSMT.
+--
+-- Each namespace is a prefix-scoped 'MerkleTreeStore'.
+csmtNamespacedMTST
+    :: (Monad m)
+    => FromKV ByteString ByteString Hash
+    -> Hashing Hash
+    -> NamespacedMTS
+        CsmtImpl
+        ( Transaction
+            m
+            StandaloneCF
+            (Standalone ByteString ByteString Hash)
+            StandaloneOp
+        )
+csmtNamespacedMTST fromKV hashing =
+    NamespacedMTS
+        { nsStore = \prefix ->
+            csmtMerkleTreeStoreT prefix fromKV hashing
+        , nsDelete =
+            deleteSubtree StandaloneCSMTCol
+        }
+
+-- | Build an IO 'NamespacedMTS' for CSMT.
+--
+-- Each namespace is a prefix-scoped 'MerkleTreeStore' that
+-- commits each operation in its own transaction.
+csmtNamespacedMTS
     :: (MonadFail m)
     => (forall b. m b -> IO b)
     -> Database
@@ -162,8 +230,8 @@ csmtMerkleTreeStore
         StandaloneOp
     -> FromKV ByteString ByteString Hash
     -> Hashing Hash
-    -> MerkleTreeStore CsmtImpl IO
-csmtMerkleTreeStore run db fromKV hashing =
-    hoistMTS
+    -> NamespacedMTS CsmtImpl IO
+csmtNamespacedMTS run db fromKV hashing =
+    hoistNamespacedMTS
         (run . runTransactionUnguarded db)
-        (csmtMerkleTreeStoreT fromKV hashing)
+        (csmtNamespacedMTST fromKV hashing)

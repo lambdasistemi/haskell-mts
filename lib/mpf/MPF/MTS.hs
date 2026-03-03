@@ -218,8 +218,8 @@ mpfNamespacedMTST fromKV hashing =
     NamespacedMTS
         { nsStore = \prefix ->
             mpfMerkleTreeStoreT prefix fromKV hashing
-        , nsDelete = \prefix ->
-            deleteSubtree MPFStandaloneMPFCol prefix
+        , nsDelete =
+            deleteSubtree MPFStandaloneMPFCol
         }
 
 -- | Build an IO 'NamespacedMTS' for MPF.

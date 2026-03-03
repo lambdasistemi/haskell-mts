@@ -184,8 +184,10 @@ collectValues
     :: (Monad m, GCompare d)
     => Selector d Key (Indirect a)
     -> Key
+    -- ^ Prefix (use @[]@ for root)
+    -> Key
     -> Transaction m cf d op [Indirect a]
-collectValues sel = navigate []
+collectValues sel = navigate
   where
     navigate currentKey remainingPrefix = do
         mi <- query sel currentKey
@@ -228,9 +230,11 @@ generateProof
      . (Monad m, GCompare d)
     => Selector d Key (Indirect a)
     -> Key
+    -- ^ Prefix (use @[]@ for root)
+    -> Key
     -> Transaction m cf d op (Maybe (CompletenessProof a))
-generateProof sel targetPrefix = do
-    result <- navigate 0 [] targetPrefix []
+generateProof sel pfx targetPrefix = do
+    result <- navigate 0 pfx targetPrefix []
     pure $ case result of
         Nothing -> Nothing
         Just (mergeOps, _, inclusionSteps) ->
@@ -361,8 +365,10 @@ queryPrefix
     :: (Monad m, GCompare d)
     => Selector d Key (Indirect a)
     -> Key
+    -- ^ Prefix (use @[]@ for root)
+    -> Key
     -> Transaction m cf d op (Maybe (Indirect a))
-queryPrefix sel = navigate []
+queryPrefix sel = navigate
   where
     navigate currentKey remainingPrefix = do
         mi <- query sel currentKey
