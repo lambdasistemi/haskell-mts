@@ -69,6 +69,18 @@ library
   hs-source-dirs:   lib/mts/
   default-language: Haskell2010
 
+-- Generic rollback library (swap-partition model)
+library rollbacks
+  import:           warnings
+  visibility:       public
+  exposed-modules:
+    MTS.Rollbacks
+    MTS.Rollbacks.Types
+
+  build-depends:    base >=4.19 && <5
+  hs-source-dirs:   lib/rollbacks/
+  default-language: Haskell2010
+
 -- CSMT (binary trie) implementation
 library csmt
   import:           warnings
