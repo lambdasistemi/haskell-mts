@@ -75,7 +75,7 @@ storeRollbackPoint
     -> RollbackPoint inv meta
     -- ^ Inverses and metadata
     -> Transaction m cf t op ()
-storeRollbackPoint col = insert col
+storeRollbackPoint = insert
 
 -- | Query the current tip (last key).
 --
