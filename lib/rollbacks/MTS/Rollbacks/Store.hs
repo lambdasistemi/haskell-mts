@@ -9,6 +9,11 @@
 -- operations but does not know how to /apply/
 -- them. Rollback functions take a callback
 -- for inverse application.
+--
+-- The @key@ parameter is the column key type.
+-- Downstream chooses it (e.g. @WithOrigin slot@,
+-- @Maybe slot@). The library only requires
+-- @Ord key@.
 module MTS.Rollbacks.Store
     ( -- * Forward (store rollback point)
       storeRollbackPoint
@@ -53,92 +58,87 @@ import MTS.Rollbacks.Column
     )
 import MTS.Rollbacks.Types
     ( RollbackPoint (..)
-    , WithOrigin (..)
     )
 
--- | Store a rollback point at the given slot.
+-- | Store a rollback point at the given key.
 --
 -- Call this during forward-tip processing after
 -- computing inverse operations.
 storeRollbackPoint
-    :: (Ord slot)
-    => slot
-    -- ^ Slot of the block being applied
+    :: (Ord key)
+    => key
+    -- ^ Key for the rollback point
     -> RollbackPoint inv meta
-    -- ^ Inverses and metadata for this slot
+    -- ^ Inverses and metadata
     -> Transaction
         m
         cf
-        (RollbackColumn slot inv meta)
+        (RollbackColumn key inv meta)
         op
         ()
-storeRollbackPoint slot rp =
-    insert RollbackPoints (At slot) rp
+storeRollbackPoint = insert RollbackPoints
 
--- | Query the current tip slot.
+-- | Query the current tip (last key).
 --
--- Returns 'Origin' if only the genesis point
--- exists. Fails if no rollback points exist
+-- Returns 'Nothing' if no rollback points exist
 -- (database not initialized).
 queryTip
     :: (Monad m)
     => Transaction
         m
         cf
-        (RollbackColumn slot inv meta)
+        (RollbackColumn key inv meta)
         op
-        (Maybe (WithOrigin slot))
+        (Maybe key)
 queryTip =
     iterating RollbackPoints $ do
-        ml <- lastEntry
-        pure $ fmap entryKey ml
+        fmap entryKey <$> lastEntry
 
 -- | Result of a rollback attempt.
 data RollbackResult
     = -- | Rollback succeeded. The 'Int' is the
       -- number of points deleted.
       RollbackSucceeded Int
-    | -- | Target slot not found. Database must
+    | -- | Target key not found. Database must
       -- be truncated (armageddon).
       RollbackImpossible
     deriving stock (Eq, Show)
 
--- | Roll back to the given slot.
+-- | Roll back to the given key.
 --
 -- Iterates backward from the tip, calling the
 -- provided callback for each rollback point
--- strictly after the target slot. Points after
--- the target are deleted; the target's point
--- is kept.
+-- strictly after the target. Points after the
+-- target are deleted; the target's point is kept.
 --
 -- The callback receives each 'RollbackPoint' in
 -- reverse chronological order (most recent first).
 rollbackTo
-    :: (Ord slot, Monad m)
+    :: (Ord key, Monad m)
     => ( RollbackPoint inv meta
          -> Transaction
                 m
                 cf
-                (RollbackColumn slot inv meta)
+                (RollbackColumn key inv meta)
                 op
                 ()
        )
     -- ^ Apply inverses from one rollback point
-    -> slot
-    -- ^ Target slot to roll back to
+    -> key
+    -- ^ Target key to roll back to
     -> Transaction
         m
         cf
-        (RollbackColumn slot inv meta)
+        (RollbackColumn key inv meta)
         op
         RollbackResult
-rollbackTo applyInverses targetSlot =
+rollbackTo applyInverses targetKey =
     iterating RollbackPoints $ do
-        mTarget <- seekKey (At targetSlot)
+        mTarget <- seekKey targetKey
         case mTarget of
             Nothing -> pure RollbackImpossible
             Just Entry{entryKey}
-                | entryKey /= At targetSlot ->
+                | entryKey /= targetKey ->
                     pure RollbackImpossible
                 | otherwise -> do
                     -- Target found, now walk from tip
@@ -152,7 +152,7 @@ rollbackTo applyInverses targetSlot =
         ($ cur) $ fix $ \go -> \case
             Nothing -> pure 0
             Just Entry{entryKey, entryValue}
-                | entryKey > At targetSlot -> do
+                | entryKey > targetKey -> do
                     lift
                         $ applyInverses entryValue
                     lift
@@ -164,25 +164,25 @@ rollbackTo applyInverses targetSlot =
                 | otherwise -> pure 0
 
 -- | Prune all rollback points strictly before
--- the given finality slot. Returns the number
--- of points pruned.
+-- the given key. Returns the number of points
+-- pruned.
 pruneBelow
-    :: (Ord slot, Monad m)
-    => slot
-    -- ^ Finality slot (exclusive lower bound)
+    :: (Ord key, Monad m)
+    => key
+    -- ^ Lower bound (exclusive)
     -> Transaction
         m
         cf
-        (RollbackColumn slot inv meta)
+        (RollbackColumn key inv meta)
         op
         Int
-pruneBelow slot =
+pruneBelow k =
     iterating RollbackPoints $ do
         me <- firstEntry
         ($ me) $ fix $ \go -> \case
             Nothing -> pure 0
             Just Entry{entryKey}
-                | entryKey < At slot -> do
+                | entryKey < k -> do
                     lift
                         $ delete
                             RollbackPoints
@@ -199,13 +199,13 @@ pruneBelow slot =
 -- rollback is impossible. Run in a loop with
 -- a transaction runner.
 armageddonCleanup
-    :: (Ord slot, Monad m)
+    :: (Ord key, Monad m)
     => Int
     -- ^ Batch size (entries per transaction)
     -> Transaction
         m
         cf
-        (RollbackColumn slot inv meta)
+        (RollbackColumn key inv meta)
         op
         Bool
 armageddonCleanup batchSz =
@@ -222,23 +222,25 @@ armageddonCleanup batchSz =
                 next <- nextEntry
                 go (next, n + 1)
 
--- | Initialize the rollback column with a single
--- 'Origin' point carrying empty inverses.
+-- | Initialize the rollback column with a
+-- sentinel point carrying empty inverses.
 --
 -- Call after 'armageddonCleanup' completes, or
 -- on fresh database setup.
 armageddonSetup
-    :: (Ord slot)
-    => Maybe meta
-    -- ^ Optional metadata for the origin point
+    :: (Ord key)
+    => key
+    -- ^ Sentinel key (e.g. Origin, Nothing)
+    -> Maybe meta
+    -- ^ Optional metadata for the sentinel
     -> Transaction
         m
         cf
-        (RollbackColumn slot inv meta)
+        (RollbackColumn key inv meta)
         op
         ()
-armageddonSetup meta =
-    insert RollbackPoints Origin
+armageddonSetup sentinel meta =
+    insert RollbackPoints sentinel
         $ RollbackPoint
             { rpInverses = []
             , rpMeta = meta
@@ -250,7 +252,7 @@ countPoints
     => Transaction
         m
         cf
-        (RollbackColumn slot inv meta)
+        (RollbackColumn key inv meta)
         op
         Int
 countPoints =

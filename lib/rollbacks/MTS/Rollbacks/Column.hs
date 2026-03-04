@@ -1,9 +1,10 @@
 -- | Column GADT for rollback point storage.
 --
 -- Provides a single-constructor GADT that maps
--- @WithOrigin slot@ keys to 'RollbackPoint' values.
--- Downstream consumers embed this into their own
--- column GADT with a wrapper constructor.
+-- @key@ to 'RollbackPoint' values. Downstream
+-- consumers choose the key type (e.g.
+-- @WithOrigin slot@, @Maybe slot@) and embed
+-- this into their own column GADT.
 module MTS.Rollbacks.Column
     ( -- * Column GADT
       RollbackColumn (..)
@@ -22,12 +23,11 @@ import Database.KV.Transaction
     )
 import MTS.Rollbacks.Types
     ( RollbackPoint
-    , WithOrigin
     )
 
 -- | KV pair for the rollback column.
-type RollbackKV slot inv meta =
-    KV (WithOrigin slot) (RollbackPoint inv meta)
+type RollbackKV key inv meta =
+    KV key (RollbackPoint inv meta)
 
 -- | Column GADT with a single constructor for
 -- rollback point storage.
@@ -40,20 +40,20 @@ type RollbackKV slot inv meta =
 --     MyKV :: MyColumns (KV Key Value)
 --     MyRollbacks
 --         :: MyColumns
---              (RollbackKV Slot Inv Meta)
+--              (RollbackKV (WithOrigin Slot) Inv Meta)
 -- @
-data RollbackColumn slot inv meta c where
+data RollbackColumn key inv meta c where
     RollbackPoints
         :: RollbackColumn
-            slot
+            key
             inv
             meta
-            (RollbackKV slot inv meta)
+            (RollbackKV key inv meta)
 
-instance GEq (RollbackColumn slot inv meta) where
+instance GEq (RollbackColumn key inv meta) where
     geq RollbackPoints RollbackPoints =
         Just Refl
 
-instance GCompare (RollbackColumn slot inv meta) where
+instance GCompare (RollbackColumn key inv meta) where
     gcompare RollbackPoints RollbackPoints =
         GEQ
