@@ -64,7 +64,8 @@ mpfStandaloneRocksDBCols
                     }
             ]
 mpfStandaloneRocksDBCols _ _ =
-    error "mpfStandaloneRocksDBCols: expected exactly three column families"
+    error
+        "mpfStandaloneRocksDBCols: expected exactly three column families"
 
 -- | Create a RocksDB database for MPF
 mpfStandaloneRocksDBDatabase

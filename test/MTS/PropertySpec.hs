@@ -403,7 +403,7 @@ spec = do
     describe "CSMT mode exclusivity" $ do
         it "Full rejects non-empty journal"
             $ mkCsmtStoreWithJournal
-                `shouldThrow` (\(_ :: SomeException) -> True)
+            `shouldThrow` (\(_ :: SomeException) -> True)
         it "KVOnly throws after transition" $ do
             t <- mkCsmtTransition
             mtsInsert (mtsKV (transitionKVStore t)) "k" "v"
@@ -419,7 +419,7 @@ spec = do
     describe "MPF mode exclusivity" $ do
         it "Full rejects non-empty journal"
             $ mkMpfStoreWithJournal
-                `shouldThrow` (\(_ :: SomeException) -> True)
+            `shouldThrow` (\(_ :: SomeException) -> True)
         it "KVOnly throws after transition" $ do
             t <- mkMpfTransition
             mtsInsert (mtsKV (transitionKVStore t)) "k" "v"
