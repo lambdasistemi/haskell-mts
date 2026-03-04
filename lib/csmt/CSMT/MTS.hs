@@ -507,7 +507,7 @@ replayEntries
 replayEntries prefix fromKV hashing entries = do
     mapM_ applyEntry entries
     mapM_
-        (\e -> delete StandaloneJournalCol (entryKey e))
+        (delete StandaloneJournalCol . entryKey)
         entries
   where
     applyEntry e =

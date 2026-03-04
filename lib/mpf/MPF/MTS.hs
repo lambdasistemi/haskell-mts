@@ -35,9 +35,9 @@ module MPF.MTS
 where
 
 import Control.Monad (unless, when)
-import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Database.KV.Cursor
     ( Cursor
     , Entry (..)
@@ -492,7 +492,7 @@ mpfReplayEntries
         ()
 mpfReplayEntries prefix fromKV hashing entries = do
     mapM_ applyEntry entries
-    mapM_ (\e -> delete MPFStandaloneJournalCol (entryKey e)) entries
+    mapM_ (delete MPFStandaloneJournalCol . entryKey) entries
   where
     applyEntry e =
         let (tag, v) = parseJournalEntry (entryValue e)

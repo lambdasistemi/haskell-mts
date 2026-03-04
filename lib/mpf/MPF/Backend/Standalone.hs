@@ -20,7 +20,10 @@ import Database.KV.Transaction
 import MPF.Interface (HexIndirect (..), HexKey)
 
 -- | Column family identifiers for MPF standalone backend
-data MPFStandaloneCF = MPFStandaloneKV | MPFStandaloneMPF | MPFStandaloneJournal
+data MPFStandaloneCF
+    = MPFStandaloneKV
+    | MPFStandaloneMPF
+    | MPFStandaloneJournal
     deriving (Show, Eq, Ord)
 
 -- | Operation type for standalone backend
@@ -35,7 +38,8 @@ mkMPFStandaloneOp = (,,)
 data MPFStandalone k v a x where
     MPFStandaloneKVCol :: MPFStandalone k v a (KV k v)
     MPFStandaloneMPFCol :: MPFStandalone k v a (KV HexKey (HexIndirect a))
-    MPFStandaloneJournalCol :: MPFStandalone k v a (KV ByteString ByteString)
+    MPFStandaloneJournalCol
+        :: MPFStandalone k v a (KV ByteString ByteString)
 
 instance GEq (MPFStandalone k v a) where
     geq MPFStandaloneKVCol MPFStandaloneKVCol = Just Refl
