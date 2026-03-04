@@ -31,6 +31,8 @@ module CSMT.MTS
     , csmtManagedTransition
     , csmtReplayJournal
     , csmtJournalEmpty
+    , replayJournalChunkT
+    , journalEmptyT
     )
 where
 
@@ -149,9 +151,9 @@ csmtMerkleTreeStoreT
         CsmtImpl
         ( Transaction
             m
-            StandaloneCF
+            cf
             (Standalone ByteString ByteString Hash)
-            StandaloneOp
+            op
         )
 csmtMerkleTreeStoreT prefix fromKV hashing =
     MkFull kv tree
@@ -267,9 +269,9 @@ csmtNamespacedMTST
         CsmtImpl
         ( Transaction
             m
-            StandaloneCF
+            cf
             (Standalone ByteString ByteString Hash)
-            StandaloneOp
+            op
         )
 csmtNamespacedMTST fromKV hashing =
     NamespacedMTS
@@ -312,9 +314,9 @@ csmtKVOnlyStoreT
         CsmtImpl
         ( Transaction
             m
-            StandaloneCF
+            cf
             (Standalone ByteString ByteString Hash)
-            StandaloneOp
+            op
         )
 csmtKVOnlyStoreT _fromKV =
     MkKVOnly
@@ -435,11 +437,7 @@ csmtJournalEmpty
         StandaloneOp
     -> IO Bool
 csmtJournalEmpty run db =
-    run $ runTransactionUnguarded db $ do
-        me <- iterating StandaloneJournalCol firstEntry
-        pure $ case me of
-            Nothing -> True
-            Just _ -> False
+    run $ runTransactionUnguarded db journalEmptyT
 
 -- | Replay journal entries against the tree, then clear them.
 --
@@ -465,17 +463,14 @@ csmtReplayJournal
 csmtReplayJournal prefix chunkSize run db fromKV hashing = loop
   where
     loop = do
-        done <- run $ runTransactionUnguarded db $ do
-            entries <- iterating StandaloneJournalCol $ do
-                me <- firstEntry
-                case me of
-                    Nothing -> pure []
-                    Just e -> collectN (chunkSize - 1) [e]
-            if null entries
-                then pure True
-                else do
-                    replayEntries prefix fromKV hashing entries
-                    pure False
+        done <-
+            run
+                $ runTransactionUnguarded db
+                $ replayJournalChunkT
+                    prefix
+                    chunkSize
+                    fromKV
+                    hashing
         unless done loop
 
 -- | Collect up to @n@ more entries after the first.
@@ -491,6 +486,59 @@ collectN n acc = do
         Nothing -> pure (reverse acc)
         Just e -> collectN (n - 1) (e : acc)
 
+-- | Check if the journal column is empty (transactional).
+--
+-- Polymorphic in @cf@ and @op@ so it can be composed with
+-- 'mapColumns' into richer column types.
+journalEmptyT
+    :: (Monad m)
+    => Transaction
+        m
+        cf
+        (Standalone ByteString ByteString Hash)
+        op
+        Bool
+journalEmptyT = do
+    me <- iterating StandaloneJournalCol firstEntry
+    pure $ case me of
+        Nothing -> True
+        Just _ -> False
+
+-- | Process one chunk of journal entries (transactional).
+--
+-- Reads up to @chunkSize@ journal entries, applies tree-only
+-- operations, and deletes the replayed entries. Returns 'True'
+-- when the journal is empty (all done), 'False' if more chunks
+-- remain.
+--
+-- Polymorphic in @cf@ and @op@ so it can be composed with
+-- 'mapColumns' into richer column types.
+replayJournalChunkT
+    :: (Monad m)
+    => Key
+    -- ^ Prefix (use @[]@ for root)
+    -> Int
+    -- ^ Chunk size
+    -> FromKV ByteString ByteString Hash
+    -> Hashing Hash
+    -> Transaction
+        m
+        cf
+        (Standalone ByteString ByteString Hash)
+        op
+        Bool
+replayJournalChunkT prefix chunkSize fromKV hashing = do
+    entries <- iterating StandaloneJournalCol $ do
+        me <- firstEntry
+        case me of
+            Nothing -> pure []
+            Just e -> collectN (chunkSize - 1) [e]
+    if null entries
+        then pure True
+        else do
+            replayEntries prefix fromKV hashing entries
+            pure False
+
 -- | Apply journal entries to the tree and clear them.
 replayEntries
     :: (Monad m)
@@ -500,9 +548,9 @@ replayEntries
     -> [Entry (KV ByteString ByteString)]
     -> Transaction
         m
-        StandaloneCF
+        cf
         (Standalone ByteString ByteString Hash)
-        StandaloneOp
+        op
         ()
 replayEntries prefix fromKV hashing entries = do
     mapM_ applyEntry entries
