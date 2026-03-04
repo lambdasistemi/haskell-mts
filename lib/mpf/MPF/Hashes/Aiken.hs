@@ -22,6 +22,7 @@ module MPF.Hashes.Aiken
     )
 where
 
+import Control.Monad (when)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.ByteString.Builder qualified as Builder
@@ -349,7 +350,7 @@ parseForkStep bs = do
     (skip, bs1) <- parseUInt bs
     -- Parse Neighbor (tag 121)
     (tag, bs2) <- parseTag bs1
-    if tag /= 121 then Nothing else pure ()
+    when (tag /= 121) Nothing
     ((), bs3) <- parseListBegin bs2
     (nibble, bs4) <- parseUInt bs3
     (prefixBS, bs5) <- parseCBORBytes bs4
