@@ -11,6 +11,9 @@ module MTS.Rollbacks.Column
 
       -- * KV type alias
     , RollbackKV
+
+      -- * Column selector alias
+    , RollbackCol
     )
 where
 
@@ -28,6 +31,13 @@ import MTS.Rollbacks.Types
 -- | KV pair for the rollback column.
 type RollbackKV key inv meta =
     KV key (RollbackPoint inv meta)
+
+-- | Column selector for a rollback column within
+-- an arbitrary column GADT @t@. Standalone callers
+-- pass 'RollbackPoints'; embedded callers pass
+-- their own GADT constructor (e.g. @CageRollbacks@).
+type RollbackCol t key inv meta =
+    t (RollbackKV key inv meta)
 
 -- | Column GADT with a single constructor for
 -- rollback point storage.

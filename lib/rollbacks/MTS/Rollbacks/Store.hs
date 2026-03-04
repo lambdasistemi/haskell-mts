@@ -1,9 +1,10 @@
 -- | Transaction-level rollback operations.
 --
--- All functions operate on 'Transaction' with
--- 'RollbackColumn' — downstream consumers use
--- 'liftRollback' to embed them into larger
--- column GADTs.
+-- All functions take a column selector as their
+-- first argument. Standalone callers pass
+-- 'RollbackPoints'; downstream consumers embedding
+-- the rollback column in a larger GADT pass their
+-- own constructor (e.g. @CageRollbacks@).
 --
 -- The library stores and retrieves inverse
 -- operations but does not know how to /apply/
@@ -48,13 +49,14 @@ import Database.KV.Cursor
     , seekKey
     )
 import Database.KV.Transaction
-    ( Transaction
+    ( GCompare
+    , Transaction
     , delete
     , insert
     , iterating
     )
 import MTS.Rollbacks.Column
-    ( RollbackColumn (..)
+    ( RollbackCol
     )
 import MTS.Rollbacks.Types
     ( RollbackPoint (..)
@@ -65,33 +67,27 @@ import MTS.Rollbacks.Types
 -- Call this during forward-tip processing after
 -- computing inverse operations.
 storeRollbackPoint
-    :: (Ord key)
-    => key
+    :: (Ord key, GCompare t)
+    => RollbackCol t key inv meta
+    -- ^ Column selector
+    -> key
     -- ^ Key for the rollback point
     -> RollbackPoint inv meta
     -- ^ Inverses and metadata
-    -> Transaction
-        m
-        cf
-        (RollbackColumn key inv meta)
-        op
-        ()
-storeRollbackPoint = insert RollbackPoints
+    -> Transaction m cf t op ()
+storeRollbackPoint col = insert col
 
 -- | Query the current tip (last key).
 --
 -- Returns 'Nothing' if no rollback points exist
 -- (database not initialized).
 queryTip
-    :: (Monad m)
-    => Transaction
-        m
-        cf
-        (RollbackColumn key inv meta)
-        op
-        (Maybe key)
-queryTip =
-    iterating RollbackPoints $ do
+    :: (Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -- ^ Column selector
+    -> Transaction m cf t op (Maybe key)
+queryTip col =
+    iterating col $ do
         fmap entryKey <$> lastEntry
 
 -- | Result of a rollback attempt.
@@ -114,26 +110,18 @@ data RollbackResult
 -- The callback receives each 'RollbackPoint' in
 -- reverse chronological order (most recent first).
 rollbackTo
-    :: (Ord key, Monad m)
-    => ( RollbackPoint inv meta
-         -> Transaction
-                m
-                cf
-                (RollbackColumn key inv meta)
-                op
-                ()
+    :: (Ord key, Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -- ^ Column selector
+    -> ( RollbackPoint inv meta
+         -> Transaction m cf t op ()
        )
     -- ^ Apply inverses from one rollback point
     -> key
     -- ^ Target key to roll back to
-    -> Transaction
-        m
-        cf
-        (RollbackColumn key inv meta)
-        op
-        RollbackResult
-rollbackTo applyInverses targetKey =
-    iterating RollbackPoints $ do
+    -> Transaction m cf t op RollbackResult
+rollbackTo col applyInverses targetKey =
+    iterating col $ do
         mTarget <- seekKey targetKey
         case mTarget of
             Nothing -> pure RollbackImpossible
@@ -156,9 +144,7 @@ rollbackTo applyInverses targetKey =
                     lift
                         $ applyInverses entryValue
                     lift
-                        $ delete
-                            RollbackPoints
-                            entryKey
+                        $ delete col entryKey
                     prev <- prevEntry
                     (+ 1) <$> go prev
                 | otherwise -> pure 0
@@ -167,26 +153,21 @@ rollbackTo applyInverses targetKey =
 -- the given key. Returns the number of points
 -- pruned.
 pruneBelow
-    :: (Ord key, Monad m)
-    => key
+    :: (Ord key, Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -- ^ Column selector
+    -> key
     -- ^ Lower bound (exclusive)
-    -> Transaction
-        m
-        cf
-        (RollbackColumn key inv meta)
-        op
-        Int
-pruneBelow k =
-    iterating RollbackPoints $ do
+    -> Transaction m cf t op Int
+pruneBelow col k =
+    iterating col $ do
         me <- firstEntry
         ($ me) $ fix $ \go -> \case
             Nothing -> pure 0
             Just Entry{entryKey}
                 | entryKey < k -> do
                     lift
-                        $ delete
-                            RollbackPoints
-                            entryKey
+                        $ delete col entryKey
                     next <- nextEntry
                     (+ 1) <$> go next
                 | otherwise -> pure 0
@@ -199,26 +180,21 @@ pruneBelow k =
 -- rollback is impossible. Run in a loop with
 -- a transaction runner.
 armageddonCleanup
-    :: (Ord key, Monad m)
-    => Int
+    :: (Ord key, Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -- ^ Column selector
+    -> Int
     -- ^ Batch size (entries per transaction)
-    -> Transaction
-        m
-        cf
-        (RollbackColumn key inv meta)
-        op
-        Bool
-armageddonCleanup batchSz =
-    iterating RollbackPoints $ do
+    -> Transaction m cf t op Bool
+armageddonCleanup col batchSz =
+    iterating col $ do
         me <- firstEntry
         ($ (me, 0 :: Int)) $ fix $ \go -> \case
             (Nothing, _) -> pure False
             (_, n) | n >= batchSz -> pure True
             (Just Entry{entryKey}, n) -> do
                 lift
-                    $ delete
-                        RollbackPoints
-                        entryKey
+                    $ delete col entryKey
                 next <- nextEntry
                 go (next, n + 1)
 
@@ -228,19 +204,16 @@ armageddonCleanup batchSz =
 -- Call after 'armageddonCleanup' completes, or
 -- on fresh database setup.
 armageddonSetup
-    :: (Ord key)
-    => key
+    :: (Ord key, GCompare t)
+    => RollbackCol t key inv meta
+    -- ^ Column selector
+    -> key
     -- ^ Sentinel key (e.g. Origin, Nothing)
     -> Maybe meta
     -- ^ Optional metadata for the sentinel
-    -> Transaction
-        m
-        cf
-        (RollbackColumn key inv meta)
-        op
-        ()
-armageddonSetup sentinel meta =
-    insert RollbackPoints sentinel
+    -> Transaction m cf t op ()
+armageddonSetup col sentinel meta =
+    insert col sentinel
         $ RollbackPoint
             { rpInverses = []
             , rpMeta = meta
@@ -248,15 +221,12 @@ armageddonSetup sentinel meta =
 
 -- | Count total rollback points.
 countPoints
-    :: (Monad m)
-    => Transaction
-        m
-        cf
-        (RollbackColumn key inv meta)
-        op
-        Int
-countPoints =
-    iterating RollbackPoints $ do
+    :: (Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -- ^ Column selector
+    -> Transaction m cf t op Int
+countPoints col =
+    iterating col $ do
         me <- firstEntry
         ($ me) $ fix $ \go -> \case
             Nothing -> pure 0
