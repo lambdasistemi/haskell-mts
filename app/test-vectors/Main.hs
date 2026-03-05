@@ -375,6 +375,90 @@ main = do
         putStrLn ""
 
     -- ---------------------------------------------------------------
+    -- Pop (minimum extraction) test vectors
+    -- ---------------------------------------------------------------
+
+    -- 11. Pop: single element (pop to empty)
+    do
+        let db = buildTree [("\x00", "\xaa")]
+            (Just p, Just r) = getProofAndRoot db "\x00"
+        putStrLn "test vec_pop_single() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r)
+                ++ ")"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let trie2 = pop(trie, "
+                ++ toHex "\x00"
+                ++ ", "
+                ++ toHex "\xaa"
+                ++ ", proof)"
+        putStrLn "  is_empty(trie2)"
+        putStrLn "}"
+        putStrLn ""
+
+    -- 12. Pop: minimum from three elements
+    do
+        let db =
+                buildTree
+                    [ ("\x00", "\x01")
+                    , ("\x40", "\x02")
+                    , ("\x80", "\x03")
+                    ]
+            (Just pMin, Just r3) = getProofAndRoot db "\x00"
+            db2 = buildTree [("\x40", "\x02"), ("\x80", "\x03")]
+            (_, Just r2) = getProofAndRoot db2 "\x40"
+        putStrLn "test vec_pop_minimum_of_three() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r3)
+                ++ ")"
+        mapM_ putStrLn (fmtProof pMin)
+        putStrLn
+            $ "  let trie2 = pop(trie, "
+                ++ toHex "\x00"
+                ++ ", "
+                ++ toHex "\x01"
+                ++ ", proof)"
+        putStrLn $ "  root(trie2) == " ++ toHex (renderHash r2)
+        putStrLn "}"
+        putStrLn ""
+
+    -- 13. Pop: minimum from four elements
+    do
+        let db =
+                buildTree
+                    [ ("\x00", "\x10")
+                    , ("\x40", "\x20")
+                    , ("\x80", "\x30")
+                    , ("\xc0", "\x40")
+                    ]
+            (Just pMin, Just r4) = getProofAndRoot db "\x00"
+            db3 =
+                buildTree
+                    [ ("\x40", "\x20")
+                    , ("\x80", "\x30")
+                    , ("\xc0", "\x40")
+                    ]
+            (_, Just r3) = getProofAndRoot db3 "\x40"
+        putStrLn "test vec_pop_minimum_of_four() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r4)
+                ++ ")"
+        mapM_ putStrLn (fmtProof pMin)
+        putStrLn
+            $ "  let trie2 = pop(trie, "
+                ++ toHex "\x00"
+                ++ ", "
+                ++ toHex "\x10"
+                ++ ", proof)"
+        putStrLn $ "  root(trie2) == " ++ toHex (renderHash r3)
+        putStrLn "}"
+        putStrLn ""
+
+    -- ---------------------------------------------------------------
     -- FIFO test vectors (indexBytes = 1)
     -- ---------------------------------------------------------------
 
