@@ -193,7 +193,7 @@ main = do
     putStrLn
         "use aiken/csmt.{Proof, ProofStep, empty, from_root,"
     putStrLn
-        "  has, insert, delete, update, pop, root, is_empty}"
+        "  has, insert, delete, update, pop, pop_max, push_min, push_max, root, is_empty}"
     putStrLn "use aiken/csmt/hashing.{Indirect}"
     putStrLn ""
 
@@ -455,6 +455,250 @@ main = do
                 ++ toHex "\x10"
                 ++ ", proof)"
         putStrLn $ "  root(trie2) == " ++ toHex (renderHash r3)
+        putStrLn "}"
+        putStrLn ""
+
+    -- ---------------------------------------------------------------
+    -- Pop max vectors
+    -- ---------------------------------------------------------------
+
+    -- pop_max: single element (pop max to empty)
+    do
+        let db = buildTree [("\xff", "\xaa")]
+            (Just p, Just r) = getProofAndRoot db "\xff"
+        putStrLn "test vec_pop_max_single() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r)
+                ++ ")"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let trie2 = pop_max(trie, "
+                ++ toHex "\xff"
+                ++ ", "
+                ++ toHex "\xaa"
+                ++ ", proof)"
+        putStrLn "  is_empty(trie2)"
+        putStrLn "}"
+        putStrLn ""
+
+    -- pop_max: maximum from three elements
+    do
+        let db =
+                buildTree
+                    [ ("\x00", "\x01")
+                    , ("\x40", "\x02")
+                    , ("\x80", "\x03")
+                    ]
+            (Just pMax, Just r3) = getProofAndRoot db "\x80"
+            db2 = buildTree [("\x00", "\x01"), ("\x40", "\x02")]
+            (_, Just r2) = getProofAndRoot db2 "\x00"
+        putStrLn "test vec_pop_max_of_three() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r3)
+                ++ ")"
+        mapM_ putStrLn (fmtProof pMax)
+        putStrLn
+            $ "  let trie2 = pop_max(trie, "
+                ++ toHex "\x80"
+                ++ ", "
+                ++ toHex "\x03"
+                ++ ", proof)"
+        putStrLn $ "  root(trie2) == " ++ toHex (renderHash r2)
+        putStrLn "}"
+        putStrLn ""
+
+    -- pop_max: maximum from four elements
+    do
+        let db =
+                buildTree
+                    [ ("\x00", "\x10")
+                    , ("\x40", "\x20")
+                    , ("\x80", "\x30")
+                    , ("\xc0", "\x40")
+                    ]
+            (Just pMax, Just r4) = getProofAndRoot db "\xc0"
+            db3 =
+                buildTree
+                    [ ("\x00", "\x10")
+                    , ("\x40", "\x20")
+                    , ("\x80", "\x30")
+                    ]
+            (_, Just r3) = getProofAndRoot db3 "\x00"
+        putStrLn "test vec_pop_max_of_four() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r4)
+                ++ ")"
+        mapM_ putStrLn (fmtProof pMax)
+        putStrLn
+            $ "  let trie2 = pop_max(trie, "
+                ++ toHex "\xc0"
+                ++ ", "
+                ++ toHex "\x40"
+                ++ ", proof)"
+        putStrLn $ "  root(trie2) == " ++ toHex (renderHash r3)
+        putStrLn "}"
+        putStrLn ""
+
+    -- ---------------------------------------------------------------
+    -- Push min vectors
+    -- ---------------------------------------------------------------
+
+    -- push_min: insert min into empty
+    do
+        let db = buildTree [("\x00", "\xaa")]
+            (Just p, Just r) = getProofAndRoot db "\x00"
+        putStrLn "test vec_push_min_single() {"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let trie = push_min(empty, "
+                ++ toHex "\x00"
+                ++ ", "
+                ++ toHex "\xaa"
+                ++ ", proof)"
+        putStrLn $ "  root(trie) == " ++ toHex (renderHash r)
+        putStrLn "}"
+        putStrLn ""
+
+    -- push_min: push min into {0x40, 0x80}
+    do
+        let db3 =
+                buildTree
+                    [ ("\x00", "\x01")
+                    , ("\x40", "\x02")
+                    , ("\x80", "\x03")
+                    ]
+            (Just p, Just r3) = getProofAndRoot db3 "\x00"
+            db2 = buildTree [("\x40", "\x02"), ("\x80", "\x03")]
+            (_, Just r2) = getProofAndRoot db2 "\x40"
+        putStrLn "test vec_push_min_of_three() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r2)
+                ++ ")"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let trie2 = push_min(trie, "
+                ++ toHex "\x00"
+                ++ ", "
+                ++ toHex "\x01"
+                ++ ", proof)"
+        putStrLn $ "  root(trie2) == " ++ toHex (renderHash r3)
+        putStrLn "}"
+        putStrLn ""
+
+    -- push_min: push min into {0x40, 0x80, 0xc0}
+    do
+        let db4 =
+                buildTree
+                    [ ("\x00", "\x10")
+                    , ("\x40", "\x20")
+                    , ("\x80", "\x30")
+                    , ("\xc0", "\x40")
+                    ]
+            (Just p, Just r4) = getProofAndRoot db4 "\x00"
+            db3 =
+                buildTree
+                    [ ("\x40", "\x20")
+                    , ("\x80", "\x30")
+                    , ("\xc0", "\x40")
+                    ]
+            (_, Just r3) = getProofAndRoot db3 "\x40"
+        putStrLn "test vec_push_min_of_four() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r3)
+                ++ ")"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let trie2 = push_min(trie, "
+                ++ toHex "\x00"
+                ++ ", "
+                ++ toHex "\x10"
+                ++ ", proof)"
+        putStrLn $ "  root(trie2) == " ++ toHex (renderHash r4)
+        putStrLn "}"
+        putStrLn ""
+
+    -- ---------------------------------------------------------------
+    -- Push max vectors
+    -- ---------------------------------------------------------------
+
+    -- push_max: insert max into empty
+    do
+        let db = buildTree [("\xff", "\xaa")]
+            (Just p, Just r) = getProofAndRoot db "\xff"
+        putStrLn "test vec_push_max_single() {"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let trie = push_max(empty, "
+                ++ toHex "\xff"
+                ++ ", "
+                ++ toHex "\xaa"
+                ++ ", proof)"
+        putStrLn $ "  root(trie) == " ++ toHex (renderHash r)
+        putStrLn "}"
+        putStrLn ""
+
+    -- push_max: push max into {0x00, 0x40}
+    do
+        let db3 =
+                buildTree
+                    [ ("\x00", "\x01")
+                    , ("\x40", "\x02")
+                    , ("\x80", "\x03")
+                    ]
+            (Just p, Just r3) = getProofAndRoot db3 "\x80"
+            db2 = buildTree [("\x00", "\x01"), ("\x40", "\x02")]
+            (_, Just r2) = getProofAndRoot db2 "\x00"
+        putStrLn "test vec_push_max_of_three() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r2)
+                ++ ")"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let trie2 = push_max(trie, "
+                ++ toHex "\x80"
+                ++ ", "
+                ++ toHex "\x03"
+                ++ ", proof)"
+        putStrLn $ "  root(trie2) == " ++ toHex (renderHash r3)
+        putStrLn "}"
+        putStrLn ""
+
+    -- push_max: push max into {0x00, 0x40, 0x80}
+    do
+        let db4 =
+                buildTree
+                    [ ("\x00", "\x10")
+                    , ("\x40", "\x20")
+                    , ("\x80", "\x30")
+                    , ("\xc0", "\x40")
+                    ]
+            (Just p, Just r4) = getProofAndRoot db4 "\xc0"
+            db3 =
+                buildTree
+                    [ ("\x00", "\x10")
+                    , ("\x40", "\x20")
+                    , ("\x80", "\x30")
+                    ]
+            (_, Just r3) = getProofAndRoot db3 "\x00"
+        putStrLn "test vec_push_max_of_four() {"
+        putStrLn
+            $ "  let trie = from_root("
+                ++ toHex (renderHash r3)
+                ++ ")"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let trie2 = push_max(trie, "
+                ++ toHex "\xc0"
+                ++ ", "
+                ++ toHex "\x40"
+                ++ ", proof)"
+        putStrLn $ "  root(trie2) == " ++ toHex (renderHash r4)
         putStrLn "}"
         putStrLn ""
 
