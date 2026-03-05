@@ -193,7 +193,7 @@ main = do
     putStrLn
         "use aiken/csmt.{Proof, ProofStep, empty, from_root,"
     putStrLn
-        "  has, insert, delete, update, root, is_empty}"
+        "  has, insert, delete, update, pop, root, is_empty}"
     putStrLn "use aiken/csmt/hashing.{Indirect}"
     putStrLn ""
 
