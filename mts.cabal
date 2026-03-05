@@ -97,6 +97,7 @@ library csmt
     CSMT.Backend.RocksDB
     CSMT.Backend.Standalone
     CSMT.Deletion
+    CSMT.Fifo
     CSMT.Frontend.CLI.App
     CSMT.Hashes
     CSMT.Hashes.CBOR
@@ -250,6 +251,7 @@ test-suite unit-tests
     CSMT.Backend.RocksDB.TransactionSpec
     CSMT.Backend.RocksDBSpec
     CSMT.DeletionSpec
+    CSMT.FifoSpec
     CSMT.HashesSpec
     CSMT.InsertionSpec
     CSMT.InterfaceSpec

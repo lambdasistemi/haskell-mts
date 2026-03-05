@@ -17,6 +17,7 @@ import CSMT.Backend.Standalone
     , StandaloneCodecs (..)
     , StandaloneOp
     )
+import CSMT.Fifo (counterToKey)
 import CSMT.Hashes
     ( Hash
     , fromKVHashes
@@ -75,7 +76,8 @@ insertBS k v =
             v
 
 -- | Generate an inclusion proof for a ByteString key.
-proofBS :: ByteString -> Pure (Maybe (ByteString, InclusionProof Hash))
+proofBS
+    :: ByteString -> Pure (Maybe (ByteString, InclusionProof Hash))
 proofBS k =
     runTx
         $ buildInclusionProof
@@ -90,7 +92,6 @@ rootHashBS :: Pure (Maybe Hash)
 rootHashBS = runTx $ I.root hashHashing StandaloneCSMTCol
 
 -- | Format helpers
-
 toHex :: ByteString -> String
 toHex bs =
     "#\""
@@ -124,8 +125,12 @@ fmtStep (ProofStep consumed sibling) =
         ++ " }"
 
 fmtProof :: InclusionProof Hash -> [String]
-fmtProof p =
-    [ "  let proof = Proof {"
+fmtProof = fmtProofAs "proof"
+
+-- | Format a proof with a custom variable name.
+fmtProofAs :: String -> InclusionProof Hash -> [String]
+fmtProofAs name p =
+    [ "  let " ++ name ++ " = Proof {"
     , "    root_jump: " ++ toBitpath (proofRootJump p) ++ ","
     ]
         ++ stepsLines
@@ -364,5 +369,154 @@ main = do
                 ++ toHex "\x03\x04"
                 ++ ")"
         putStrLn $ "  root(trie2) == " ++ toHex (renderHash rNew)
+        putStrLn "}"
+        putStrLn ""
+
+    -- ---------------------------------------------------------------
+    -- FIFO test vectors (indexBytes = 1)
+    -- ---------------------------------------------------------------
+
+    putStrLn "// FIFO test vectors"
+    putStrLn ""
+    putStrLn "use aiken/csmt/fifo.{Fifo, push, pop, root_hash}"
+    putStrLn ""
+
+    let ixB = 1 :: Int
+        fifoKey = counterToKey ixB
+        vA = "\xaa" :: ByteString
+        vB = "\xbb" :: ByteString
+        vC = "\xcc" :: ByteString
+
+    -- Build intermediate DBs: after 1 push, 2 pushes, 3 pushes
+    let db1 = buildTree [(fifoKey 0, vA)]
+        db2 = buildTree [(fifoKey 0, vA), (fifoKey 1, vB)]
+        db3 =
+            buildTree
+                [(fifoKey 0, vA), (fifoKey 1, vB), (fifoKey 2, vC)]
+
+    -- 11. FIFO: push one element
+    do
+        let (Just p, Just r) = getProofAndRoot db1 (fifoKey 0)
+        putStrLn "test vec_fifo_push_one() {"
+        putStrLn "  let fifo = Fifo { trie: empty, head: 0, tail: 0 }"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let fifo2 = push(fifo, "
+                ++ show ixB
+                ++ ", "
+                ++ toHex vA
+                ++ ", proof)"
+        putStrLn
+            $ "  root_hash(fifo2) == "
+                ++ toHex (renderHash r)
+        putStrLn "}"
+        putStrLn ""
+
+    -- 12. FIFO: push second element
+    do
+        let (Just p, Just r2) = getProofAndRoot db2 (fifoKey 1)
+            (_, Just r1) = getProofAndRoot db1 (fifoKey 0)
+        putStrLn "test vec_fifo_push_two() {"
+        putStrLn
+            $ "  let fifo = Fifo { trie: from_root("
+                ++ toHex (renderHash r1)
+                ++ "), head: 0, tail: 1 }"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let fifo2 = push(fifo, "
+                ++ show ixB
+                ++ ", "
+                ++ toHex vB
+                ++ ", proof)"
+        putStrLn
+            $ "  root_hash(fifo2) == "
+                ++ toHex (renderHash r2)
+        putStrLn "}"
+        putStrLn ""
+
+    -- 13. FIFO: push third element
+    do
+        let (Just p, Just r3) = getProofAndRoot db3 (fifoKey 2)
+            (_, Just r2) = getProofAndRoot db2 (fifoKey 1)
+        putStrLn "test vec_fifo_push_three() {"
+        putStrLn
+            $ "  let fifo = Fifo { trie: from_root("
+                ++ toHex (renderHash r2)
+                ++ "), head: 0, tail: 2 }"
+        mapM_ putStrLn (fmtProof p)
+        putStrLn
+            $ "  let fifo2 = push(fifo, "
+                ++ show ixB
+                ++ ", "
+                ++ toHex vC
+                ++ ", proof)"
+        putStrLn
+            $ "  root_hash(fifo2) == "
+                ++ toHex (renderHash r3)
+        putStrLn "}"
+        putStrLn ""
+
+    -- 14. FIFO: pop first element from 3-element queue
+    do
+        let (Just p0, Just r3) = getProofAndRoot db3 (fifoKey 0)
+            (_, Just r2after) = getProofAndRoot db2after (fifoKey 1)
+            db2after =
+                buildTree [(fifoKey 1, vB), (fifoKey 2, vC)]
+        putStrLn "test vec_fifo_pop_one() {"
+        putStrLn
+            $ "  let fifo = Fifo { trie: from_root("
+                ++ toHex (renderHash r3)
+                ++ "), head: 0, tail: 3 }"
+        mapM_ putStrLn (fmtProof p0)
+        putStrLn
+            $ "  let fifo2 = pop(fifo, "
+                ++ show ixB
+                ++ ", "
+                ++ toHex vA
+                ++ ", proof)"
+        putStrLn
+            $ "  root_hash(fifo2) == "
+                ++ toHex (renderHash r2after)
+        putStrLn "}"
+        putStrLn ""
+
+    -- 15. FIFO: pop all three (sequential)
+    do
+        let (Just p0, Just r3) = getProofAndRoot db3 (fifoKey 0)
+            db_12 = buildTree [(fifoKey 1, vB), (fifoKey 2, vC)]
+            (Just p1, Just r12) = getProofAndRoot db_12 (fifoKey 1)
+            db_2 = buildTree [(fifoKey 2, vC)]
+            (Just p2, Just _r2only) = getProofAndRoot db_2 (fifoKey 2)
+
+        putStrLn "test vec_fifo_pop_all() {"
+        -- Pop element 0
+        putStrLn
+            $ "  let fifo = Fifo { trie: from_root("
+                ++ toHex (renderHash r3)
+                ++ "), head: 0, tail: 3 }"
+        mapM_ putStrLn (fmtProof p0)
+        putStrLn
+            $ "  let fifo2 = pop(fifo, "
+                ++ show ixB
+                ++ ", "
+                ++ toHex vA
+                ++ ", proof)"
+        -- Pop element 1
+        mapM_ putStrLn (fmtProofAs "proof2" p1)
+        putStrLn
+            $ "  let fifo3 = pop(fifo2, "
+                ++ show ixB
+                ++ ", "
+                ++ toHex vB
+                ++ ", proof2)"
+        -- Pop element 2
+        mapM_ putStrLn (fmtProofAs "proof3" p2)
+        putStrLn
+            $ "  let fifo4 = pop(fifo3, "
+                ++ show ixB
+                ++ ", "
+                ++ toHex vC
+                ++ ", proof3)"
+        putStrLn "  is_empty(fifo4)"
         putStrLn "}"
         putStrLn ""
