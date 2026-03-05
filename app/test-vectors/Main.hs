@@ -68,6 +68,7 @@ insertBS :: ByteString -> ByteString -> Pure ()
 insertBS k v =
     runTx
         $ inserting
+            []
             fromKVHashes
             hashHashing
             StandaloneKVCol
@@ -81,6 +82,7 @@ proofBS
 proofBS k =
     runTx
         $ buildInclusionProof
+            []
             fromKVHashes
             StandaloneKVCol
             StandaloneCSMTCol
@@ -89,7 +91,7 @@ proofBS k =
 
 -- | Get the root hash.
 rootHashBS :: Pure (Maybe Hash)
-rootHashBS = runTx $ I.root hashHashing StandaloneCSMTCol
+rootHashBS = runTx $ I.root hashHashing StandaloneCSMTCol []
 
 -- | Format helpers
 toHex :: ByteString -> String

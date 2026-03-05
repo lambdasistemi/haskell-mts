@@ -56,6 +56,7 @@ insertK :: ByteString -> ByteString -> Pure ()
 insertK k v =
     runTx
         $ inserting
+            []
             fromKVHashes
             hashHashing
             StandaloneKVCol
@@ -68,6 +69,7 @@ deleteK :: ByteString -> Pure ()
 deleteK k =
     runTx
         $ deleting
+            []
             fromKVHashes
             hashHashing
             StandaloneKVCol
@@ -76,7 +78,7 @@ deleteK k =
 
 -- | Get root hash.
 rootK :: Pure (Maybe Hash)
-rootK = runTx $ I.root hashHashing StandaloneCSMTCol
+rootK = runTx $ I.root hashHashing StandaloneCSMTCol []
 
 -- | Check if a key has a valid proof.
 hasProof :: ByteString -> Pure Bool
@@ -84,6 +86,7 @@ hasProof k = do
     mp <-
         runTx
             $ buildInclusionProof
+                []
                 fromKVHashes
                 StandaloneKVCol
                 StandaloneCSMTCol

@@ -60,6 +60,7 @@ in {
   packages.mts = project.hsPkgs.mts.components.exes.mts;
   packages.bench = project.hsPkgs.mts.components.benchmarks.bench;
   packages.unit-tests = project.hsPkgs.mts.components.tests.unit-tests;
-  packages.csmt-test-vectors = project.hsPkgs.mts.components.exes.csmt-test-vectors;
+  packages.csmt-test-vectors =
+    project.hsPkgs.mts.components.exes.csmt-test-vectors;
   musl64 = project.projectCross.musl64.hsPkgs;
 }
