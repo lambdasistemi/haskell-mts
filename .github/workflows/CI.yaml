@@ -19,8 +19,10 @@ jobs:
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Cachix
-        run: cachix authtoken '${{ secrets.CACHIX_AUTH_TOKEN }}' && cachix use paolino
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Build executable
         run: nix --quiet build .#mts
       - name: Build docker image
@@ -56,8 +58,10 @@ jobs:
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Cachix
-        run: cachix authtoken '${{ secrets.CACHIX_AUTH_TOKEN }}' && cachix use paolino
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run Tests
         run: nix --quiet run .#unit-tests
   bench:
@@ -65,8 +69,10 @@ jobs:
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Cachix
-        run: cachix authtoken '${{ secrets.CACHIX_AUTH_TOKEN }}' && cachix use paolino
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run Benchmarks
         run: nix --quiet run .#bench
   typescript:
@@ -74,8 +80,10 @@ jobs:
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Cachix
-        run: cachix authtoken '${{ secrets.CACHIX_AUTH_TOKEN }}' && cachix use paolino
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run TypeScript Tests
         run: nix --quiet run ./verifiers/typescript#test
   formatting:
@@ -83,8 +91,10 @@ jobs:
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Cachix
-        run: cachix authtoken '${{ secrets.CACHIX_AUTH_TOKEN }}' && cachix use paolino
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Check Formatting
         run: nix --quiet develop -c just format-check
   hlint:
@@ -92,7 +102,9 @@ jobs:
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Cachix
-        run: cachix authtoken '${{ secrets.CACHIX_AUTH_TOKEN }}' && cachix use paolino
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run HLint
         run: nix --quiet develop -c just hlint
