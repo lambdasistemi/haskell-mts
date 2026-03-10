@@ -31,10 +31,8 @@ jobs:
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - uses: cachix/cachix-action@v15
-        with:
-          name: paolino
-          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Setup Cachix
+        run: cachix authtoken '${{ secrets.CACHIX_AUTH_TOKEN }}' && cachix use paolino
 
       - name: Build docker image
         run: nix --quiet build .#docker-image -o mts-image
