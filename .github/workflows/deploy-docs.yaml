@@ -14,6 +14,8 @@ jobs:
     runs-on: nixos
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Cachix
-        run: cachix authtoken '${{ secrets.CACHIX_AUTH_TOKEN }}' && cachix use paolino
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - run: nix --quiet develop github:paolino/dev-assets?dir=mkdocs -c mkdocs gh-deploy --force
