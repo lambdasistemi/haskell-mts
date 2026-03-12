@@ -1,7 +1,13 @@
 module MPF.NamespaceSpec (spec) where
 
+import Data.List (isPrefixOf)
+import Data.Maybe (fromJust)
 import MPF.Hashes (mkMPFHash)
 import MPF.Interface (HexDigit (..), byteStringToHexKey)
+import MPF.Proof.Insertion
+    ( MPFProof (..)
+    , MPFProofStep (..)
+    )
 import MPF.Test.Lib
     ( deleteMPFMAt
     , deleteSubtreeMAt
@@ -10,9 +16,18 @@ import MPF.Test.Lib
     , getRootHashMAt
     , insertMPFM
     , insertMPFMAt
+    , proofMPFM
+    , proofMPFMAt
     , verifyMPFMAt
     )
-import Test.Hspec (Spec, describe, it, shouldBe, shouldNotBe)
+import Test.Hspec
+    ( Spec
+    , describe
+    , it
+    , shouldBe
+    , shouldNotBe
+    , shouldSatisfy
+    )
 
 spec :: Spec
 spec = describe "MPF.Namespace" $ do
@@ -82,3 +97,24 @@ spec = describe "MPF.Namespace" $ do
                 insertMPFM key2 val2
                 getRootHashM
         rootPrefixed `shouldBe` rootPlain
+
+    it "proof key paths don't contain storage prefix" $ do
+        let (proofPrefixed, proofPlain) = evalMPFPure' $ do
+                insertMPFMAt pfxA key1 val1
+                insertMPFMAt pfxA key2 val2
+                p1 <- proofMPFMAt pfxA key1
+                insertMPFM key1 val1
+                insertMPFM key2 val2
+                p2 <- proofMPFM key1
+                pure (fromJust p1, fromJust p2)
+        let leafKeyPaths proof =
+                [ kp
+                | ProofStepLeaf{pslNeighborKeyPath = kp} <-
+                    mpfProofSteps proof
+                ]
+        -- key paths must be identical
+        leafKeyPaths proofPrefixed
+            `shouldBe` leafKeyPaths proofPlain
+        -- and must not start with the prefix
+        leafKeyPaths proofPrefixed
+            `shouldSatisfy` all (not . isPrefixOf pfxA)

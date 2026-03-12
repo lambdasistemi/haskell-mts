@@ -143,7 +143,7 @@ mkMPFInclusionProof prefix FromHexKV{fromHexK} hashing sel k =
                         }
             else do
                 (steps, leafSuffix, valHash) <-
-                    go prefix rootJump remainingAfterRoot
+                    go prefix [] rootJump remainingAfterRoot
                 pure
                     $ MPFProof
                         { mpfProofSteps = reverse steps
@@ -152,15 +152,17 @@ mkMPFInclusionProof prefix FromHexKV{fromHexK} hashing sel k =
                         , mpfProofValueHash = valHash
                         }
   where
-    go _ _ [] = error "mkMPFInclusionProof: key not found"
-    go u branchJump (x : ks) = do
+    go _ _ _ [] = error "mkMPFInclusionProof: key not found"
+    go dbPath logicalPath branchJump (x : ks) = do
         HexIndirect
             { hexJump = childJump
             , hexValue = childValue
             , hexIsLeaf
             } <-
             MaybeT
-                $ query sel (u <> branchJump <> [x])
+                $ query
+                    sel
+                    (dbPath <> branchJump <> [x])
         guard $ isPrefixOf childJump ks
         let remaining = drop (length childJump) ks
         -- Fetch all sibling details (excluding our
@@ -170,7 +172,7 @@ mkMPFInclusionProof prefix FromHexKV{fromHexK} hashing sel k =
                 $ Just
                     <$> fetchSiblingDetails
                         sel
-                        (u <> branchJump)
+                        (dbPath <> branchJump)
                         x
         let nonEmpty = Map.toList sibDetails
         step <- case nonEmpty of
@@ -184,7 +186,7 @@ mkMPFInclusionProof prefix FromHexKV{fromHexK} hashing sel k =
                     )
                 ] ->
                     let fullKey =
-                            u
+                            logicalPath
                                 <> branchJump
                                 <> [d]
                                 <> sibSuffix
@@ -215,7 +217,7 @@ mkMPFInclusionProof prefix FromHexKV{fromHexK} hashing sel k =
                                 <$> fetchBranchMerkleRoot
                                     hashing
                                     sel
-                                    ( u
+                                    ( dbPath
                                         <> branchJump
                                         <> [d]
                                     )
@@ -247,9 +249,14 @@ mkMPFInclusionProof prefix FromHexKV{fromHexK} hashing sel k =
         if hexIsLeaf
             then pure ([step], childJump, childValue)
             else do
+                let nextDbPath =
+                        dbPath <> branchJump <> [x]
+                let nextLogicalPath =
+                        logicalPath <> branchJump <> [x]
                 (restSteps, leafSuffix, valHash) <-
                     go
-                        (u <> branchJump <> [x])
+                        nextDbPath
+                        nextLogicalPath
                         childJump
                         remaining
                 pure (step : restSteps, leafSuffix, valHash)
