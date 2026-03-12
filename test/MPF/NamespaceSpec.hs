@@ -117,4 +117,4 @@ spec = describe "MPF.Namespace" $ do
             `shouldBe` leafKeyPaths proofPlain
         -- and must not start with the prefix
         leafKeyPaths proofPrefixed
-            `shouldSatisfy` all (not . isPrefixOf pfxA)
+            `shouldSatisfy` (not . any (isPrefixOf pfxA))
