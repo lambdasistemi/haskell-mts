@@ -17,6 +17,9 @@ import CSMT.Backend.Pure
 import CSMT.Test.Lib
     ( ListOf
     , element
+    , genSomePaths
+    , insertBatchWord64M
+    , insertBucketedWord64M
     , insertMWord64
     , list
     , node
@@ -26,6 +29,8 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Word (Word64)
 import Test.Hspec (Expectation, Spec, describe, it, shouldBe)
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck (forAll, (===))
 import Prelude
 
 hasExpectedDB
@@ -163,3 +168,87 @@ spec = do
                     record [L, R, R, R] [] 19
                     record [R] [L, R, L] 23
             p `hasExpectedDB` db
+
+    describe "batch insertion" $ do
+        it "batch insert produces same result as sequential for 3 items" $ do
+            let kvs = [([L, L], 1), ([L, R], 2), ([R, L], 3)]
+                seqResult = snd $ runPure emptyInMemoryDB $ mapM_ (uncurry i) kvs
+                batchResult =
+                    snd $ runPure emptyInMemoryDB $ insertBatchWord64M kvs
+            inMemoryCSMTParsed word64Codecs batchResult
+                `shouldBe` inMemoryCSMTParsed word64Codecs seqResult
+
+        it "batch insert produces same result for docs example" $ do
+            let kvs =
+                    [ ([L, L, R, R], 13)
+                    , ([L, R, R, L], 5)
+                    , ([L, R, R, R], 19)
+                    , ([R, L, R, L], 23)
+                    ]
+                seqResult = snd $ runPure emptyInMemoryDB $ mapM_ (uncurry i) kvs
+                batchResult =
+                    snd $ runPure emptyInMemoryDB $ insertBatchWord64M kvs
+            inMemoryCSMTParsed word64Codecs batchResult
+                `shouldBe` inMemoryCSMTParsed word64Codecs seqResult
+
+        prop "batch insert equals sequential insert"
+            $ forAll (genSomePaths 8)
+            $ \keys ->
+                let kvs = zip keys [1 ..]
+                    seqResult = snd $ runPure emptyInMemoryDB $ mapM_ (uncurry i) kvs
+                    batchResult =
+                        snd $ runPure emptyInMemoryDB $ insertBatchWord64M kvs
+                in  inMemoryCSMTParsed word64Codecs batchResult
+                        === inMemoryCSMTParsed word64Codecs seqResult
+
+    describe "bucketed insertion" $ do
+        it "bucketed insert (1 bit) produces same result for 3 items" $ do
+            let kvs = [([L, L], 1), ([L, R], 2), ([R, L], 3)]
+                seqResult = snd $ runPure emptyInMemoryDB $ mapM_ (uncurry i) kvs
+                bucketedResult =
+                    snd $ runPure emptyInMemoryDB $ insertBucketedWord64M 1 kvs
+            inMemoryCSMTParsed word64Codecs bucketedResult
+                `shouldBe` inMemoryCSMTParsed word64Codecs seqResult
+
+        it "bucketed insert (2 bits) produces same result for docs example" $ do
+            let kvs =
+                    [ ([L, L, R, R], 13)
+                    , ([L, R, R, L], 5)
+                    , ([L, R, R, R], 19)
+                    , ([R, L, R, L], 23)
+                    ]
+                seqResult = snd $ runPure emptyInMemoryDB $ mapM_ (uncurry i) kvs
+                bucketedResult =
+                    snd $ runPure emptyInMemoryDB $ insertBucketedWord64M 2 kvs
+            inMemoryCSMTParsed word64Codecs bucketedResult
+                `shouldBe` inMemoryCSMTParsed word64Codecs seqResult
+
+        prop "bucketed insert (1 bit) equals sequential insert"
+            $ forAll (genSomePaths 8)
+            $ \keys ->
+                let kvs = zip keys [1 ..]
+                    seqResult = snd $ runPure emptyInMemoryDB $ mapM_ (uncurry i) kvs
+                    bucketedResult =
+                        snd $ runPure emptyInMemoryDB $ insertBucketedWord64M 1 kvs
+                in  inMemoryCSMTParsed word64Codecs bucketedResult
+                        === inMemoryCSMTParsed word64Codecs seqResult
+
+        prop "bucketed insert (2 bits) equals sequential insert"
+            $ forAll (genSomePaths 8)
+            $ \keys ->
+                let kvs = zip keys [1 ..]
+                    seqResult = snd $ runPure emptyInMemoryDB $ mapM_ (uncurry i) kvs
+                    bucketedResult =
+                        snd $ runPure emptyInMemoryDB $ insertBucketedWord64M 2 kvs
+                in  inMemoryCSMTParsed word64Codecs bucketedResult
+                        === inMemoryCSMTParsed word64Codecs seqResult
+
+        prop "bucketed insert (4 bits) equals sequential insert"
+            $ forAll (genSomePaths 8)
+            $ \keys ->
+                let kvs = zip keys [1 ..]
+                    seqResult = snd $ runPure emptyInMemoryDB $ mapM_ (uncurry i) kvs
+                    bucketedResult =
+                        snd $ runPure emptyInMemoryDB $ insertBucketedWord64M 4 kvs
+                in  inMemoryCSMTParsed word64Codecs bucketedResult
+                        === inMemoryCSMTParsed word64Codecs seqResult
