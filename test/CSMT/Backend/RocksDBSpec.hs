@@ -53,6 +53,8 @@ import Test.QuickCheck
     , forAll
     , listOf
     , listOf1
+    , scale
+    , (==>)
     )
 
 type T a =
@@ -169,9 +171,9 @@ spec = around tempDB $ do
             $ property . testRandomFactsInASparseTree
 
     describe "parallel population" $ do
-        it "populateCSMT produces same root hash as sequential insert"
+        it "populateCSMT on empty tree matches sequential"
             $ \_run -> property
-                $ forAll (genSomePaths 32)
+                $ forAll (scale (* 10) $ genSomePaths 32)
                 $ \keys ->
                     forAll (choose (1, 4))
                         $ \bucketBits ->
@@ -208,3 +210,56 @@ spec = around tempDB $ do
                                                 runTransactionUnguarded database
                                                     $ root hashHashing StandaloneCSMTCol []
                                     popRoot `shouldBe` seqRoot
+
+        it "populateCSMT on non-empty tree (with deletes) matches sequential"
+            $ \_run -> property
+                $ forAll (scale (* 10) $ genSomePaths 32)
+                $ \allKeys ->
+                    forAll (choose (1, 4))
+                        $ \bucketBits ->
+                            forAll (choose (1, 50))
+                                $ \batchSize ->
+                                    length allKeys > 3 ==> do
+                                        let fkv = fromKVHashes
+                                            -- Split keys: first third pre-populated, some deleted, rest via populate
+                                            n = length allKeys
+                                            preKeys = take (n `div` 3) allKeys
+                                            delKeys = take (length preKeys `div` 2) preKeys
+                                            popKeys = drop (n `div` 3) allKeys
+                                            preKvs = zip preKeys $ BC.pack . ("pre" <>) . show <$> [1 :: Int ..]
+                                            popKvs = zip popKeys $ BC.pack . ("pop" <>) . show <$> [1 :: Int ..]
+                                        -- Sequential: pre-insert, delete, then insert remaining
+                                        seqRoot <- withSystemTempDirectory "seq"
+                                            $ \dir -> do
+                                                let path = dir </> "seqdb"
+                                                withRocksDB path 1 1 $ \(RunRocksDB run) -> do
+                                                    database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
+                                                    runTransactionUnguarded database $ do
+                                                        traverse_ (uncurry iM) preKvs
+                                                        traverse_ dM delKeys
+                                                        traverse_ (uncurry iM) popKvs
+                                                    runTransactionUnguarded database
+                                                        $ root hashHashing StandaloneCSMTCol []
+                                        -- Parallel: pre-insert + delete, then populateCSMT the rest
+                                        popRoot <- withSystemTempDirectory "pop"
+                                            $ \dir -> do
+                                                let path = dir </> "popdb"
+                                                withRocksDB path 1 1 $ \(RunRocksDB run) -> do
+                                                    database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
+                                                    runTransactionUnguarded database $ do
+                                                        traverse_ (uncurry iM) preKvs
+                                                        traverse_ dM delKeys
+                                                    populateCSMT
+                                                        bucketBits
+                                                        batchSize
+                                                        100
+                                                        []
+                                                        hashHashing
+                                                        StandaloneCSMTCol
+                                                        (runTransactionUnguarded database)
+                                                        $ \feed ->
+                                                            forM_ popKvs $ \(k, v) ->
+                                                                feed (view (isoK fkv) k) (fromV fkv v)
+                                                    runTransactionUnguarded database
+                                                        $ root hashHashing StandaloneCSMTCol []
+                                        popRoot `shouldBe` seqRoot
