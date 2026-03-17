@@ -44,7 +44,15 @@ module CSMT.MTS
 
       -- * Split-mode Ops GADT
     , CommonOps (..)
-    , Ops (OpsKVOnly, OpsFull, kvCommon, toFull, fullCommon, opsRootHash, toKVOnly)
+    , Ops
+        ( OpsKVOnly
+        , OpsFull
+        , kvCommon
+        , toFull
+        , fullCommon
+        , opsRootHash
+        , toKVOnly
+        )
     , mkKVOnlyOps
     , mkFullOps
     )
@@ -70,6 +78,7 @@ import CSMT.Interface
     , Key
     , root
     )
+import CSMT.Populate (PatchOp (..), patchParallel)
 import CSMT.Proof.Completeness
     ( CompletenessProof (..)
     , collectValues
@@ -82,7 +91,6 @@ import CSMT.Proof.Insertion
     , computeRootHash
     , verifyInclusionProof
     )
-import CSMT.Populate (PatchOp (..), patchParallel)
 import Control.Concurrent.Async (mapConcurrently_)
 import Control.Lens (view)
 import Control.Monad (unless, when)
@@ -608,13 +616,17 @@ replayEntries prefix fromKV hashing entries = do
 -- | Shared KV operations available in both modes.
 data CommonOps m cf d ops k v = CommonOps
     { opsInsert
-        :: k -> v -> Transaction m cf d ops ()
+        :: k
+        -> v
+        -> Transaction m cf d ops ()
     -- ^ Insert a key-value pair
     , opsDelete
-        :: k -> Transaction m cf d ops ()
+        :: k
+        -> Transaction m cf d ops ()
     -- ^ Delete a key
     , opsQuery
-        :: k -> Transaction m cf d ops (Maybe v)
+        :: k
+        -> Transaction m cf d ops (Maybe v)
     -- ^ Query a key
     }
 
@@ -660,7 +672,8 @@ data Ops (mode :: Mode) m cf d ops k v a where
 -- Insert/delete write KV + journal atomically. Query reads
 -- KV. 'toFull' replays the journal via 'patchParallel'.
 mkKVOnlyOps
-    :: Key
+    :: (Monad m)
+    => Key
     -- ^ Prefix
     -> Int
     -- ^ Bucket bits for parallel replay
@@ -670,17 +683,17 @@ mkKVOnlyOps
     -> Hashing Hash
     -> ( forall b
           . Transaction
-                IO
+                m
                 StandaloneCF
                 (Standalone ByteString ByteString Hash)
                 StandaloneOp
                 b
-        -> IO b
+         -> IO b
        )
     -- ^ Transaction runner (must be thread-safe)
     -> Ops
         'KVOnly
-        IO
+        m
         StandaloneCF
         (Standalone ByteString ByteString Hash)
         StandaloneOp
@@ -758,7 +771,8 @@ mkKVOnlyOps prefix bucketBits chunkSize fromKV hashing runTx =
 -- 'toKVOnly' verifies journal is empty and returns 'KVOnly'
 -- ops.
 mkFullOps
-    :: Key
+    :: (Monad m)
+    => Key
     -- ^ Prefix
     -> Int
     -- ^ Bucket bits (passed through to 'mkKVOnlyOps')
@@ -768,17 +782,17 @@ mkFullOps
     -> Hashing Hash
     -> ( forall b
           . Transaction
-                IO
+                m
                 StandaloneCF
                 (Standalone ByteString ByteString Hash)
                 StandaloneOp
                 b
-        -> IO b
+         -> IO b
        )
     -- ^ Transaction runner
     -> Ops
         'Full
-        IO
+        m
         StandaloneCF
         (Standalone ByteString ByteString Hash)
         StandaloneOp

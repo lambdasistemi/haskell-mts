@@ -8,21 +8,22 @@ import CSMT.Backend.Pure
     , pureDatabase
     , runPure
     )
-import CSMT.Backend.Standalone (StandaloneCodecs (..))
-import CSMT.Hashes (Hash, fromKVHashes, hashHashing, isoHash)
-import CSMT.MTS
-    ( CsmtImpl
-    , csmtKVOnlyStore
-    , csmtManagedTransition
-    , csmtMerkleTreeStore
-    , csmtReplayJournal
+import CSMT.Backend.Standalone
+    ( Standalone
+    , StandaloneCF
+    , StandaloneCodecs (..)
+    , StandaloneOp
     )
+import CSMT.Hashes (Hash, fromKVHashes, hashHashing, isoHash)
+import CSMT.MTS (CommonOps (..), CsmtImpl, Ops (..), csmtKVOnlyStore, csmtManagedTransition, csmtMerkleTreeStore, csmtReplayJournal, mkFullOps, mkKVOnlyOps)
 import Control.Exception (SomeException, try)
 import Control.Lens (Iso', iso)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Either (isLeft)
 import Data.IORef (newIORef, readIORef, writeIORef)
+import Database.KV.Transaction (runTransactionUnguarded)
+import Database.KV.Transaction qualified as Transaction
 import MPF.Backend.Pure
     ( MPFPure
     , emptyMPFInMemoryDB
@@ -50,20 +51,25 @@ import MTS.Interface
     , Mode (..)
     , MtsKV (..)
     , MtsTransition (..)
+    , MtsTree (..)
     , mtsKV
+    , mtsTree
     )
 import MTS.Properties
 import Test.Hspec
     ( Spec
     , describe
     , it
+    , shouldBe
     , shouldReturn
     , shouldThrow
     )
 import Test.QuickCheck
     ( Gen
     , arbitrary
+    , forAll
     , listOf1
+    , property
     , vectorOf
     )
 
@@ -267,6 +273,53 @@ mkMpfStoreWithJournal = do
     mpfMerkleTreeStore [] run db fromHexKVBS mpfHashing
 
 -- ------------------------------------------------------------------
+-- CSMT Ops GADT factory
+-- ------------------------------------------------------------------
+
+-- | Wrapper for a polymorphic transaction runner.
+newtype RunTxPure
+    = RunTxPure
+        ( forall a
+           . Transaction.Transaction
+                Pure
+                StandaloneCF
+                (Standalone ByteString ByteString Hash)
+                StandaloneOp
+                a
+          -> IO a
+        )
+
+-- | Create KVOnly Ops backed by the Pure in-memory backend.
+-- Returns both the ops and the transaction runner.
+mkCsmtKVOnlyOps
+    :: IO
+        ( Ops
+            'KVOnly
+            Pure
+            StandaloneCF
+            (Standalone ByteString ByteString Hash)
+            StandaloneOp
+            ByteString
+            ByteString
+            Hash
+        , RunTxPure
+        )
+mkCsmtKVOnlyOps = do
+    ref <- newIORef emptyInMemoryDB
+    let run :: forall b. Pure b -> IO b
+        run action = do
+            s <- readIORef ref
+            let (a, s') = runPure s action
+            writeIORef ref s'
+            pure a
+        db = pureDatabase csmtCodecs
+        runTx = run . runTransactionUnguarded db
+    pure
+        ( mkKVOnlyOps [] 2 100 fromKVHashes hashHashing runTx
+        , RunTxPure runTx
+        )
+
+-- ------------------------------------------------------------------
 -- Generators
 -- ------------------------------------------------------------------
 
@@ -431,3 +484,96 @@ spec = do
                         "k2"
                         "v2"
             pure (isLeft result) `shouldReturn` True
+
+    describe "CSMT Ops GADT" $ do
+        it "KVOnly -> Full produces correct root hash"
+            $ property
+            $ forAll genBSPairs
+            $ \kvs -> do
+                (ops, RunTxPure rtx) <- mkCsmtKVOnlyOps
+                fullStore <- mkCsmtStore
+                mapM_
+                    ( \(k, v) ->
+                        rtx (opsInsert (kvCommon ops) k v)
+                    )
+                    kvs
+                mapM_ (uncurry (mtsInsert (mtsKV fullStore))) kvs
+                mFull <- toFull ops
+                case mFull of
+                    Nothing -> fail "toFull returned Nothing"
+                    Just fullOps -> do
+                        expected <-
+                            mtsRootHash (mtsTree fullStore)
+                        actual <-
+                            rtx (opsRootHash fullOps)
+                        actual `shouldBe` expected
+        it "journal is empty after toFull" $ do
+            (ops, RunTxPure rtx) <- mkCsmtKVOnlyOps
+            rtx (opsInsert (kvCommon ops) "k" "v")
+            mFull <- toFull ops
+            case mFull of
+                Nothing -> fail "toFull returned Nothing"
+                Just fullOps -> do
+                    mKV <- toKVOnly fullOps
+                    case mKV of
+                        Nothing ->
+                            fail "toKVOnly returned Nothing"
+                        Just _ -> pure ()
+        it "Full -> KVOnly -> insert -> Full cycle"
+            $ property
+            $ forAll genBSPairs
+            $ \kvs -> do
+                (ops, RunTxPure rtx) <- mkCsmtKVOnlyOps
+                fullStore <- mkCsmtStore
+                let (first, second) =
+                        splitAt (length kvs `div` 2) kvs
+                mapM_
+                    ( \(k, v) ->
+                        rtx (opsInsert (kvCommon ops) k v)
+                    )
+                    first
+                Just fullOps <- toFull ops
+                Just kvOps2 <- toKVOnly fullOps
+                mapM_
+                    ( \(k, v) ->
+                        rtx (opsInsert (kvCommon kvOps2) k v)
+                    )
+                    second
+                Just fullOps2 <- toFull kvOps2
+                mapM_ (uncurry (mtsInsert (mtsKV fullStore))) kvs
+                expected <- mtsRootHash (mtsTree fullStore)
+                actual <-
+                    rtx (opsRootHash fullOps2)
+                actual `shouldBe` expected
+        it "toKVOnly fails when journal is not empty" $ do
+            ref <- newIORef emptyInMemoryDB
+            let run :: forall b. Pure b -> IO b
+                run action = do
+                    s <- readIORef ref
+                    let (a, s') = runPure s action
+                    writeIORef ref s'
+                    pure a
+                db = pureDatabase csmtCodecs
+                runTx = run . runTransactionUnguarded db
+            let fullOps =
+                    mkFullOps [] 2 100 fromKVHashes hashHashing runTx
+            runTx (opsInsert (fullCommon fullOps) "k" "v")
+            mKV <- toKVOnly fullOps
+            case mKV of
+                Nothing ->
+                    fail "toKVOnly returned Nothing"
+                Just kvOps -> do
+                    runTx (opsInsert (kvCommon kvOps) "k2" "v2")
+                    let fullOps2 =
+                            mkFullOps
+                                []
+                                2
+                                100
+                                fromKVHashes
+                                hashHashing
+                                runTx
+                    mKV2 <- toKVOnly fullOps2
+                    case mKV2 of
+                        Nothing -> pure ()
+                        Just _ ->
+                            fail "toKVOnly should fail with non-empty journal"
