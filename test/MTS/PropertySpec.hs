@@ -15,7 +15,17 @@ import CSMT.Backend.Standalone
     , StandaloneOp
     )
 import CSMT.Hashes (Hash, fromKVHashes, hashHashing, isoHash)
-import CSMT.MTS (CommonOps (..), CsmtImpl, Ops (..), csmtKVOnlyStore, csmtManagedTransition, csmtMerkleTreeStore, csmtReplayJournal, mkFullOps, mkKVOnlyOps)
+import CSMT.MTS
+    ( CommonOps (..)
+    , CsmtImpl
+    , Ops (..)
+    , csmtKVOnlyStore
+    , csmtManagedTransition
+    , csmtMerkleTreeStore
+    , csmtReplayJournal
+    , mkFullOps
+    , mkKVOnlyOps
+    )
 import Control.Exception (SomeException, try)
 import Control.Lens (Iso', iso)
 import Data.ByteString (ByteString)
