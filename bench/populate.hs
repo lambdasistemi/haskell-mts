@@ -69,13 +69,7 @@ benchSequential tmpDir kvs = do
         start <- getCurrentTime
         runTransactionUnguarded database
             $ forM_ kvs
-            $ \(k, val) ->
-                insert
-                    fkv
-                    StandaloneKVCol
-                    StandaloneCSMTCol
-                    k
-                    val
+            $ uncurry (insert fkv StandaloneKVCol StandaloneCSMTCol)
         end <- getCurrentTime
         pure $ realToFrac (diffUTCTime end start)
 
@@ -121,7 +115,7 @@ runBench n batchSize = do
             (fromIntegral n / seqTime :: Double)
 
         -- Populate with varying bucket bits
-        forM_ [1, 2, 3, 4] $ \bits -> do
+        forM_ [1, 2, 3, 4, 5, 6, 7, 8] $ \bits -> do
             putStr $ "  populate " <> show bits <> " bits: "
             hFlush stdout
             popTime <- benchPopulate tmpDir bits batchSize kvs
