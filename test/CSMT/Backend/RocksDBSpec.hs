@@ -206,7 +206,14 @@ spec = around tempDB $ do
                                         database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
                                         runTransactionUnguarded database
                                             $ expandToBucketDepth [] bucketBits StandaloneCSMTCol
-                                        let txns = patchParallel bucketBits [] hashHashing StandaloneCSMTCol StandaloneKVCol ops
+                                        let txns =
+                                                patchParallel
+                                                    bucketBits
+                                                    []
+                                                    hashHashing
+                                                    StandaloneCSMTCol
+                                                    StandaloneKVCol
+                                                    ops
                                         mapConcurrently_ (runTransactionUnguarded database) txns
                                         runTransactionUnguarded database
                                             $ mergeSubtreeRoots [] hashHashing StandaloneCSMTCol bucketBits
@@ -229,7 +236,8 @@ spec = around tempDB $ do
                                     popKvs = zip popKeys $ BC.pack . ("pop" <>) . show <$> [1 :: Int ..]
                                     delKeys = take (length preKeys `div` 2) preKeys
                                     ops =
-                                        [(k, PatchInsert (view (isoK fkv) k) (fromV fkv v)) | (k, v) <- popKvs]
+                                        [ (k, PatchInsert (view (isoK fkv) k) (fromV fkv v)) | (k, v) <- popKvs
+                                        ]
                                             <> [(k, PatchDelete (view (isoK fkv) k)) | k <- delKeys]
                                 -- Sequential
                                 seqRoot <- withSystemTempDirectory "seq"
@@ -253,7 +261,14 @@ spec = around tempDB $ do
                                                 $ traverse_ (uncurry iM) preKvs
                                             runTransactionUnguarded database
                                                 $ expandToBucketDepth [] bucketBits StandaloneCSMTCol
-                                            let txns = patchParallel bucketBits [] hashHashing StandaloneCSMTCol StandaloneKVCol ops
+                                            let txns =
+                                                    patchParallel
+                                                        bucketBits
+                                                        []
+                                                        hashHashing
+                                                        StandaloneCSMTCol
+                                                        StandaloneKVCol
+                                                        ops
                                             mapConcurrently_ (runTransactionUnguarded database) txns
                                             runTransactionUnguarded database
                                                 $ mergeSubtreeRoots [] hashHashing StandaloneCSMTCol bucketBits

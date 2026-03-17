@@ -67,7 +67,7 @@ data PatchOp key value
 -- updates. When used for initial population (no journal),
 -- pass entries with dummy journal keys and a no-op column.
 patchParallel
-    :: (GCompare d, Ord jk)
+    :: (GCompare d, Ord jk, Monad m)
     => Int
     -- ^ Bucket bits (e.g. 4 -> 16 buckets)
     -> Key
@@ -79,7 +79,7 @@ patchParallel
     -- ^ Journal column (for deleting replayed entries)
     -> [(jk, PatchOp Key a)]
     -- ^ (journal key, tree operation) pairs
-    -> [Transaction IO cf d ops ()]
+    -> [Transaction m cf d ops ()]
     -- ^ Independent bucket transactions
 patchParallel bucketBits pfx hashing csmtCol journalCol entries =
     map mkBucketTx (Map.toList buckets)
