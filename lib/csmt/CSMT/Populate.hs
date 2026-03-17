@@ -1,19 +1,21 @@
 -- |
 -- Module      : CSMT.Populate
--- Description : Parallel CSMT patching from a stream of operations
+-- Description : Parallel CSMT patching via bucketed transactions
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- Patches a CSMT in parallel by bucketing operations by tree key
--- prefix and applying them in subtrees concurrently. Works on both
--- empty and non-empty trees. Supports both inserts and deletes.
+-- Patches a CSMT by bucketing operations by tree key prefix and
+-- returning independent transactions for each bucket. The caller
+-- is responsible for running these transactions concurrently
+-- (e.g. via 'mapConcurrently_').
 --
--- The caller provides operations via a callback. The library handles
--- tree preparation, bucketing, parallel consumers with batched
--- transactions, and final merge of the top levels.
+-- Supports both inserts and deletes. Works on both empty and
+-- non-empty trees.
 module CSMT.Populate
     ( patchParallel
     , PatchOp (..)
+    , expandToBucketDepth
+    , mergeSubtreeRoots
     )
 where
 
@@ -30,20 +32,14 @@ import CSMT.Interface
     , Indirect
     , Key
     )
-import Control.Concurrent.Async (async, wait)
-import Control.Concurrent.STM
-    ( atomically
-    , newTBQueueIO
-    , readTBQueue
-    , writeTBQueue
-    )
-import Control.Monad (forM, forM_)
+import Data.List (foldl')
+import Data.Map.Strict qualified as Map
 import Database.KV.Transaction
     ( GCompare
     , Selector
     , Transaction
+    , delete
     )
-import Numeric.Natural (Natural)
 
 -- | An operation to apply to the tree.
 data PatchOp key value
@@ -54,84 +50,63 @@ data PatchOp key value
     deriving stock (Eq, Show)
 
 -- |
--- Patch a CSMT in parallel.
+-- Build independent bucket transactions from a batch of
+-- operations.
 --
--- Spawns @2^bucketBits@ consumer threads, each applying
--- operations to its subtree in batched transactions. The
--- caller produces operations via the @producer@ callback.
--- When the producer returns, the library drains all consumers
--- and merges the top levels.
+-- Groups operations by tree key bucket prefix and returns one
+-- 'Transaction' per non-empty bucket. Each transaction applies
+-- tree operations for its bucket and deletes the corresponding
+-- journal entries.
 --
--- The @runTx@ callback must support concurrent calls from
--- different threads (e.g. 'runTransactionUnguarded'). Each
--- consumer writes to a disjoint key prefix, so no locking is
--- needed.
+-- The caller must run 'expandToBucketDepth' before and
+-- 'mergeSubtreeRoots' after these transactions. The returned
+-- transactions are independent and can be run concurrently.
+--
+-- @journalCol@ is optional: pass journal keys alongside
+-- operations to have them deleted atomically with the tree
+-- updates. When used for initial population (no journal),
+-- pass entries with dummy journal keys and a no-op column.
 patchParallel
-    :: (GCompare d)
+    :: (GCompare d, Ord jk)
     => Int
-    -- ^ Bucket bits (e.g. 4 → 16 buckets)
-    -> Int
-    -- ^ Batch size per transaction (e.g. 1000)
-    -> Natural
-    -- ^ TBQueue bound per bucket (backpressure)
+    -- ^ Bucket bits (e.g. 4 -> 16 buckets)
     -> Key
     -- ^ Global prefix (usually @[]@)
     -> Hashing a
     -> Selector d Key (Indirect a)
-    -> (forall b. Transaction IO cf d ops b -> IO b)
-    -- ^ Run a transaction (must be thread-safe)
-    -> ((PatchOp Key a -> IO ()) -> IO ())
-    -- ^ Producer: given a feed function, emit all
-    -- operations. When this returns, the stream is over.
-    -> IO ()
-patchParallel bucketBits batchSize queueBound pfx hashing csmtCol runTx producer = do
-    let prefixes = allPrefixes bucketBits
+    -- ^ CSMT column
+    -> Selector d jk v
+    -- ^ Journal column (for deleting replayed entries)
+    -> [(jk, PatchOp Key a)]
+    -- ^ (journal key, tree operation) pairs
+    -> [Transaction IO cf d ops ()]
+    -- ^ Independent bucket transactions
+patchParallel bucketBits pfx hashing csmtCol journalCol entries =
+    map mkBucketTx (Map.toList buckets)
+  where
+    prefixes = allPrefixes bucketBits
 
-    -- Expand existing tree so no jump crosses bucket boundary
-    runTx $ expandToBucketDepth pfx bucketBits csmtCol
+    -- Group entries by bucket index
+    buckets =
+        foldl' addEntry Map.empty entries
 
-    -- Create one TBQueue per bucket
-    queues <- forM prefixes $ \_ -> newTBQueueIO queueBound
-
-    -- Spawn all consumer threads
-    asyncs <- forM (zip prefixes queues) $ \(bpfx, q) ->
-        async $ consumeQueue (pfx <> bpfx) q
-
-    -- Producer runs in the current thread
-    producer $ \op -> do
+    addEntry m (jk, op) =
         let treeKey = opKey op
             (bucket, stripped) = splitAt bucketBits treeKey
             idx = bucketIndex bucket
-        atomically
-            $ writeTBQueue (queues !! idx) (Just (setOpKey stripped op))
+            op' = setOpKey stripped op
+        in  Map.insertWith
+                (++)
+                idx
+                [(jk, op')]
+                m
 
-    -- Signal end-of-stream to all queues
-    forM_ queues $ \q -> atomically $ writeTBQueue q Nothing
-
-    -- Wait for all consumers to finish
-    mapM_ wait asyncs
-
-    -- All subtrees built — merge top levels
-    runTx $ mergeSubtreeRoots pfx hashing csmtCol bucketBits
-  where
-    consumeQueue bpfx q = loop []
-      where
-        loop batch = do
-            mEntry <- atomically $ readTBQueue q
-            case mEntry of
-                Nothing ->
-                    flushBatch bpfx batch
-                Just entry -> do
-                    let batch' = entry : batch
-                    if length batch' >= batchSize
-                        then do
-                            flushBatch bpfx batch'
-                            loop []
-                        else loop batch'
-
-    flushBatch _ [] = pure ()
-    flushBatch bpfx batch =
-        runTx $ mapM_ (applyOp bpfx) batch
+    -- Build a transaction for one bucket
+    mkBucketTx (idx, ops) =
+        let bpfx = pfx <> (prefixes !! idx)
+        in  do
+                mapM_ (applyOp bpfx . snd) ops
+                mapM_ (delete journalCol . fst) ops
 
     applyOp bpfx (PatchInsert k v) =
         insertingDirect bpfx hashing csmtCol k v
