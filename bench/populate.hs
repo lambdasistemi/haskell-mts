@@ -25,8 +25,13 @@ import CSMT.Hashes
     , mkHash
     , renderHash
     )
+import CSMT.Insertion
+    ( expandToBucketDepth
+    , mergeSubtreeRoots
+    )
 import CSMT.Interface (FromKV (..), root)
 import CSMT.Populate (PatchOp (..), patchParallel)
+import Control.Concurrent.Async (mapConcurrently_)
 import Control.Lens (view)
 import Control.Monad (forM_)
 import Data.ByteString (ByteString)
@@ -75,56 +80,81 @@ benchSequential tmpDir kvs = do
 
 -- | Benchmark parallel population
 benchPopulate
-    :: FilePath -> Int -> Int -> [(ByteString, ByteString)] -> IO Double
+    :: FilePath
+    -> Int
+    -> Int
+    -> [(ByteString, ByteString)]
+    -> IO Double
 benchPopulate tmpDir bucketBits batchSize kvs = do
     let path = tmpDir </> "pop-" <> show bucketBits
     withRocksDB path 256 256 $ \(RunRocksDB run) -> do
         database <- run $ standaloneRocksDBDatabase codecs
+        let runTx = runTransactionUnguarded database
+            ops =
+                [ (k, PatchInsert (view (isoK fkv) k) (fromV fkv val))
+                | (k, val) <- kvs
+                ]
+            chunks = chunksOf batchSize ops
         start <- getCurrentTime
-        patchParallel
-            bucketBits
-            batchSize
-            1000
-            []
-            hashHashing
-            StandaloneCSMTCol
-            (runTransactionUnguarded database)
-            $ \feed ->
-                forM_ kvs $ \(k, val) ->
-                    feed $ PatchInsert (view (isoK fkv) k) (fromV fkv val)
+        runTx
+            $ expandToBucketDepth [] bucketBits StandaloneCSMTCol
+        forM_ chunks $ \chunk -> do
+            let txns =
+                    patchParallel
+                        bucketBits
+                        []
+                        hashHashing
+                        StandaloneCSMTCol
+                        StandaloneKVCol
+                        chunk
+            mapConcurrently_ runTx txns
+        runTx
+            $ mergeSubtreeRoots [] hashHashing StandaloneCSMTCol bucketBits
         end <- getCurrentTime
         pure $ realToFrac (diffUTCTime end start)
+
+-- | Split a list into chunks of at most @n@ elements.
+chunksOf :: Int -> [a] -> [[a]]
+chunksOf _ [] = []
+chunksOf n xs =
+    let (chunk, rest) = splitAt n xs
+    in  chunk : chunksOf n rest
 
 -- | Run one benchmark round
 runBench :: Int -> Int -> IO ()
 runBench n batchSize = do
     putStrLn
-        $ "\n=== N=" <> show n <> ", batchSize=" <> show batchSize <> " ==="
+        $ "\n=== N="
+            <> show n
+            <> ", batchSize="
+            <> show batchSize
+            <> " ==="
     let kvs = generateData n
     -- Force data generation
     let !_ = length kvs
 
-    withSystemTempDirectory "csmt-populate-bench" $ \tmpDir -> do
-        -- Sequential
-        putStr "  sequential:     "
-        hFlush stdout
-        seqTime <- benchSequential tmpDir kvs
-        printf
-            "%.3fs  (%.0f inserts/sec)\n"
-            seqTime
-            (fromIntegral n / seqTime :: Double)
-
-        -- Populate with varying bucket bits
-        forM_ [1, 2, 3, 4, 5, 6, 7, 8] $ \bits -> do
-            putStr $ "  populate " <> show bits <> " bits: "
+    withSystemTempDirectory "csmt-populate-bench"
+        $ \tmpDir -> do
+            -- Sequential
+            putStr "  sequential:     "
             hFlush stdout
-            popTime <- benchPopulate tmpDir bits batchSize kvs
-            let speedup = seqTime / popTime
+            seqTime <- benchSequential tmpDir kvs
             printf
-                "%.3fs  (%.0f inserts/sec, %.1fx)\n"
-                popTime
-                (fromIntegral n / popTime :: Double)
-                speedup
+                "%.3fs  (%.0f inserts/sec)\n"
+                seqTime
+                (fromIntegral n / seqTime :: Double)
+
+            -- Populate with varying bucket bits
+            forM_ [1, 2, 3, 4, 5, 6, 7, 8] $ \bits -> do
+                putStr $ "  populate " <> show bits <> " bits: "
+                hFlush stdout
+                popTime <- benchPopulate tmpDir bits batchSize kvs
+                let speedup = seqTime / popTime
+                printf
+                    "%.3fs  (%.0f inserts/sec, %.1fx)\n"
+                    popTime
+                    (fromIntegral n / popTime :: Double)
+                    speedup
 
 main :: IO ()
 main = do
@@ -137,7 +167,12 @@ main = do
 
 parseArgs :: [String] -> ([Int], Int)
 parseArgs args =
-    let nums = [read x | x <- args, all (`elem` ['0' .. '9']) x, not (null x)]
+    let nums =
+            [ read x
+            | x <- args
+            , all (`elem` ['0' .. '9']) x
+            , not (null x)
+            ]
         batch = case dropWhile (/= "--batch") args of
             (_ : b : _) -> read b
             _ -> 1000
