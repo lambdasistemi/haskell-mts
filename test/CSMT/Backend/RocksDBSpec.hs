@@ -25,7 +25,7 @@ import CSMT.Hashes
     )
 import CSMT.Hashes qualified as Hashes
 import CSMT.Interface (FromKV (..), root)
-import CSMT.Populate (populateCSMT)
+import CSMT.Populate (patchParallel)
 import Control.Lens (view)
 import Control.Monad (forM_)
 import Control.Monad.IO.Class (MonadIO (..))
@@ -171,7 +171,7 @@ spec = around tempDB $ do
             $ property . testRandomFactsInASparseTree
 
     describe "parallel population" $ do
-        it "populateCSMT on empty tree matches sequential"
+        it "patchParallel on empty tree matches sequential"
             $ \_run -> property
                 $ forAll (scale (* 10) $ genSomePaths 32)
                 $ \keys ->
@@ -196,7 +196,7 @@ spec = around tempDB $ do
                                             let path = dir </> "popdb"
                                             withRocksDB path 1 1 $ \(RunRocksDB run) -> do
                                                 database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
-                                                populateCSMT
+                                                patchParallel
                                                     bucketBits
                                                     batchSize
                                                     100
@@ -211,7 +211,7 @@ spec = around tempDB $ do
                                                     $ root hashHashing StandaloneCSMTCol []
                                     popRoot `shouldBe` seqRoot
 
-        it "populateCSMT on non-empty tree (with deletes) matches sequential"
+        it "patchParallel on non-empty tree (with deletes) matches sequential"
             $ \_run -> property
                 $ forAll (scale (* 10) $ genSomePaths 32)
                 $ \allKeys ->
@@ -240,7 +240,7 @@ spec = around tempDB $ do
                                                         traverse_ (uncurry iM) popKvs
                                                     runTransactionUnguarded database
                                                         $ root hashHashing StandaloneCSMTCol []
-                                        -- Parallel: pre-insert + delete, then populateCSMT the rest
+                                        -- Parallel: pre-insert + delete, then patchParallel the rest
                                         popRoot <- withSystemTempDirectory "pop"
                                             $ \dir -> do
                                                 let path = dir </> "popdb"
@@ -249,7 +249,7 @@ spec = around tempDB $ do
                                                     runTransactionUnguarded database $ do
                                                         traverse_ (uncurry iM) preKvs
                                                         traverse_ dM delKeys
-                                                    populateCSMT
+                                                    patchParallel
                                                         bucketBits
                                                         batchSize
                                                         100

@@ -4,14 +4,15 @@
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- Populates an empty CSMT in parallel by bucketing entries by
--- tree key prefix and building subtrees concurrently.
+-- Patches a CSMT in parallel by bucketing entries by tree key
+-- prefix and building subtrees concurrently. Works on both
+-- empty and non-empty trees.
 --
 -- The caller provides entries via a callback. The library handles
--- bucketing, parallel consumers with batched transactions,
--- and final merge of the top levels.
+-- tree preparation, bucketing, parallel consumers with batched
+-- transactions, and final merge of the top levels.
 module CSMT.Populate
-    ( populateCSMT
+    ( patchParallel
     )
 where
 
@@ -54,7 +55,7 @@ import Numeric.Natural (Natural)
 -- different threads (e.g. 'runTransactionUnguarded'). Each
 -- consumer writes to a disjoint key prefix, so no locking is
 -- needed.
-populateCSMT
+patchParallel
     :: (GCompare d)
     => Int
     -- ^ Bucket bits (e.g. 4 → 16 buckets)
@@ -73,7 +74,7 @@ populateCSMT
     -- @(treeKey, hash)@ pairs. When this returns,
     -- the stream is over.
     -> IO ()
-populateCSMT bucketBits batchSize queueBound pfx hashing csmtCol runTx producer = do
+patchParallel bucketBits batchSize queueBound pfx hashing csmtCol runTx producer = do
     let prefixes = allPrefixes bucketBits
 
     -- Expand existing tree so no jump crosses bucket boundary
@@ -122,5 +123,5 @@ populateCSMT bucketBits batchSize queueBound pfx hashing csmtCol runTx producer 
     flushBatch bpfx batch =
         runTx
             $ mapM_
-                (\(k, h) -> insertingDirect bpfx hashing csmtCol k h)
+                (uncurry (insertingDirect bpfx hashing csmtCol))
                 batch

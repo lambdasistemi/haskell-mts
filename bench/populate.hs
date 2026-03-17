@@ -1,6 +1,6 @@
 {-# LANGUAGE BangPatterns #-}
 
--- | Benchmark: populateCSMT vs sequential insertion
+-- | Benchmark: patchParallel vs sequential insertion
 --
 -- Compares wall-clock time for building a CSMT from N entries
 -- using sequential insertion vs parallel population with
@@ -26,7 +26,7 @@ import CSMT.Hashes
     , renderHash
     )
 import CSMT.Interface (FromKV (..), root)
-import CSMT.Populate (populateCSMT)
+import CSMT.Populate (patchParallel)
 import Control.Lens (view)
 import Control.Monad (forM_)
 import Data.ByteString (ByteString)
@@ -81,7 +81,7 @@ benchPopulate tmpDir bucketBits batchSize kvs = do
     withRocksDB path 256 256 $ \(RunRocksDB run) -> do
         database <- run $ standaloneRocksDBDatabase codecs
         start <- getCurrentTime
-        populateCSMT
+        patchParallel
             bucketBits
             batchSize
             1000
