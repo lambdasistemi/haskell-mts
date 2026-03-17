@@ -18,6 +18,7 @@ where
 import CSMT.Insertion
     ( allPrefixes
     , bucketIndex
+    , expandToBucketDepth
     , insertingDirect
     , mergeSubtreeRoots
     )
@@ -74,6 +75,9 @@ populateCSMT
     -> IO ()
 populateCSMT bucketBits batchSize queueBound pfx hashing csmtCol runTx producer = do
     let prefixes = allPrefixes bucketBits
+
+    -- Expand existing tree so no jump crosses bucket boundary
+    runTx $ expandToBucketDepth pfx bucketBits csmtCol
 
     -- Create one TBQueue per bucket
     queues <- forM prefixes $ \_ -> newTBQueueIO queueBound

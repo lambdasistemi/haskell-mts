@@ -39,6 +39,7 @@ module CSMT.Insertion
 
       -- * Direct insertion (for parallel population)
     , insertingDirect
+    , expandToBucketDepth
     , mergeSubtreeRoots
     , allPrefixes
     , bucketIndex
@@ -71,6 +72,7 @@ import Database.KV.Transaction
     ( GCompare
     , Selector
     , Transaction
+    , delete
     , insert
     , query
     )
@@ -400,6 +402,46 @@ insertingDirect pfx hashing csmtCol treeKey hash = do
     mapM_ (uncurry $ insert csmtCol)
         $ snd
         $ scanCompose pfx hashing c
+
+-- |
+-- Expand the tree so no path-compressed jump crosses the
+-- bucket boundary. After this, every existing entry is
+-- reachable from a node at or below a bucket prefix position.
+--
+-- This must be called before parallel population on a
+-- non-empty tree. The top levels will be rebuilt by
+-- 'mergeSubtreeRoots' after population.
+expandToBucketDepth
+    :: (Monad m, GCompare d)
+    => Key
+    -- ^ Global prefix (usually @[]@)
+    -> Int
+    -- ^ Bucket bits
+    -> Selector d Key (Indirect a)
+    -> Transaction m cf d ops ()
+expandToBucketDepth pfx bucketBits csmtCol = go pfx bucketBits
+  where
+    go _ 0 = pure ()
+    go current remaining = do
+        mi <- query csmtCol current
+        case mi of
+            Nothing -> pure ()
+            Just Indirect{jump, value}
+                | length jump >= remaining -> do
+                    -- Jump crosses the bucket boundary — push down
+                    let (top, rest) = splitAt remaining jump
+                        newPos = current <> top
+                    delete csmtCol current
+                    insert csmtCol newPos Indirect{jump = rest, value}
+                | null jump -> do
+                    -- Branch node, recurse into both children
+                    go (current <> [L]) (remaining - 1)
+                    go (current <> [R]) (remaining - 1)
+                | otherwise -> do
+                    -- Short jump, follow it and recurse
+                    let remaining' = remaining - length jump - 1
+                    go (current <> jump <> [L]) remaining'
+                    go (current <> jump <> [R]) remaining'
 
 -- |
 -- Merge subtree roots after parallel population.
