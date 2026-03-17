@@ -50,6 +50,12 @@ module CSMT.Test.Lib
     , verifyHashMAt
     , insertHashM
     , getRootHashM
+
+      -- * Batch insertion
+    , insertBatchM
+    , insertBatchWord64M
+    , insertBucketedM
+    , insertBucketedWord64M
     )
 where
 
@@ -61,9 +67,12 @@ import CSMT
     , Key
     , Standalone (..)
     , StandaloneCodecs (..)
+    , buildBucket
     , buildInclusionProof
     , deleteSubtree
     , inserting
+    , insertingBatch
+    , insertingBucketed
     , keyPrism
     , verifyInclusionProof
     )
@@ -443,3 +452,58 @@ verifyHashMAt prefix k v =
             Just (val, proof) ->
                 val == v
                     && verifyInclusionProof hashHashing proof
+
+-- | Batch insert multiple key-value pairs into an empty tree.
+insertBatchM
+    :: Ord k
+    => StandaloneCodecs k v a
+    -> FromKV k v a
+    -> Hashing a
+    -> [(k, v)]
+    -> Pure ()
+insertBatchM codecs fromKV hashing kvs =
+    runTransactionUnguarded (pureDatabase codecs)
+        $ insertingBatch
+            []
+            fromKV
+            hashing
+            StandaloneKVCol
+            StandaloneCSMTCol
+            kvs
+
+-- | Batch insert Word64s.
+insertBatchWord64M :: [(Key, Word64)] -> Pure ()
+insertBatchWord64M = insertBatchM word64Codecs identityFromKV word64Hashing
+
+-- | Bucketed batch insert with configurable bucket depth.
+insertBucketedM
+    :: Ord k
+    => StandaloneCodecs k v a
+    -> FromKV k v a
+    -> Hashing a
+    -> Int
+    -> [(k, v)]
+    -> Pure ()
+insertBucketedM codecs fromKV hashing bucketBits kvs =
+    runTransactionUnguarded (pureDatabase codecs)
+        $ insertingBucketed
+            []
+            fromKV
+            hashing
+            StandaloneKVCol
+            StandaloneCSMTCol
+            bucketBits
+            sequentialBuckets
+            kvs
+  where
+    -- Run buckets sequentially (pure backend, no parallelism)
+    sequentialBuckets buckets =
+        [ (bpfx, rootInd, writes)
+        | (bpfx, items) <- buckets
+        , Just (rootInd, writes) <- [buildBucket bpfx hashing items]
+        ]
+
+-- | Bucketed batch insert Word64s.
+insertBucketedWord64M :: Int -> [(Key, Word64)] -> Pure ()
+insertBucketedWord64M =
+    insertBucketedM word64Codecs identityFromKV word64Hashing
