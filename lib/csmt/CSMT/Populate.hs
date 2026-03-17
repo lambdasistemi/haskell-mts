@@ -1,21 +1,23 @@
 -- |
 -- Module      : CSMT.Populate
--- Description : Parallel CSMT population from a stream of entries
+-- Description : Parallel CSMT patching from a stream of operations
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- Patches a CSMT in parallel by bucketing entries by tree key
--- prefix and building subtrees concurrently. Works on both
--- empty and non-empty trees.
+-- Patches a CSMT in parallel by bucketing operations by tree key
+-- prefix and applying them in subtrees concurrently. Works on both
+-- empty and non-empty trees. Supports both inserts and deletes.
 --
--- The caller provides entries via a callback. The library handles
+-- The caller provides operations via a callback. The library handles
 -- tree preparation, bucketing, parallel consumers with batched
 -- transactions, and final merge of the top levels.
 module CSMT.Populate
     ( patchParallel
+    , PatchOp (..)
     )
 where
 
+import CSMT.Deletion (deletingDirect)
 import CSMT.Insertion
     ( allPrefixes
     , bucketIndex
@@ -43,13 +45,22 @@ import Database.KV.Transaction
     )
 import Numeric.Natural (Natural)
 
+-- | An operation to apply to the tree.
+data PatchOp key value
+    = -- | Insert or update a key-value pair.
+      PatchInsert key value
+    | -- | Delete a key.
+      PatchDelete key
+    deriving stock (Eq, Show)
+
 -- |
--- Populate an empty CSMT in parallel.
+-- Patch a CSMT in parallel.
 --
--- Spawns @2^bucketBits@ consumer threads, each building its
--- subtree in batched transactions. The caller produces entries
--- via the @producer@ callback. When the producer returns, the
--- library drains all consumers and merges the top levels.
+-- Spawns @2^bucketBits@ consumer threads, each applying
+-- operations to its subtree in batched transactions. The
+-- caller produces operations via the @producer@ callback.
+-- When the producer returns, the library drains all consumers
+-- and merges the top levels.
 --
 -- The @runTx@ callback must support concurrent calls from
 -- different threads (e.g. 'runTransactionUnguarded'). Each
@@ -69,10 +80,9 @@ patchParallel
     -> Selector d Key (Indirect a)
     -> (forall b. Transaction IO cf d ops b -> IO b)
     -- ^ Run a transaction (must be thread-safe)
-    -> ((Key -> a -> IO ()) -> IO ())
+    -> ((PatchOp Key a -> IO ()) -> IO ())
     -- ^ Producer: given a feed function, emit all
-    -- @(treeKey, hash)@ pairs. When this returns,
-    -- the stream is over.
+    -- operations. When this returns, the stream is over.
     -> IO ()
 patchParallel bucketBits batchSize queueBound pfx hashing csmtCol runTx producer = do
     let prefixes = allPrefixes bucketBits
@@ -88,11 +98,12 @@ patchParallel bucketBits batchSize queueBound pfx hashing csmtCol runTx producer
         async $ consumeQueue (pfx <> bpfx) q
 
     -- Producer runs in the current thread
-    producer $ \treeKey hash -> do
-        let (bucket, stripped) = splitAt bucketBits treeKey
+    producer $ \op -> do
+        let treeKey = opKey op
+            (bucket, stripped) = splitAt bucketBits treeKey
             idx = bucketIndex bucket
         atomically
-            $ writeTBQueue (queues !! idx) (Just (stripped, hash))
+            $ writeTBQueue (queues !! idx) (Just (setOpKey stripped op))
 
     -- Signal end-of-stream to all queues
     forM_ queues $ \q -> atomically $ writeTBQueue q Nothing
@@ -109,7 +120,6 @@ patchParallel bucketBits batchSize queueBound pfx hashing csmtCol runTx producer
             mEntry <- atomically $ readTBQueue q
             case mEntry of
                 Nothing ->
-                    -- Flush remaining batch
                     flushBatch bpfx batch
                 Just entry -> do
                     let batch' = entry : batch
@@ -121,7 +131,19 @@ patchParallel bucketBits batchSize queueBound pfx hashing csmtCol runTx producer
 
     flushBatch _ [] = pure ()
     flushBatch bpfx batch =
-        runTx
-            $ mapM_
-                (uncurry (insertingDirect bpfx hashing csmtCol))
-                batch
+        runTx $ mapM_ (applyOp bpfx) batch
+
+    applyOp bpfx (PatchInsert k v) =
+        insertingDirect bpfx hashing csmtCol k v
+    applyOp bpfx (PatchDelete k) =
+        deletingDirect bpfx hashing csmtCol k
+
+-- | Extract the tree key from an operation.
+opKey :: PatchOp Key a -> Key
+opKey (PatchInsert k _) = k
+opKey (PatchDelete k) = k
+
+-- | Replace the key in an operation.
+setOpKey :: Key -> PatchOp Key a -> PatchOp Key a
+setOpKey k (PatchInsert _ v) = PatchInsert k v
+setOpKey k (PatchDelete _) = PatchDelete k
