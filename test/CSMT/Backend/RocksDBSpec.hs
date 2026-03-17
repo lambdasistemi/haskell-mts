@@ -25,7 +25,7 @@ import CSMT.Hashes
     )
 import CSMT.Hashes qualified as Hashes
 import CSMT.Interface (FromKV (..), root)
-import CSMT.Populate (patchParallel)
+import CSMT.Populate (PatchOp (..), patchParallel)
 import Control.Lens (view)
 import Control.Monad (forM_)
 import Control.Monad.IO.Class (MonadIO (..))
@@ -206,12 +206,12 @@ spec = around tempDB $ do
                                                     (runTransactionUnguarded database)
                                                     $ \feed ->
                                                         forM_ kvs $ \(k, v) ->
-                                                            feed (view (isoK fkv) k) (fromV fkv v)
+                                                            feed $ PatchInsert (view (isoK fkv) k) (fromV fkv v)
                                                 runTransactionUnguarded database
                                                     $ root hashHashing StandaloneCSMTCol []
                                     popRoot `shouldBe` seqRoot
 
-        it "patchParallel on non-empty tree (with deletes) matches sequential"
+        it "patchParallel with mixed inserts and deletes matches sequential"
             $ \_run -> property
                 $ forAll (scale (* 10) $ genSomePaths 32)
                 $ \allKeys ->
@@ -219,16 +219,22 @@ spec = around tempDB $ do
                         $ \bucketBits ->
                             forAll (choose (1, 50))
                                 $ \batchSize ->
-                                    length allKeys > 3 ==> do
+                                    length allKeys > 5 ==> do
                                         let fkv = fromKVHashes
-                                            -- Split keys: first third pre-populated, some deleted, rest via populate
                                             n = length allKeys
+                                            -- First third: pre-populate the tree
                                             preKeys = take (n `div` 3) allKeys
-                                            delKeys = take (length preKeys `div` 2) preKeys
-                                            popKeys = drop (n `div` 3) allKeys
                                             preKvs = zip preKeys $ BC.pack . ("pre" <>) . show <$> [1 :: Int ..]
+                                            -- Rest: new inserts via patchParallel
+                                            popKeys = drop (n `div` 3) allKeys
                                             popKvs = zip popKeys $ BC.pack . ("pop" <>) . show <$> [1 :: Int ..]
-                                        -- Sequential: pre-insert, delete, then insert remaining
+                                            -- Delete half of pre-inserted keys via patchParallel
+                                            delKeys = take (length preKeys `div` 2) preKeys
+                                            -- Build the operation stream: inserts then deletes
+                                            ops =
+                                                [PatchInsert (view (isoK fkv) k) (fromV fkv v) | (k, v) <- popKvs]
+                                                    <> [PatchDelete (view (isoK fkv) k) | k <- delKeys]
+                                        -- Sequential: pre-insert, then apply same ops
                                         seqRoot <- withSystemTempDirectory "seq"
                                             $ \dir -> do
                                                 let path = dir </> "seqdb"
@@ -236,19 +242,18 @@ spec = around tempDB $ do
                                                     database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
                                                     runTransactionUnguarded database $ do
                                                         traverse_ (uncurry iM) preKvs
-                                                        traverse_ dM delKeys
                                                         traverse_ (uncurry iM) popKvs
+                                                        traverse_ dM delKeys
                                                     runTransactionUnguarded database
                                                         $ root hashHashing StandaloneCSMTCol []
-                                        -- Parallel: pre-insert + delete, then patchParallel the rest
+                                        -- Parallel: pre-insert, then patchParallel with mixed ops
                                         popRoot <- withSystemTempDirectory "pop"
                                             $ \dir -> do
                                                 let path = dir </> "popdb"
                                                 withRocksDB path 1 1 $ \(RunRocksDB run) -> do
                                                     database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
-                                                    runTransactionUnguarded database $ do
-                                                        traverse_ (uncurry iM) preKvs
-                                                        traverse_ dM delKeys
+                                                    runTransactionUnguarded database
+                                                        $ traverse_ (uncurry iM) preKvs
                                                     patchParallel
                                                         bucketBits
                                                         batchSize
@@ -257,9 +262,7 @@ spec = around tempDB $ do
                                                         hashHashing
                                                         StandaloneCSMTCol
                                                         (runTransactionUnguarded database)
-                                                        $ \feed ->
-                                                            forM_ popKvs $ \(k, v) ->
-                                                                feed (view (isoK fkv) k) (fromV fkv v)
+                                                        $ \feed -> forM_ ops feed
                                                     runTransactionUnguarded database
                                                         $ root hashHashing StandaloneCSMTCol []
                                         popRoot `shouldBe` seqRoot

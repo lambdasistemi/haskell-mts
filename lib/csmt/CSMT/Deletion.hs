@@ -17,6 +17,7 @@
 module CSMT.Deletion
     ( deleting
     , deletingTreeOnly
+    , deletingDirect
     , newDeletionPath
     , DeletionPath (..)
     , deletionPathToOps
@@ -110,6 +111,30 @@ deletingTreeOnly
     -> Transaction m cf d ops ()
 deletingTreeOnly pfx FromKV{isoK, treePrefix} hashing csmtSel key v = do
     let treeKey = treePrefix v <> view isoK key
+    mpath <- newDeletionPath pfx csmtSel treeKey
+    case mpath of
+        Nothing -> pure ()
+        Just path ->
+            mapM_ (applyOp csmtSel) $ deletionPathToOps pfx hashing path
+
+-- | Delete a pre-computed tree key from the CSMT.
+--
+-- Like 'deletingTreeOnly' but takes the tree key directly,
+-- without going through 'FromKV'. Used by parallel population
+-- where the producer has already done the conversion.
+--
+-- The @treeKey@ should be relative to @pfx@ (bucket prefix
+-- bits already stripped).
+deletingDirect
+    :: (Monad m, GCompare d)
+    => Key
+    -- ^ Prefix (bucket prefix)
+    -> Hashing a
+    -> Selector d Key (Indirect a)
+    -> Key
+    -- ^ Tree key (relative to prefix)
+    -> Transaction m cf d ops ()
+deletingDirect pfx hashing csmtSel treeKey = do
     mpath <- newDeletionPath pfx csmtSel treeKey
     case mpath of
         Nothing -> pure ()

@@ -26,7 +26,7 @@ import CSMT.Hashes
     , renderHash
     )
 import CSMT.Interface (FromKV (..), root)
-import CSMT.Populate (patchParallel)
+import CSMT.Populate (PatchOp (..), patchParallel)
 import Control.Lens (view)
 import Control.Monad (forM_)
 import Data.ByteString (ByteString)
@@ -91,7 +91,7 @@ benchPopulate tmpDir bucketBits batchSize kvs = do
             (runTransactionUnguarded database)
             $ \feed ->
                 forM_ kvs $ \(k, val) ->
-                    feed (view (isoK fkv) k) (fromV fkv val)
+                    feed $ PatchInsert (view (isoK fkv) k) (fromV fkv val)
         end <- getCurrentTime
         pure $ realToFrac (diffUTCTime end start)
 
