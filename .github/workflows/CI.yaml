@@ -75,6 +75,8 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - name: Run Benchmarks
         run: nix --quiet run .#bench
+      - name: Run Populate Benchmarks
+        run: nix --quiet run .#populate-bench -- 1000 5000
   typescript:
     name: TypeScript Verifier Tests
     runs-on: nixos

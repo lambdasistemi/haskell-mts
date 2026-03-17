@@ -59,6 +59,8 @@ in {
   inherit project;
   packages.mts = project.hsPkgs.mts.components.exes.mts;
   packages.bench = project.hsPkgs.mts.components.benchmarks.bench;
+  packages.populate-bench =
+    project.hsPkgs.mts.components.benchmarks.populate-bench;
   packages.unit-tests = project.hsPkgs.mts.components.tests.unit-tests;
   packages.csmt-test-vectors =
     project.hsPkgs.mts.components.exes.csmt-test-vectors;
