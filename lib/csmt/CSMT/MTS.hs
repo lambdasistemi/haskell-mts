@@ -92,7 +92,7 @@ import CSMT.Proof.Insertion
     , verifyInclusionProof
     )
 import Control.Concurrent.Async (mapConcurrently_)
-import Control.Lens (view)
+import Control.Lens (Iso', review, view)
 import Control.Monad (unless, when)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
@@ -105,7 +105,9 @@ import Database.KV.Cursor
     )
 import Database.KV.Database (Database, KV)
 import Database.KV.Transaction
-    ( Transaction
+    ( GCompare
+    , Selector
+    , Transaction
     , delete
     , insert
     , iterating
@@ -467,7 +469,9 @@ csmtJournalEmpty
         StandaloneOp
     -> IO Bool
 csmtJournalEmpty run db =
-    run $ runTransactionUnguarded db journalEmptyT
+    run
+        $ runTransactionUnguarded db
+        $ journalEmptyT StandaloneJournalCol
 
 -- | Replay journal entries against the tree, then clear them.
 --
@@ -518,18 +522,15 @@ collectN n acc = do
 
 -- | Check if the journal column is empty (transactional).
 --
--- Polymorphic in @cf@ and @op@ so it can be composed with
--- 'mapColumns' into richer column types.
+-- Polymorphic in @cf@, @op@, and column type @d@ so it can
+-- be used with any column definition.
 journalEmptyT
-    :: (Monad m)
-    => Transaction
-        m
-        cf
-        (Standalone ByteString ByteString Hash)
-        op
-        Bool
-journalEmptyT = do
-    me <- iterating StandaloneJournalCol firstEntry
+    :: (Monad m, GCompare d)
+    => Selector d k ByteString
+    -- ^ Journal column
+    -> Transaction m cf d op Bool
+journalEmptyT journalCol = do
+    me <- iterating journalCol firstEntry
     pure $ case me of
         Nothing -> True
         Just _ -> False
@@ -667,188 +668,207 @@ data Ops (mode :: Mode) m cf d ops k v a where
            }
         -> Ops 'Full m cf d ops k v a
 
--- | Build 'KVOnly' ops for CSMT standalone columns.
+-- | Build 'KVOnly' ops for generic column types.
 --
 -- Insert/delete write KV + journal atomically. Query reads
 -- KV. 'toFull' replays the journal via 'patchParallel'.
 mkKVOnlyOps
-    :: (Monad m)
+    :: (Monad m, GCompare d, Ord k)
     => Key
     -- ^ Prefix
     -> Int
     -- ^ Bucket bits for parallel replay
     -> Int
     -- ^ Chunk size for journal batches
-    -> FromKV ByteString ByteString Hash
-    -> Hashing Hash
-    -> ( forall b
-          . Transaction
-                m
-                StandaloneCF
-                (Standalone ByteString ByteString Hash)
-                StandaloneOp
-                b
-         -> IO b
-       )
+    -> Selector d k v
+    -- ^ KV column
+    -> Selector d Key (Indirect a)
+    -- ^ CSMT column
+    -> Selector d k ByteString
+    -- ^ Journal column
+    -> Iso' v ByteString
+    -- ^ Journal value serialization
+    -> FromKV k v a
+    -> Hashing a
+    -> (forall b. Transaction m cf d ops b -> IO b)
     -- ^ Transaction runner (must be thread-safe)
-    -> Ops
-        'KVOnly
-        m
-        StandaloneCF
-        (Standalone ByteString ByteString Hash)
-        StandaloneOp
-        ByteString
-        ByteString
-        Hash
-mkKVOnlyOps prefix bucketBits chunkSize fromKV hashing runTx =
-    OpsKVOnly
-        { kvCommon =
-            CommonOps
-                { opsInsert = \k v -> do
-                    insert StandaloneKVCol k v
-                    insert
-                        StandaloneJournalCol
-                        k
-                        (encodeJournalInsert v)
-                , opsDelete = \k -> do
-                    mv <- query StandaloneKVCol k
-                    case mv of
-                        Nothing -> pure ()
-                        Just v -> do
-                            delete StandaloneKVCol k
-                            insert
-                                StandaloneJournalCol
-                                k
-                                (encodeJournalDelete v)
-                , opsQuery = query StandaloneKVCol
-                }
-        , toFull = do
-            runTx
-                $ expandToBucketDepth
-                    prefix
-                    bucketBits
-                    StandaloneCSMTCol
-            replayLoop
-            runTx
-                $ mergeSubtreeRoots
-                    prefix
-                    hashing
-                    StandaloneCSMTCol
-                    bucketBits
-            pure
-                $ Just
-                $ mkFullOps
-                    prefix
-                    bucketBits
-                    chunkSize
-                    fromKV
-                    hashing
-                    runTx
-        }
-  where
-    replayLoop = do
-        entries <-
-            runTx
-                $ readJournalChunkT chunkSize
-        if null entries
-            then pure ()
-            else do
-                let ops = journalEntriesToPatchOps fromKV entries
-                    txns =
-                        patchParallel
-                            bucketBits
-                            prefix
-                            hashing
-                            StandaloneCSMTCol
-                            StandaloneJournalCol
-                            ops
-                mapConcurrently_ runTx txns
+    -> Ops 'KVOnly m cf d ops k v a
+mkKVOnlyOps
+    prefix
+    bucketBits
+    chunkSize
+    kvCol
+    csmtCol
+    journalCol
+    journalIso
+    fromKV
+    hashing
+    runTx =
+        OpsKVOnly
+            { kvCommon =
+                CommonOps
+                    { opsInsert = \k v -> do
+                        insert kvCol k v
+                        insert
+                            journalCol
+                            k
+                            ( encodeJournalInsert
+                                (view journalIso v)
+                            )
+                    , opsDelete = \k -> do
+                        mv <- query kvCol k
+                        case mv of
+                            Nothing -> pure ()
+                            Just v -> do
+                                delete kvCol k
+                                insert
+                                    journalCol
+                                    k
+                                    ( encodeJournalDelete
+                                        (view journalIso v)
+                                    )
+                    , opsQuery = query kvCol
+                    }
+            , toFull = do
+                runTx
+                    $ expandToBucketDepth
+                        prefix
+                        bucketBits
+                        csmtCol
                 replayLoop
+                runTx
+                    $ mergeSubtreeRoots
+                        prefix
+                        hashing
+                        csmtCol
+                        bucketBits
+                pure
+                    $ Just
+                    $ mkFullOps
+                        prefix
+                        bucketBits
+                        chunkSize
+                        kvCol
+                        csmtCol
+                        journalCol
+                        journalIso
+                        fromKV
+                        hashing
+                        runTx
+            }
+      where
+        replayLoop = do
+            entries <-
+                runTx
+                    $ readJournalChunkT
+                        journalCol
+                        chunkSize
+            if null entries
+                then pure ()
+                else do
+                    let ops =
+                            journalEntriesToPatchOps
+                                journalIso
+                                fromKV
+                                entries
+                        txns =
+                            patchParallel
+                                bucketBits
+                                prefix
+                                hashing
+                                csmtCol
+                                journalCol
+                                ops
+                    mapConcurrently_ runTx txns
+                    replayLoop
 
--- | Build 'Full' ops for CSMT standalone columns.
+-- | Build 'Full' ops for generic column types.
 --
 -- Insert/delete write KV + update CSMT tree. Query reads KV.
 -- 'toKVOnly' verifies journal is empty and returns 'KVOnly'
 -- ops.
 mkFullOps
-    :: (Monad m)
+    :: (Monad m, GCompare d, Ord k)
     => Key
     -- ^ Prefix
     -> Int
     -- ^ Bucket bits (passed through to 'mkKVOnlyOps')
     -> Int
     -- ^ Chunk size (passed through to 'mkKVOnlyOps')
-    -> FromKV ByteString ByteString Hash
-    -> Hashing Hash
-    -> ( forall b
-          . Transaction
-                m
-                StandaloneCF
-                (Standalone ByteString ByteString Hash)
-                StandaloneOp
-                b
-         -> IO b
-       )
+    -> Selector d k v
+    -- ^ KV column
+    -> Selector d Key (Indirect a)
+    -- ^ CSMT column
+    -> Selector d k ByteString
+    -- ^ Journal column
+    -> Iso' v ByteString
+    -- ^ Journal value serialization
+    -> FromKV k v a
+    -> Hashing a
+    -> (forall b. Transaction m cf d ops b -> IO b)
     -- ^ Transaction runner
-    -> Ops
-        'Full
-        m
-        StandaloneCF
-        (Standalone ByteString ByteString Hash)
-        StandaloneOp
-        ByteString
-        ByteString
-        Hash
-mkFullOps prefix bucketBits chunkSize fromKV hashing runTx =
-    OpsFull
-        { fullCommon =
-            CommonOps
-                { opsInsert =
-                    inserting
-                        prefix
-                        fromKV
-                        hashing
-                        StandaloneKVCol
-                        StandaloneCSMTCol
-                , opsDelete =
-                    deleting
-                        prefix
-                        fromKV
-                        hashing
-                        StandaloneKVCol
-                        StandaloneCSMTCol
-                , opsQuery = query StandaloneKVCol
-                }
-        , opsRootHash =
-            root hashing StandaloneCSMTCol prefix
-        , toKVOnly = do
-            empty <- runTx journalEmptyT
-            if empty
-                then
-                    pure
-                        $ Just
-                        $ mkKVOnlyOps
+    -> Ops 'Full m cf d ops k v a
+mkFullOps
+    prefix
+    bucketBits
+    chunkSize
+    kvCol
+    csmtCol
+    journalCol
+    journalIso
+    fromKV
+    hashing
+    runTx =
+        OpsFull
+            { fullCommon =
+                CommonOps
+                    { opsInsert =
+                        inserting
                             prefix
-                            bucketBits
-                            chunkSize
                             fromKV
                             hashing
-                            runTx
-                else pure Nothing
-        }
+                            kvCol
+                            csmtCol
+                    , opsDelete =
+                        deleting
+                            prefix
+                            fromKV
+                            hashing
+                            kvCol
+                            csmtCol
+                    , opsQuery = query kvCol
+                    }
+            , opsRootHash =
+                root hashing csmtCol prefix
+            , toKVOnly = do
+                empty <- runTx (journalEmptyT journalCol)
+                if empty
+                    then
+                        pure
+                            $ Just
+                            $ mkKVOnlyOps
+                                prefix
+                                bucketBits
+                                chunkSize
+                                kvCol
+                                csmtCol
+                                journalCol
+                                journalIso
+                                fromKV
+                                hashing
+                                runTx
+                    else pure Nothing
+            }
 
 -- | Read up to @n@ journal entries (transactional).
 readJournalChunkT
-    :: (Monad m)
-    => Int
-    -> Transaction
-        m
-        cf
-        (Standalone ByteString ByteString Hash)
-        op
-        [(ByteString, ByteString)]
-readJournalChunkT chunkSize = do
-    entries <- iterating StandaloneJournalCol $ do
+    :: (Monad m, GCompare d)
+    => Selector d k ByteString
+    -- ^ Journal column
+    -> Int
+    -> Transaction m cf d op [(k, ByteString)]
+readJournalChunkT journalCol chunkSize = do
+    entries <- iterating journalCol $ do
         me <- firstEntry
         case me of
             Nothing -> pure []
@@ -858,14 +878,17 @@ readJournalChunkT chunkSize = do
 -- | Convert journal entries to 'PatchOp' pairs for
 -- 'patchParallel'.
 journalEntriesToPatchOps
-    :: FromKV ByteString ByteString Hash
-    -> [(ByteString, ByteString)]
+    :: Iso' v ByteString
+    -- ^ Journal value serialization
+    -> FromKV k v a
+    -> [(k, ByteString)]
     -- ^ (journal key, encoded journal value)
-    -> [(ByteString, PatchOp Key Hash)]
-journalEntriesToPatchOps fromKV = map convert
+    -> [(k, PatchOp Key a)]
+journalEntriesToPatchOps journalIso fromKV = map convert
   where
     convert (k, raw) =
-        let (tag, v) = parseJournalEntry raw
+        let (tag, serializedV) = parseJournalEntry raw
+            v = review journalIso serializedV
             treeKey =
                 treePrefix fromKV v <> view (isoK fromKV) k
             hash = fromV fromKV v

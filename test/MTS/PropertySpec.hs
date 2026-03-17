@@ -9,7 +9,7 @@ import CSMT.Backend.Pure
     , runPure
     )
 import CSMT.Backend.Standalone
-    ( Standalone
+    ( Standalone (..)
     , StandaloneCF
     , StandaloneCodecs (..)
     , StandaloneOp
@@ -315,7 +315,17 @@ mkCsmtKVOnlyOps = do
         db = pureDatabase csmtCodecs
         runTx = run . runTransactionUnguarded db
     pure
-        ( mkKVOnlyOps [] 2 100 fromKVHashes hashHashing runTx
+        ( mkKVOnlyOps
+            []
+            2
+            100
+            StandaloneKVCol
+            StandaloneCSMTCol
+            StandaloneJournalCol
+            (iso id id)
+            fromKVHashes
+            hashHashing
+            runTx
         , RunTxPure runTx
         )
 
@@ -556,7 +566,17 @@ spec = do
                 db = pureDatabase csmtCodecs
                 runTx = run . runTransactionUnguarded db
             let fullOps =
-                    mkFullOps [] 2 100 fromKVHashes hashHashing runTx
+                    mkFullOps
+                        []
+                        2
+                        100
+                        StandaloneKVCol
+                        StandaloneCSMTCol
+                        StandaloneJournalCol
+                        (iso id id)
+                        fromKVHashes
+                        hashHashing
+                        runTx
             runTx (opsInsert (fullCommon fullOps) "k" "v")
             mKV <- toKVOnly fullOps
             case mKV of
@@ -569,6 +589,10 @@ spec = do
                                 []
                                 2
                                 100
+                                StandaloneKVCol
+                                StandaloneCSMTCol
+                                StandaloneJournalCol
+                                (iso id id)
                                 fromKVHashes
                                 hashHashing
                                 runTx
