@@ -37,6 +37,12 @@ module CSMT.Insertion
     , insertingBatch
     , insertingBucketed
 
+      -- * Direct insertion (for parallel population)
+    , insertingDirect
+    , mergeSubtreeRoots
+    , allPrefixes
+    , bucketIndex
+
       -- * Internal (for testing)
     , buildComposeTree
     , buildComposeFromList
@@ -368,3 +374,79 @@ groupByPrefix !n = foldl' addToGroup Map.empty
     addToGroup acc (k, v) =
         let (bpfx, rest) = splitAt n k
         in  Map.insertWith (++) bpfx [(rest, v)] acc
+
+-- |
+-- Insert a pre-computed (treeKey, hash) into the CSMT.
+--
+-- Like 'insertingTreeOnly' but takes the tree key and hash
+-- directly, without going through 'FromKV'. Used by parallel
+-- population where the producer has already done the conversion.
+--
+-- The @treeKey@ should be relative to @pfx@ (bucket prefix bits
+-- already stripped).
+insertingDirect
+    :: (Monad m, GCompare d)
+    => Key
+    -- ^ Prefix (bucket prefix, e.g. @[L,R,L,L]@)
+    -> Hashing a
+    -> Selector d Key (Indirect a)
+    -> Key
+    -- ^ Tree key (relative to prefix)
+    -> a
+    -- ^ Hash value
+    -> Transaction m cf d ops ()
+insertingDirect pfx hashing csmtCol treeKey hash = do
+    c <- buildComposeTree csmtCol pfx treeKey hash
+    mapM_ (uncurry $ insert csmtCol)
+        $ snd
+        $ scanCompose pfx hashing c
+
+-- |
+-- Merge subtree roots after parallel population.
+--
+-- Reads the root 'Indirect' at each bucket prefix from the DB,
+-- builds the top-level tree with correct path compression, and
+-- writes the top nodes. Overwrites the subtree roots if their
+-- 'jump' needs extending due to empty sibling buckets.
+mergeSubtreeRoots
+    :: (Monad m, GCompare d)
+    => Key
+    -- ^ Global prefix (usually @[]@)
+    -> Hashing a
+    -> Selector d Key (Indirect a)
+    -> Int
+    -- ^ Bucket bits
+    -> Transaction m cf d ops ()
+mergeSubtreeRoots pfx hashing csmtCol bucketBits = do
+    let prefixes = allPrefixes bucketBits
+    roots <- fmap catMaybes $ mapM readRoot prefixes
+    case mergeComposeForest roots of
+        Nothing -> pure ()
+        Just topTree ->
+            mapM_ (uncurry $ insert csmtCol)
+                $ snd
+                $ scanCompose pfx hashing topTree
+  where
+    readRoot bp = do
+        mi <- query csmtCol (pfx <> bp)
+        pure $ fmap (bp,) mi
+
+-- | Generate all prefixes of a given bit length.
+--
+-- @allPrefixes 2@ produces @[[L,L],[L,R],[R,L],[R,R]]@.
+allPrefixes :: Int -> [Key]
+allPrefixes 0 = [[]]
+allPrefixes n =
+    [d : rest | d <- [L, R], rest <- allPrefixes (n - 1)]
+
+-- | Convert a bucket prefix to an index (0-based).
+bucketIndex :: Key -> Int
+bucketIndex = foldl' (\acc d -> acc * 2 + dirToInt d) 0
+  where
+    dirToInt L = 0
+    dirToInt R = 1
+
+catMaybes :: [Maybe a] -> [a]
+catMaybes [] = []
+catMaybes (Nothing : xs) = catMaybes xs
+catMaybes (Just x : xs) = x : catMaybes xs

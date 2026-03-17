@@ -104,6 +104,7 @@ library csmt
     CSMT.Hashes.Types
     CSMT.Insertion
     CSMT.Interface
+    CSMT.Populate
     CSMT.MTS
     CSMT.Proof.Completeness
     CSMT.Proof.Insertion
@@ -125,6 +126,7 @@ library csmt
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
     , rocksdb-kv-transactions                  >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
+    , stm                                      >=2.5  && <2.6
     , transformers                             >=0.6  && <0.7
     , unliftio                                 >=0.2  && <0.3
 
