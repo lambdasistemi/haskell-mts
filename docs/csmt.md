@@ -93,6 +93,47 @@ hash, and proof generation/verification.
 
 See [CLI Manual](manual.md) for full usage.
 
+## Parallel Population (`patchParallel`)
+
+For bulk-loading large datasets (e.g. Cardano UTxO restoration),
+`CSMT.Populate.patchParallel` inserts entries in parallel:
+
+1. **Prepare**: `expandToBucketDepth` pushes any path-compressed node
+   whose jump crosses the bucket boundary below it. This ensures
+   each bucket's subtree is self-contained.
+2. **Produce**: the caller streams `(treeKey, hash)` pairs via a
+   callback. Each pair is dispatched to the correct bucket's
+   `TBQueue` by the first N bits of the tree key.
+3. **Consume**: `2^N` consumer threads each build their subtree
+   in batched transactions using `insertingDirect`. The subtrees
+   write to disjoint regions of the CSMT column.
+4. **Merge**: `mergeSubtreeRoots` reads the subtree roots and
+   rebuilds the top N levels with correct path compression.
+
+Works on both empty and non-empty trees.
+
+```haskell
+patchParallel
+    :: Int                -- bucket bits (e.g. 4 → 16 buckets)
+    -> Int                -- batch size per transaction
+    -> Natural            -- TBQueue bound (backpressure)
+    -> Key                -- global prefix
+    -> Hashing a
+    -> Selector d Key (Indirect a)
+    -> (forall b. Transaction IO cf d ops b -> IO b)
+    -> ((Key -> a -> IO ()) -> IO ())  -- producer callback
+    -> IO ()
+```
+
+Benchmarks on a development machine (RocksDB, `-O2 -threaded -N`):
+
+| N entries | Sequential | 4 bits (16x) | 8 bits (256x) |
+|-----------|------------|--------------|---------------|
+| 1,000 | 6,500/s | 34,000/s (5x) | 43,000/s (7x) |
+| 5,000 | 5,000/s | 29,000/s (6x) | 35,000/s (7x) |
+| 10,000 | 4,700/s | 25,000/s (5x) | 32,000/s (7x) |
+| 50,000 | 3,700/s | 19,000/s (5x) | 24,000/s (6x) |
+
 ## Benchmarks
 
 Preliminary benchmarks show ~900 insertions/second on a standard
