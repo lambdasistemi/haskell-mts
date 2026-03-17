@@ -95,34 +95,36 @@ See [CLI Manual](manual.md) for full usage.
 
 ## Parallel Population (`patchParallel`)
 
-For bulk-loading large datasets (e.g. Cardano UTxO restoration),
-`CSMT.Populate.patchParallel` inserts entries in parallel:
+For bulk-loading large datasets (e.g. Cardano UTxO restoration) or
+replaying journal entries, `CSMT.Populate.patchParallel` builds
+independent bucket transactions from a batch of operations:
 
-1. **Prepare**: `expandToBucketDepth` pushes any path-compressed node
-   whose jump crosses the bucket boundary below it. This ensures
-   each bucket's subtree is self-contained.
-2. **Produce**: the caller streams `(treeKey, hash)` pairs via a
-   callback. Each pair is dispatched to the correct bucket's
-   `TBQueue` by the first N bits of the tree key.
-3. **Consume**: `2^N` consumer threads each build their subtree
-   in batched transactions using `insertingDirect`. The subtrees
-   write to disjoint regions of the CSMT column.
-4. **Merge**: `mergeSubtreeRoots` reads the subtree roots and
-   rebuilds the top N levels with correct path compression.
+1. **Prepare**: caller runs `expandToBucketDepth` to push any
+   path-compressed node whose jump crosses the bucket boundary
+   below it. This ensures each bucket's subtree is self-contained.
+2. **Bucket**: `patchParallel` groups operations by the first N
+   bits of the tree key and returns one `Transaction` per non-empty
+   bucket. Each transaction applies tree ops (`insertingDirect` /
+   `deletingDirect`) and deletes the corresponding journal entries.
+3. **Execute**: the caller runs the returned transactions
+   concurrently (e.g. via `mapConcurrently_`). The subtrees write
+   to disjoint regions of the CSMT column.
+4. **Merge**: caller runs `mergeSubtreeRoots` to read the subtree
+   roots and rebuild the top N levels with correct path compression.
 
-Works on both empty and non-empty trees.
+Works on both empty and non-empty trees. Supports inserts and deletes
+via the `PatchOp` type.
 
 ```haskell
 patchParallel
-    :: Int                -- bucket bits (e.g. 4 → 16 buckets)
-    -> Int                -- batch size per transaction
-    -> Natural            -- TBQueue bound (backpressure)
-    -> Key                -- global prefix
+    :: (GCompare d, Ord jk, Monad m)
+    => Int                         -- bucket bits (e.g. 4 → 16 buckets)
+    -> Key                         -- global prefix
     -> Hashing a
-    -> Selector d Key (Indirect a)
-    -> (forall b. Transaction IO cf d ops b -> IO b)
-    -> ((Key -> a -> IO ()) -> IO ())  -- producer callback
-    -> IO ()
+    -> Selector d Key (Indirect a) -- CSMT column
+    -> Selector d jk v             -- journal column
+    -> [(jk, PatchOp Key a)]       -- (journal key, tree op) pairs
+    -> [Transaction m cf d ops ()] -- independent bucket transactions
 ```
 
 Benchmarks on a development machine (RocksDB, `-O2 -threaded -N`):
@@ -133,6 +135,33 @@ Benchmarks on a development machine (RocksDB, `-O2 -threaded -N`):
 | 5,000 | 5,000/s | 29,000/s (6x) | 35,000/s (7x) |
 | 10,000 | 4,700/s | 25,000/s (5x) | 32,000/s (7x) |
 | 50,000 | 3,700/s | 19,000/s (5x) | 24,000/s (6x) |
+
+## Split-Mode Operations (`Ops` GADT)
+
+The `Ops` GADT provides bidirectional mode transitions for the full
+KVOnly ↔ Full lifecycle:
+
+```haskell
+data Ops (mode :: Mode) m cf d ops k v a where
+    OpsKVOnly :: { kvCommon :: CommonOps, toFull :: IO (Maybe ...) } -> Ops 'KVOnly ...
+    OpsFull   :: { fullCommon :: CommonOps, opsRootHash :: ..., toKVOnly :: IO (Maybe ...) } -> Ops 'Full ...
+```
+
+- **KVOnly**: insert/delete write KV + journal. `toFull` replays
+  the journal via `patchParallel` with concurrent execution.
+- **Full**: insert/delete write KV + update CSMT tree. `toKVOnly`
+  verifies journal is empty before transitioning.
+- **`CommonOps`**: `opsInsert`, `opsDelete`, `opsQuery` —
+  available in both modes.
+
+### Crash Safety
+
+- Each bucket transaction is atomic (tree ops + journal deletes)
+- Committed buckets are consistent; uncommitted entries remain in
+  the journal and are replayed on restart
+- `expandToBucketDepth` is idempotent on restart
+- CSMT is unusable until replay completes (KVOnly returns `Nothing`
+  for root hash)
 
 ## Benchmarks
 
