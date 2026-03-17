@@ -461,7 +461,7 @@ mergeSubtreeRoots
     -> Transaction m cf d ops ()
 mergeSubtreeRoots pfx hashing csmtCol bucketBits = do
     let prefixes = allPrefixes bucketBits
-    roots <- fmap catMaybes $ mapM readRoot prefixes
+    roots <- catMaybes <$> mapM readRoot prefixes
     case mergeComposeForest roots of
         Nothing -> pure ()
         Just topTree ->

@@ -104,8 +104,8 @@ library csmt
     CSMT.Hashes.Types
     CSMT.Insertion
     CSMT.Interface
-    CSMT.Populate
     CSMT.MTS
+    CSMT.Populate
     CSMT.Proof.Completeness
     CSMT.Proof.Insertion
 
