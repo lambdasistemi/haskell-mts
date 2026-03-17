@@ -33,7 +33,6 @@ import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.ByteString.Char8 qualified as BC
 import Data.Foldable (traverse_)
-import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.List (nub)
 import Database.KV.Transaction
     ( RunTransaction (..)
@@ -49,6 +48,7 @@ import Test.QuickCheck
     ( Gen
     , Property
     , Testable (property)
+    , choose
     , elements
     , forAll
     , listOf
@@ -172,35 +172,39 @@ spec = around tempDB $ do
         it "populateCSMT produces same root hash as sequential insert"
             $ \_run -> property
                 $ forAll (genSomePaths 32)
-                $ \keys -> do
-                    let kvs = zip keys $ BC.pack . show <$> [1 :: Int ..]
-                        fkv = fromKVHashes
-                    -- Sequential insert
-                    seqRoot <- withSystemTempDirectory "seq"
-                        $ \dir -> do
-                            let path = dir </> "seqdb"
-                            withRocksDB path 1 1 $ \(RunRocksDB run) -> do
-                                database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
-                                runTransactionUnguarded database $ do
-                                    traverse_ (uncurry iM) kvs
-                                    root hashHashing StandaloneCSMTCol []
-                    -- Parallel populate
-                    popRoot <- withSystemTempDirectory "pop"
-                        $ \dir -> do
-                            let path = dir </> "popdb"
-                            withRocksDB path 1 1 $ \(RunRocksDB run) -> do
-                                database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
-                                populateCSMT
-                                    2
-                                    10
-                                    100
-                                    []
-                                    hashHashing
-                                    StandaloneCSMTCol
-                                    (runTransactionUnguarded database)
-                                    $ \feed ->
-                                        forM_ kvs $ \(k, v) ->
-                                            feed (view (isoK fkv) k) (fromV fkv v)
-                                runTransactionUnguarded database
-                                    $ root hashHashing StandaloneCSMTCol []
-                    popRoot `shouldBe` seqRoot
+                $ \keys ->
+                    forAll (choose (1, 4))
+                        $ \bucketBits ->
+                            forAll (choose (1, 50))
+                                $ \batchSize -> do
+                                    let kvs = zip keys $ BC.pack . show <$> [1 :: Int ..]
+                                        fkv = fromKVHashes
+                                    -- Sequential insert
+                                    seqRoot <- withSystemTempDirectory "seq"
+                                        $ \dir -> do
+                                            let path = dir </> "seqdb"
+                                            withRocksDB path 1 1 $ \(RunRocksDB run) -> do
+                                                database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
+                                                runTransactionUnguarded database $ do
+                                                    traverse_ (uncurry iM) kvs
+                                                    root hashHashing StandaloneCSMTCol []
+                                    -- Parallel populate
+                                    popRoot <- withSystemTempDirectory "pop"
+                                        $ \dir -> do
+                                            let path = dir </> "popdb"
+                                            withRocksDB path 1 1 $ \(RunRocksDB run) -> do
+                                                database <- run $ RocksDB.standaloneRocksDBDatabase rocksDBCodecs
+                                                populateCSMT
+                                                    bucketBits
+                                                    batchSize
+                                                    100
+                                                    []
+                                                    hashHashing
+                                                    StandaloneCSMTCol
+                                                    (runTransactionUnguarded database)
+                                                    $ \feed ->
+                                                        forM_ kvs $ \(k, v) ->
+                                                            feed (view (isoK fkv) k) (fromV fkv v)
+                                                runTransactionUnguarded database
+                                                    $ root hashHashing StandaloneCSMTCol []
+                                    popRoot `shouldBe` seqRoot
