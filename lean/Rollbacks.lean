@@ -1,2 +1,3 @@
 import Rollbacks.SwapPartition
 import Rollbacks.Rollback
+import Rollbacks.JournalInvariant
