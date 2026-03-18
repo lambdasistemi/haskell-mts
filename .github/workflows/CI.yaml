@@ -118,6 +118,8 @@ jobs:
       - name: Build Lean proofs
         working-directory: lean
         run: nix --quiet shell nixpkgs#elan -c lake build
+        env:
+          LEAN_OPTS: "-DwarningAsError=true"
       - name: Check for sorry
         run: |
           if grep -rn 'sorry' --include='*.lean' lean/Rollbacks/ lean/Rollbacks.lean; then
