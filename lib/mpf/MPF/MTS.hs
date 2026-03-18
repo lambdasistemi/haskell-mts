@@ -38,7 +38,7 @@ import Control.Monad (unless, when)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.IORef (newIORef, readIORef, writeIORef)
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Database.KV.Cursor
     ( Cursor
     , Entry (..)
@@ -252,7 +252,7 @@ mpfMerkleTreeStoreT prefix fromKV hashing =
                     MPFStandaloneKVCol
                     MPFStandaloneMPFCol
                     k
-                when (not $ isNothing existed)
+                when (isJust existed)
                     $ adjustCounter
                         MPFStandaloneMetricsCol
                         kvCountKey
