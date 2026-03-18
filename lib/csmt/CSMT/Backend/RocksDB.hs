@@ -7,10 +7,11 @@
 -- A persistent storage backend for CSMT using RocksDB. This backend stores
 -- all data on disk, making it suitable for production use with large datasets.
 --
--- The database uses three column families:
+-- The database uses four column families:
 -- * \"kv\" - For key-value pair storage
 -- * \"csmt\" - For CSMT node storage
 -- * \"journal\" - For KVOnly mode journal entries
+-- * \"metrics\" - For persistent counters
 module CSMT.Backend.RocksDB
     ( withRocksDB
     , RocksDB
@@ -25,11 +26,16 @@ import CSMT.Backend.Standalone
     , StandaloneCodecs (..)
     )
 import CSMT.Interface (csmtCodecs)
-import Control.Concurrent (newEmptyMVar, putMVar, readMVar)
+import Control.Concurrent
+    ( newEmptyMVar
+    , putMVar
+    , readMVar
+    )
 import Control.Concurrent.Async (async, link)
 import Control.Lens (iso)
 import Control.Monad ((<=<))
 import Control.Monad.Trans.Reader (ReaderT (..), ask)
+import Data.Serialize.Extra (intCodec)
 import Database.KV.Database
     ( Database (..)
     )
@@ -57,15 +63,22 @@ type RocksDB = ReaderT DB IO
 standaloneRocksDBCols
     :: StandaloneCodecs k v a
     -> [ColumnFamily]
-    -> DMap (Standalone k v a) (Column ColumnFamily)
+    -> DMap
+        (Standalone k v a)
+        (Column ColumnFamily)
 standaloneRocksDBCols
-    StandaloneCodecs{keyCodec, valueCodec, nodeCodec = pa}
-    [kvcf, csmtcf, journalcf] =
+    StandaloneCodecs
+        { keyCodec
+        , valueCodec
+        , nodeCodec = pa
+        }
+    [kvcf, csmtcf, journalcf, metricscf] =
         fromPairList
             [ StandaloneKVCol
                 :=> Column
                     { family = kvcf
-                    , codecs = Codecs{keyCodec, valueCodec}
+                    , codecs =
+                        Codecs{keyCodec, valueCodec}
                     }
             , StandaloneCSMTCol
                 :=> Column
@@ -75,24 +88,45 @@ standaloneRocksDBCols
             , StandaloneJournalCol
                 :=> Column
                     { family = journalcf
-                    , codecs = Codecs (iso id id) (iso id id)
+                    , codecs =
+                        Codecs
+                            (iso id id)
+                            (iso id id)
+                    }
+            , StandaloneMetricsCol
+                :=> Column
+                    { family = metricscf
+                    , codecs =
+                        Codecs
+                            (iso id id)
+                            intCodec
                     }
             ]
 standaloneRocksDBCols _ _ =
-    error "standaloneRocksDBCols: expected exactly three column families"
+    error
+        "standaloneRocksDBCols: expected exactly four column families"
 
 -- | Create a RocksDB-backed database instance.
 standaloneRocksDBDatabase
     :: MonadUnliftIO m
     => StandaloneCodecs k v a
-    -> RocksDB (Database m ColumnFamily (Standalone k v a) BatchOp)
+    -> RocksDB
+        ( Database
+            m
+            ColumnFamily
+            (Standalone k v a)
+            BatchOp
+        )
 standaloneRocksDBDatabase codecs = do
     db@DB{columnFamilies} <- ask
     pure
-        $ mkRocksDBDatabase db (standaloneRocksDBCols codecs columnFamilies)
+        $ mkRocksDBDatabase
+            db
+            (standaloneRocksDBCols codecs columnFamilies)
 
 -- | A wrapper for running RocksDB operations in IO.
-newtype RunRocksDB = RunRocksDB (forall a. RocksDB a -> IO a)
+newtype RunRocksDB
+    = RunRocksDB (forall a. RocksDB a -> IO a)
 
 -- |
 -- Open a RocksDB database and run an action with access to it.
@@ -115,6 +149,7 @@ withRocksDB path csmtMaxFiles kvMaxFiles action = do
         [ ("kv", configKV kvMaxFiles)
         , ("csmt", configCSMT csmtMaxFiles)
         , ("journal", configJournal)
+        , ("metrics", configMetrics)
         ]
         $ \db -> do
             action $ RunRocksDB $ flip runReaderT db
@@ -124,7 +159,11 @@ withRocksDB path csmtMaxFiles kvMaxFiles action = do
 -- handle and a close action. The caller is responsible for closing the database.
 --
 -- This is \"unsafe\" because forgetting to call the close action will leak resources.
-unsafeWithRocksDB :: FilePath -> Int -> Int -> IO (RunRocksDB, IO ())
+unsafeWithRocksDB
+    :: FilePath
+    -> Int
+    -> Int
+    -> IO (RunRocksDB, IO ())
 unsafeWithRocksDB path csmtMaxFiles kvMaxFiles = do
     wait <- newEmptyMVar
     dbv <- newEmptyMVar
@@ -136,9 +175,12 @@ unsafeWithRocksDB path csmtMaxFiles kvMaxFiles = do
             [ ("kv", configKV kvMaxFiles)
             , ("csmt", configCSMT csmtMaxFiles)
             , ("journal", configJournal)
+            , ("metrics", configMetrics)
             ]
             $ \db -> do
-                putMVar dbv (RunRocksDB $ flip runReaderT db)
+                putMVar
+                    dbv
+                    (RunRocksDB $ flip runReaderT db)
                 readMVar wait
         putMVar done ()
     rdb <- readMVar dbv
@@ -157,7 +199,7 @@ def =
         , bloomFilter = False
         }
 
--- | Configuration for the CSMT column family with specified max open files.
+-- | Configuration for the CSMT column family.
 configCSMT :: Int -> Config
 configCSMT n =
     Config
@@ -169,7 +211,7 @@ configCSMT n =
         , bloomFilter = False
         }
 
--- | Configuration for the KV column family with specified max open files.
+-- | Configuration for the KV column family.
 configKV :: Int -> Config
 configKV n =
     Config
@@ -184,6 +226,18 @@ configKV n =
 -- | Configuration for the journal column family.
 configJournal :: Config
 configJournal =
+    Config
+        { createIfMissing = True
+        , errorIfExists = False
+        , paranoidChecks = False
+        , maxFiles = Nothing
+        , prefixLength = Nothing
+        , bloomFilter = False
+        }
+
+-- | Configuration for the metrics column family.
+configMetrics :: Config
+configMetrics =
     Config
         { createIfMissing = True
         , errorIfExists = False

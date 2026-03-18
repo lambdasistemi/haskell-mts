@@ -47,6 +47,7 @@ import Data.ByteString (ByteString)
 import Data.Foldable (forM_)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Serialize.Extra (intCodec)
 import Database.KV.Database
     ( Database (..)
     , Pos (..)
@@ -107,7 +108,8 @@ nextCursor c@Cursor{position = Nothing} = c
 nextCursor c@Cursor{position = Just k, snapshot} =
     let (_, k') = Map.split k snapshot
     in  case Map.lookupMin k' of
-            Just (knext, _) -> c{position = Just knext}
+            Just (knext, _) ->
+                c{position = Just knext}
             Nothing -> c{position = Nothing}
 
 prevCursor :: Cursor -> Cursor
@@ -115,21 +117,18 @@ prevCursor c@Cursor{position = Nothing} = c
 prevCursor c@Cursor{position = Just k, snapshot} =
     let (kprev, _) = Map.split k snapshot
     in  case Map.lookupMax kprev of
-            Just (kprev', _) -> c{position = Just kprev'}
+            Just (kprev', _) ->
+                c{position = Just kprev'}
             Nothing -> c{position = Nothing}
 
 -- |
--- In-memory database storing CSMT nodes, key-value pairs, and journal.
---
--- Contains four maps:
--- * 'inMemoryCSMT' - The CSMT node storage
--- * 'inMemoryKV' - The key-value pair storage
--- * 'inMemoryJournal' - The journal for KVOnly replay
--- * 'inMemoryIterators' - Active iterator cursors
+-- In-memory database storing CSMT nodes, key-value pairs,
+-- journal, and metrics.
 data InMemoryDB = InMemoryDB
     { inMemoryCSMT :: Map ByteString ByteString
     , inMemoryKV :: Map ByteString ByteString
     , inMemoryJournal :: Map ByteString ByteString
+    , inMemoryMetrics :: Map ByteString ByteString
     , inMemoryIterators :: Map Int Cursor
     }
     deriving (Show, Eq)
@@ -143,32 +142,55 @@ inMemoryCSMTParsed StandaloneCodecs{nodeCodec = pa} m =
     let Codecs{keyCodec, valueCodec} = csmtCodecs pa
     in  Map.fromList
             [ (key, aux)
-            | (kbs, vbs) <- Map.toList (inMemoryCSMT m)
+            | (kbs, vbs) <-
+                Map.toList (inMemoryCSMT m)
             , Just key <- [preview keyCodec kbs]
             , Just aux <- [preview valueCodec vbs]
             ]
 
 -- | An empty in-memory database with no data.
 emptyInMemoryDB :: InMemoryDB
-emptyInMemoryDB = InMemoryDB Map.empty Map.empty Map.empty Map.empty
+emptyInMemoryDB =
+    InMemoryDB
+        Map.empty
+        Map.empty
+        Map.empty
+        Map.empty
+        Map.empty
 
 onCSMT
-    :: (Map ByteString ByteString -> Map ByteString ByteString)
+    :: ( Map ByteString ByteString
+         -> Map ByteString ByteString
+       )
     -> InMemoryDB
     -> InMemoryDB
 onCSMT f m = m{inMemoryCSMT = f (inMemoryCSMT m)}
 
 onKV
-    :: (Map ByteString ByteString -> Map ByteString ByteString)
+    :: ( Map ByteString ByteString
+         -> Map ByteString ByteString
+       )
     -> InMemoryDB
     -> InMemoryDB
 onKV f m = m{inMemoryKV = f (inMemoryKV m)}
 
 onJournal
-    :: (Map ByteString ByteString -> Map ByteString ByteString)
+    :: ( Map ByteString ByteString
+         -> Map ByteString ByteString
+       )
     -> InMemoryDB
     -> InMemoryDB
-onJournal f m = m{inMemoryJournal = f (inMemoryJournal m)}
+onJournal f m =
+    m{inMemoryJournal = f (inMemoryJournal m)}
+
+onMetrics
+    :: ( Map ByteString ByteString
+         -> Map ByteString ByteString
+       )
+    -> InMemoryDB
+    -> InMemoryDB
+onMetrics f m =
+    m{inMemoryMetrics = f (inMemoryMetrics m)}
 
 -- | Pure monad for CSMT operations
 type Pure = StateT InMemoryDB Catch
@@ -180,10 +202,16 @@ runPure
     -> Pure b
     -> (b, InMemoryDB)
 runPure p s = case runCatch (runStateT s p) of
-    Left err -> error $ "runPure: unexpected error: " ++ show err
+    Left err ->
+        error
+            $ "runPure: unexpected error: "
+            ++ show err
     Right res -> res
 
-pureValueAt :: StandaloneCF -> ByteString -> Pure (Maybe ByteString)
+pureValueAt
+    :: StandaloneCF
+    -> ByteString
+    -> Pure (Maybe ByteString)
 pureValueAt StandaloneKV k = do
     kv <- gets inMemoryKV
     pure $ Map.lookup k kv
@@ -193,54 +221,91 @@ pureValueAt StandaloneCSMT k = do
 pureValueAt StandaloneJournal k = do
     journal <- gets inMemoryJournal
     pure $ Map.lookup k journal
+pureValueAt StandaloneMetrics k = do
+    metrics <- gets inMemoryMetrics
+    pure $ Map.lookup k metrics
 
 pureApplyOps :: [StandaloneOp] -> Pure ()
-pureApplyOps ops = forM_ ops $ \(cf, k, mv) -> case (cf, mv) of
-    (StandaloneKV, Nothing) -> modify' $ onKV $ Map.delete k
-    (StandaloneKV, Just v) -> modify' $ onKV $ Map.insert k v
-    (StandaloneCSMT, Nothing) -> modify' $ onCSMT $ Map.delete k
-    (StandaloneCSMT, Just v) -> modify' $ onCSMT $ Map.insert k v
-    (StandaloneJournal, Nothing) -> modify' $ onJournal $ Map.delete k
-    (StandaloneJournal, Just v) -> modify' $ onJournal $ Map.insert k v
+pureApplyOps ops = forM_ ops $ \(cf, k, mv) ->
+    case (cf, mv) of
+        (StandaloneKV, Nothing) ->
+            modify' $ onKV $ Map.delete k
+        (StandaloneKV, Just v) ->
+            modify' $ onKV $ Map.insert k v
+        (StandaloneCSMT, Nothing) ->
+            modify' $ onCSMT $ Map.delete k
+        (StandaloneCSMT, Just v) ->
+            modify' $ onCSMT $ Map.insert k v
+        (StandaloneJournal, Nothing) ->
+            modify' $ onJournal $ Map.delete k
+        (StandaloneJournal, Just v) ->
+            modify' $ onJournal $ Map.insert k v
+        (StandaloneMetrics, Nothing) ->
+            modify' $ onMetrics $ Map.delete k
+        (StandaloneMetrics, Just v) ->
+            modify' $ onMetrics $ Map.insert k v
 
 -- | Build column definitions for the pure in-memory backend.
 standalonePureCols
     :: StandaloneCodecs k v a
     -> DMap (Standalone k v a) (Column StandaloneCF)
-standalonePureCols StandaloneCodecs{keyCodec = pk, valueCodec = pv, nodeCodec = pa} =
-    fromPairList
-        [ StandaloneKVCol
-            :=> Column
-                { family = StandaloneKV
-                , codecs = Codecs pk pv
-                }
-        , StandaloneCSMTCol
-            :=> Column
-                { family = StandaloneCSMT
-                , codecs = csmtCodecs pa
-                }
-        , StandaloneJournalCol
-            :=> Column
-                { family = StandaloneJournal
-                , codecs = Codecs (iso id id) (iso id id)
-                }
-        ]
+standalonePureCols
+    StandaloneCodecs
+        { keyCodec = pk
+        , valueCodec = pv
+        , nodeCodec = pa
+        } =
+        fromPairList
+            [ StandaloneKVCol
+                :=> Column
+                    { family = StandaloneKV
+                    , codecs = Codecs pk pv
+                    }
+            , StandaloneCSMTCol
+                :=> Column
+                    { family = StandaloneCSMT
+                    , codecs = csmtCodecs pa
+                    }
+            , StandaloneJournalCol
+                :=> Column
+                    { family = StandaloneJournal
+                    , codecs =
+                        Codecs
+                            (iso id id)
+                            (iso id id)
+                    }
+            , StandaloneMetricsCol
+                :=> Column
+                    { family = StandaloneMetrics
+                    , codecs =
+                        Codecs
+                            (iso id id)
+                            intCodec
+                    }
+            ]
 
-pureIterator :: StandaloneCF -> Pure (QueryIterator Pure)
+pureIterator
+    :: StandaloneCF -> Pure (QueryIterator Pure)
 pureIterator cf = do
     db <- gets $ case cf of
         StandaloneKV -> inMemoryKV
         StandaloneCSMT -> inMemoryCSMT
         StandaloneJournal -> inMemoryJournal
-    nextId <- gets $ \m -> case Map.lookupMax (inMemoryIterators m) of
-        Just (i, _) -> i + 1
-        Nothing -> 0
+        StandaloneMetrics -> inMemoryMetrics
+    nextId <- gets $ \m ->
+        case Map.lookupMax (inMemoryIterators m) of
+            Just (i, _) -> i + 1
+            Nothing -> 0
     modify' $ \m ->
         m
             { inMemoryIterators =
                 Map.insert
                     nextId
-                    (Cursor{position = Nothing, snapshot = db})
+                    ( Cursor
+                        { position = Nothing
+                        , snapshot = db
+                        }
+                    )
                     (inMemoryIterators m)
             }
     pure
@@ -250,14 +315,17 @@ pureIterator cf = do
             , entry = pureEntryIterator nextId
             }
 
-pureStepIterator :: Int -> Pos -> StateT InMemoryDB Catch ()
+pureStepIterator
+    :: Int -> Pos -> StateT InMemoryDB Catch ()
 pureStepIterator itId pos = do
     iterators <- gets inMemoryIterators
     case pos of
         PosDestroy -> modify' $ \m ->
             m
                 { inMemoryIterators =
-                    Map.delete itId (inMemoryIterators m)
+                    Map.delete
+                        itId
+                        (inMemoryIterators m)
                 }
         _ -> case Map.lookup itId iterators of
             Just cursor -> do
@@ -270,29 +338,49 @@ pureStepIterator itId pos = do
                 modify' $ \m ->
                     m
                         { inMemoryIterators =
-                            Map.insert itId cursor' (inMemoryIterators m)
+                            Map.insert
+                                itId
+                                cursor'
+                                (inMemoryIterators m)
                         }
-            Nothing -> error "pureStepIterator: invalid iterator id"
+            Nothing ->
+                error
+                    "pureStepIterator: invalid iterator id"
 
 pureEntryIterator
-    :: Int -> StateT InMemoryDB Catch (Maybe (ByteString, ByteString))
+    :: Int
+    -> StateT
+        InMemoryDB
+        Catch
+        (Maybe (ByteString, ByteString))
 pureEntryIterator itId = do
     iterators <- gets inMemoryIterators
     case Map.lookup itId iterators of
-        Just cursor -> pure $ entryCursor (snapshot cursor) cursor
-        Nothing -> error "pureEntryIterator: invalid iterator id"
+        Just cursor ->
+            pure
+                $ entryCursor (snapshot cursor) cursor
+        Nothing ->
+            error
+                "pureEntryIterator: invalid iterator id"
 
-pureIsValidIterator :: Int -> StateT InMemoryDB Catch Bool
+pureIsValidIterator
+    :: Int -> StateT InMemoryDB Catch Bool
 pureIsValidIterator itId = do
     iterators <- gets inMemoryIterators
     case Map.lookup itId iterators of
         Just cursor -> pure $ isValidCursor cursor
-        Nothing -> error "pureIsValidIterator: invalid iterator id"
+        Nothing ->
+            error
+                "pureIsValidIterator: invalid iterator id"
 
 -- | Create a pure in-memory database instance.
 pureDatabase
     :: StandaloneCodecs k v a
-    -> Database Pure StandaloneCF (Standalone k v a) StandaloneOp
+    -> Database
+        Pure
+        StandaloneCF
+        (Standalone k v a)
+        StandaloneOp
 pureDatabase codecs =
     let db =
             Database
@@ -308,6 +396,12 @@ pureDatabase codecs =
 -- | Run a transaction in the pure in-memory backend.
 runPureTransaction
     :: StandaloneCodecs k v a
-    -> Transaction Pure StandaloneCF (Standalone k v a) StandaloneOp b
+    -> Transaction
+        Pure
+        StandaloneCF
+        (Standalone k v a)
+        StandaloneOp
+        b
     -> Pure b
-runPureTransaction codecs = runTransactionUnguarded (pureDatabase codecs)
+runPureTransaction codecs =
+    runTransactionUnguarded (pureDatabase codecs)

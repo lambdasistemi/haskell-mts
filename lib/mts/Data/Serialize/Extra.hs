@@ -9,13 +9,17 @@ module Data.Serialize.Extra
     ( evalPutM
     , unsafeEvalGet
     , evalGetM
+    , intCodec
     )
 where
 
+import Control.Lens (Prism', prism')
 import Data.ByteString (ByteString)
 import Data.Serialize
     ( Get
     , PutM
+    , decode
+    , encode
     , runGet
     , runPutM
     )
@@ -36,3 +40,10 @@ evalGetM :: Get a -> ByteString -> Maybe a
 evalGetM get bs = case runGet get bs of
     Right a -> Just a
     Left _err -> Nothing
+
+-- | Prism for serializing 'Int' values to 'ByteString'.
+intCodec :: Prism' ByteString Int
+intCodec =
+    prism'
+        encode
+        (either (const Nothing) Just . decode)

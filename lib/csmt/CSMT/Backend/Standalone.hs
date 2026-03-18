@@ -32,14 +32,21 @@ import Database.KV.Transaction
     )
 
 -- | Column family identifiers for the standalone backend.
-data StandaloneCF = StandaloneKV | StandaloneCSMT | StandaloneJournal
+data StandaloneCF
+    = StandaloneKV
+    | StandaloneCSMT
+    | StandaloneJournal
+    | StandaloneMetrics
 
 -- | A database operation: column family, key, and optional value (Nothing = delete).
 type StandaloneOp = (StandaloneCF, ByteString, Maybe ByteString)
 
 -- | Construct a standalone operation tuple.
 mkStandaloneOp
-    :: StandaloneCF -> ByteString -> Maybe ByteString -> StandaloneOp
+    :: StandaloneCF
+    -> ByteString
+    -> Maybe ByteString
+    -> StandaloneOp
 mkStandaloneOp = (,,)
 
 -- |
@@ -48,18 +55,28 @@ mkStandaloneOp = (,,)
 -- * 'StandaloneKVCol' - The key-value storage column
 -- * 'StandaloneCSMTCol' - The CSMT node storage column
 -- * 'StandaloneJournalCol' - The journal column for KVOnly replay
+-- * 'StandaloneMetricsCol' - The metrics counter column
 data Standalone k v a x where
     -- | Column for user key-value pairs
-    StandaloneKVCol :: Standalone k v a (KV k v)
+    StandaloneKVCol
+        :: Standalone k v a (KV k v)
     -- | Column for CSMT tree nodes
-    StandaloneCSMTCol :: Standalone k v a (KV Key (Indirect a))
+    StandaloneCSMTCol
+        :: Standalone k v a (KV Key (Indirect a))
     -- | Column for journal entries (raw ByteString key-value)
-    StandaloneJournalCol :: Standalone k v a (KV ByteString ByteString)
+    StandaloneJournalCol
+        :: Standalone k v a (KV ByteString ByteString)
+    -- | Column for persistent metrics counters
+    StandaloneMetricsCol
+        :: Standalone k v a (KV ByteString Int)
 
 instance GEq (Standalone k v a) where
     geq StandaloneKVCol StandaloneKVCol = Just Refl
     geq StandaloneCSMTCol StandaloneCSMTCol = Just Refl
-    geq StandaloneJournalCol StandaloneJournalCol = Just Refl
+    geq StandaloneJournalCol StandaloneJournalCol =
+        Just Refl
+    geq StandaloneMetricsCol StandaloneMetricsCol =
+        Just Refl
     geq _ _ = Nothing
 
 instance GCompare (Standalone k v a) where
@@ -67,9 +84,15 @@ instance GCompare (Standalone k v a) where
     gcompare StandaloneKVCol _ = GLT
     gcompare StandaloneCSMTCol StandaloneKVCol = GGT
     gcompare StandaloneCSMTCol StandaloneCSMTCol = GEQ
-    gcompare StandaloneCSMTCol StandaloneJournalCol = GLT
-    gcompare StandaloneJournalCol StandaloneJournalCol = GEQ
+    gcompare StandaloneCSMTCol _ = GLT
+    gcompare StandaloneJournalCol StandaloneMetricsCol =
+        GLT
+    gcompare StandaloneJournalCol StandaloneJournalCol =
+        GEQ
     gcompare StandaloneJournalCol _ = GGT
+    gcompare StandaloneMetricsCol StandaloneMetricsCol =
+        GEQ
+    gcompare StandaloneMetricsCol _ = GGT
 
 -- |
 -- Codecs for serializing keys, values, and hash nodes to ByteStrings.

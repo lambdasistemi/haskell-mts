@@ -24,27 +24,41 @@ data MPFStandaloneCF
     = MPFStandaloneKV
     | MPFStandaloneMPF
     | MPFStandaloneJournal
+    | MPFStandaloneMetrics
     deriving (Show, Eq, Ord)
 
 -- | Operation type for standalone backend
-type MPFStandaloneOp = (MPFStandaloneCF, ByteString, Maybe ByteString)
+type MPFStandaloneOp =
+    (MPFStandaloneCF, ByteString, Maybe ByteString)
 
 -- | Create a standalone operation
 mkMPFStandaloneOp
-    :: MPFStandaloneCF -> ByteString -> Maybe ByteString -> MPFStandaloneOp
+    :: MPFStandaloneCF
+    -> ByteString
+    -> Maybe ByteString
+    -> MPFStandaloneOp
 mkMPFStandaloneOp = (,,)
 
 -- | GADT for type-safe column family selection
 data MPFStandalone k v a x where
-    MPFStandaloneKVCol :: MPFStandalone k v a (KV k v)
-    MPFStandaloneMPFCol :: MPFStandalone k v a (KV HexKey (HexIndirect a))
+    MPFStandaloneKVCol
+        :: MPFStandalone k v a (KV k v)
+    MPFStandaloneMPFCol
+        :: MPFStandalone k v a (KV HexKey (HexIndirect a))
     MPFStandaloneJournalCol
         :: MPFStandalone k v a (KV ByteString ByteString)
+    -- | Column for persistent metrics counters
+    MPFStandaloneMetricsCol
+        :: MPFStandalone k v a (KV ByteString Int)
 
 instance GEq (MPFStandalone k v a) where
     geq MPFStandaloneKVCol MPFStandaloneKVCol = Just Refl
-    geq MPFStandaloneMPFCol MPFStandaloneMPFCol = Just Refl
-    geq MPFStandaloneJournalCol MPFStandaloneJournalCol = Just Refl
+    geq MPFStandaloneMPFCol MPFStandaloneMPFCol =
+        Just Refl
+    geq MPFStandaloneJournalCol MPFStandaloneJournalCol =
+        Just Refl
+    geq MPFStandaloneMetricsCol MPFStandaloneMetricsCol =
+        Just Refl
     geq _ _ = Nothing
 
 instance GCompare (MPFStandalone k v a) where
@@ -52,9 +66,15 @@ instance GCompare (MPFStandalone k v a) where
     gcompare MPFStandaloneKVCol _ = GLT
     gcompare MPFStandaloneMPFCol MPFStandaloneKVCol = GGT
     gcompare MPFStandaloneMPFCol MPFStandaloneMPFCol = GEQ
-    gcompare MPFStandaloneMPFCol MPFStandaloneJournalCol = GLT
-    gcompare MPFStandaloneJournalCol MPFStandaloneJournalCol = GEQ
+    gcompare MPFStandaloneMPFCol _ = GLT
+    gcompare MPFStandaloneJournalCol MPFStandaloneMetricsCol =
+        GLT
+    gcompare MPFStandaloneJournalCol MPFStandaloneJournalCol =
+        GEQ
     gcompare MPFStandaloneJournalCol _ = GGT
+    gcompare MPFStandaloneMetricsCol MPFStandaloneMetricsCol =
+        GEQ
+    gcompare MPFStandaloneMetricsCol _ = GGT
 
 -- | Serialization codecs for the MPF standalone backend
 data MPFStandaloneCodecs k v a = MPFStandaloneCodecs
