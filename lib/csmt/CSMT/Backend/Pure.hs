@@ -205,7 +205,7 @@ runPure p s = case runCatch (runStateT s p) of
     Left err ->
         error
             $ "runPure: unexpected error: "
-            ++ show err
+                ++ show err
     Right res -> res
 
 pureValueAt

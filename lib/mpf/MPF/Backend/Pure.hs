@@ -171,7 +171,7 @@ runMPFPure p s = case runCatch (runStateT s p) of
     Left err ->
         error
             $ "runMPFPure: unexpected error: "
-            ++ show err
+                ++ show err
     Right res -> res
 
 pureValueAt
@@ -261,11 +261,9 @@ pureIterator cf = do
         MPFStandaloneJournal -> mpfInMemoryJournal
         MPFStandaloneMetrics -> mpfInMemoryMetrics
     nextId <- gets $ \m ->
-        case
-            Map.lookupMax (mpfInMemoryIterators m)
-            of
-                Just (i, _) -> i + 1
-                Nothing -> 0
+        case Map.lookupMax (mpfInMemoryIterators m) of
+            Just (i, _) -> i + 1
+            Nothing -> 0
     modify' $ \m ->
         m
             { mpfInMemoryIterators =

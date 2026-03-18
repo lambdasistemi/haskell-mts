@@ -121,6 +121,7 @@ import Control.Monad (unless, when)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.IORef (newIORef, readIORef, writeIORef)
+import Data.Maybe (fromMaybe, isJust, isNothing)
 import Data.Serialize (getWord8, putWord8)
 import Data.Serialize.Extra (evalGetM, evalPutM)
 import Data.Word (Word8)
@@ -141,7 +142,6 @@ import Database.KV.Transaction
     , query
     , runTransactionUnguarded
     )
-import Data.Maybe (fromMaybe, isNothing)
 import MTS.Interface
     ( MerkleTreeStore (..)
     , Mode (..)
@@ -466,7 +466,7 @@ csmtMerkleTreeStoreT prefix fromKV hashing =
                     StandaloneKVCol
                     StandaloneCSMTCol
                     k
-                when (not $ isNothing existed)
+                when (isJust existed)
                     $ adjustCounter
                         StandaloneMetricsCol
                         kvCountKey
@@ -503,8 +503,8 @@ csmtMerkleTreeStoreT prefix fromKV hashing =
                 computeRootHash hashing
             , mtsBatchInsert = \kvs -> do
                 newCount <-
-                    fmap (length . filter id)
-                        $ mapM
+                    (length . filter id)
+                        <$> mapM
                             ( \(k, _) ->
                                 isNothing
                                     <$> query
