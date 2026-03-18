@@ -205,8 +205,8 @@ theorem kvInsert_preserves_genesisInv
     by_cases hk : k' = k
     · subst hk; simp only [ite_true]
       cases hj : st.journal k' with
-      | none => cases hkv : st.kv k' <;> simp [hj, hkv]
-      | some je => cases je <;> simp [hj]
+      | none => cases hkv : st.kv k' <;> simp
+      | some je => cases je <;> simp
     · simp only [show k' ≠ k from hk, ite_false]; exact hinv k'
   · -- Part 3: all entries are JInsert
     simp only [kvInsert, FStore.insert, FStore.get?] at he
@@ -373,8 +373,7 @@ theorem kvInsert_preserves_generalInv
       cases hkv : st.kv k' with
       | none => simp_all
       | some w =>
-        simp [hkv, hj] at hkv_inv
-        simp [hkv, hj]
+        simp_all
         rw [← hkv_inv]; simp
   · simp only [show k' ≠ k from hk, ite_false]
     exact h k'
@@ -395,7 +394,7 @@ theorem kvDelete_preserves_generalInv
       cases je with
       | ins v' =>
         -- Elide
-        simp only [hj, FStore.erase, FStore.get?]
+        simp only [FStore.erase]
         by_cases hk : k' = k
         · subst hk; simp only [ite_true]
           obtain ⟨_, hcsmt⟩ := h k'
@@ -404,7 +403,7 @@ theorem kvDelete_preserves_generalInv
         · simp only [show k' ≠ k from hk, ite_false]; exact h k'
       | upd v' =>
         -- JUpdate → JDelete
-        simp only [hj, FStore.erase, FStore.insert, FStore.get?]
+        simp only [FStore.erase, FStore.insert]
         by_cases hk : k' = k
         · subst hk; simp only [ite_true]
           obtain ⟨_, hcsmt⟩ := h k'
@@ -417,7 +416,7 @@ theorem kvDelete_preserves_generalInv
         exact h k'
     | none =>
       -- No journal → JDelete
-      simp only [hj, FStore.erase, FStore.insert, FStore.get?]
+      simp only [FStore.erase, FStore.insert]
       by_cases hk : k' = k
       · subst hk; simp only [ite_true]
         obtain ⟨hkv_inv, _⟩ := h k'
