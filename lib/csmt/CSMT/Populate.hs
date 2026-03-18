@@ -79,8 +79,8 @@ patchParallel
     -- ^ Journal column (for deleting replayed entries)
     -> [(jk, PatchOp Key a)]
     -- ^ (journal key, tree operation) pairs
-    -> [Transaction m cf d ops ()]
-    -- ^ Independent bucket transactions
+    -> [(Int, Transaction m cf d ops ())]
+    -- ^ (op count, transaction) per active bucket
 patchParallel bucketBits pfx hashing csmtCol journalCol entries =
     map mkBucketTx (Map.toList buckets)
   where
@@ -104,9 +104,11 @@ patchParallel bucketBits pfx hashing csmtCol journalCol entries =
     -- Build a transaction for one bucket
     mkBucketTx (idx, ops) =
         let bpfx = pfx <> (prefixes !! idx)
-        in  do
+        in  ( length ops
+            , do
                 mapM_ (applyOp bpfx . snd) ops
                 mapM_ (delete journalCol . fst) ops
+            )
 
     applyOp bpfx (PatchInsert k v) =
         insertingDirect bpfx hashing csmtCol k v

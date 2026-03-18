@@ -336,6 +336,7 @@ mkCsmtKVOnlyOps = do
             fromKVHashes
             hashHashing
             runTx
+            (const $ pure ())
         , RunTxPure runTx
         )
 
@@ -587,6 +588,7 @@ spec = do
                         fromKVHashes
                         hashHashing
                         runTx
+                        (const $ pure ())
             runTx (opsInsert (fullCommon fullOps) "k" "v")
             mKV <- toKVOnly fullOps
             case mKV of
@@ -606,6 +608,7 @@ spec = do
                                 fromKVHashes
                                 hashHashing
                                 runTx
+                                (const $ pure ())
                     mKV2 <- toKVOnly fullOps2
                     case mKV2 of
                         Nothing -> pure ()

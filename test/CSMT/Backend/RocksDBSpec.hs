@@ -214,7 +214,7 @@ spec = around tempDB $ do
                                                     StandaloneCSMTCol
                                                     StandaloneKVCol
                                                     ops
-                                        mapConcurrently_ (runTransactionUnguarded database) txns
+                                        mapConcurrently_ (runTransactionUnguarded database . snd) txns
                                         runTransactionUnguarded database
                                             $ mergeSubtreeRoots [] hashHashing StandaloneCSMTCol bucketBits
                                         runTransactionUnguarded database
@@ -269,7 +269,7 @@ spec = around tempDB $ do
                                                         StandaloneCSMTCol
                                                         StandaloneKVCol
                                                         ops
-                                            mapConcurrently_ (runTransactionUnguarded database) txns
+                                            mapConcurrently_ (runTransactionUnguarded database . snd) txns
                                             runTransactionUnguarded database
                                                 $ mergeSubtreeRoots [] hashHashing StandaloneCSMTCol bucketBits
                                             runTransactionUnguarded database

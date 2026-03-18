@@ -107,7 +107,7 @@ benchPopulate tmpDir bucketBits batchSize kvs = do
                         StandaloneCSMTCol
                         StandaloneKVCol
                         chunk
-            mapConcurrently_ runTx txns
+            mapConcurrently_ (runTx . snd) txns
         runTx
             $ mergeSubtreeRoots [] hashHashing StandaloneCSMTCol bucketBits
         end <- getCurrentTime
