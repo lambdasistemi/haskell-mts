@@ -147,25 +147,36 @@ type instance MtsCompletenessProof CsmtImpl = CompletenessProof Hash
 type instance MtsPrefix CsmtImpl = Key
 
 -- | Journal entry tag bytes.
-journalInsertTag, journalDeleteTag :: ByteString
+journalInsertTag, journalUpdateTag, journalDeleteTag :: ByteString
 journalInsertTag = B.singleton 0x01
+journalUpdateTag = B.singleton 0x02
 journalDeleteTag = B.singleton 0x00
 
--- | Encode a journal insert entry: @0x01 ++ value@.
+-- | Encode a journal insert entry (new key): @0x01 ++ value@.
 encodeJournalInsert :: ByteString -> ByteString
 encodeJournalInsert v = journalInsertTag <> v
+
+-- | Encode a journal update entry (overwrite): @0x02 ++ value@.
+encodeJournalUpdate :: ByteString -> ByteString
+encodeJournalUpdate v = journalUpdateTag <> v
 
 -- | Encode a journal delete entry: @0x00 ++ oldValue@.
 encodeJournalDelete :: ByteString -> ByteString
 encodeJournalDelete v = journalDeleteTag <> v
 
 -- | Tag for journal entry.
-data JournalTag = JInsert | JDelete
+--
+-- * 'JInsert' — new key, not in CSMT (safe to elide on delete)
+-- * 'JUpdate' — overwrite of key already in CSMT
+-- * 'JDelete' — key removed, CSMT needs to delete it
+data JournalTag = JInsert | JUpdate | JDelete
+    deriving stock (Eq)
 
 -- | Parse a journal entry into tag + value payload.
 parseJournalEntry :: ByteString -> (JournalTag, ByteString)
 parseJournalEntry bs = case B.uncons bs of
     Just (0x01, rest) -> (JInsert, rest)
+    Just (0x02, rest) -> (JUpdate, rest)
     Just (0x00, rest) -> (JDelete, rest)
     _ -> error "parseJournalEntry: invalid tag byte"
 
@@ -357,21 +368,35 @@ csmtKVOnlyStoreT _fromKV =
     MkKVOnly
         MtsKV
             { mtsInsert = \k v -> do
+                mj <- query StandaloneJournalCol k
+                existing <- query StandaloneKVCol k
+                let tag = case mj of
+                        Just jv -> case fst $ parseJournalEntry jv of
+                            JInsert -> JInsert
+                            JUpdate -> JUpdate
+                            JDelete -> JUpdate
+                        Nothing -> case existing of
+                            Nothing -> JInsert
+                            Just _ -> JUpdate
                 insert StandaloneKVCol k v
-                insert
-                    StandaloneJournalCol
-                    k
-                    (encodeJournalInsert v)
+                insert StandaloneJournalCol k $ case tag of
+                    JInsert -> encodeJournalInsert v
+                    _ -> encodeJournalUpdate v
             , mtsDelete = \k -> do
                 mv <- query StandaloneKVCol k
                 case mv of
                     Nothing -> pure ()
                     Just v -> do
                         delete StandaloneKVCol k
-                        insert
-                            StandaloneJournalCol
-                            k
-                            (encodeJournalDelete v)
+                        mj <- query StandaloneJournalCol k
+                        case fmap (fst . parseJournalEntry) mj of
+                            Just JInsert ->
+                                delete StandaloneJournalCol k
+                            _ ->
+                                insert
+                                    StandaloneJournalCol
+                                    k
+                                    (encodeJournalDelete v)
             }
 
 -- | Build an IO 'KVOnly' 'MerkleTreeStore' for CSMT.
@@ -604,6 +629,14 @@ replayEntries prefix fromKV hashing entries = do
                         StandaloneCSMTCol
                         k
                         v
+                JUpdate ->
+                    insertingTreeOnly
+                        prefix
+                        fromKV
+                        hashing
+                        StandaloneCSMTCol
+                        k
+                        v
                 JDelete ->
                     deletingTreeOnly
                         prefix
@@ -731,26 +764,53 @@ mkKVOnlyOps
         OpsKVOnly
             { kvCommon =
                 CommonOps
+                    -- Journal tag compositions:
+                    --
+                    -- INSERT (journal × KV → journal'):
+                    --   Nothing × Nothing → JInsert  (new key)
+                    --   Nothing × Just _  → JUpdate  (key from CSMT)
+                    --   JInsert × _       → JInsert  (still new)
+                    --   JUpdate × _       → JUpdate  (still CSMT)
+                    --   JDelete × _       → JUpdate  (re-insert, CSMT has it)
+                    --
+                    -- DELETE (journal → journal'):
+                    --   Nothing           → JDelete  (key from CSMT)
+                    --   JInsert           → ∅ elide   (new, not in CSMT)
+                    --   JUpdate           → JDelete  (CSMT key removed)
+                    --   JDelete           → ⊥         (KV empty, unreachable)
                     { opsInsert = \k v -> do
+                        mj <- query journalCol k
+                        existing <- query kvCol k
+                        let encoded = view journalIso v
+                            tag = case mj of
+                                Just jv -> case fst $ parseJournalEntry jv of
+                                    JInsert -> JInsert
+                                    JUpdate -> JUpdate
+                                    JDelete -> JUpdate
+                                Nothing -> case existing of
+                                    Nothing -> JInsert
+                                    Just _ -> JUpdate
                         insert kvCol k v
-                        insert
-                            journalCol
-                            k
-                            ( encodeJournalInsert
-                                (view journalIso v)
-                            )
+                        insert journalCol k $ case tag of
+                            JInsert -> encodeJournalInsert encoded
+                            _ -> encodeJournalUpdate encoded
                     , opsDelete = \k -> do
                         mv <- query kvCol k
                         case mv of
                             Nothing -> pure ()
                             Just v -> do
                                 delete kvCol k
-                                insert
-                                    journalCol
-                                    k
-                                    ( encodeJournalDelete
-                                        (view journalIso v)
-                                    )
+                                mj <- query journalCol k
+                                case fmap (fst . parseJournalEntry) mj of
+                                    Just JInsert ->
+                                        delete journalCol k
+                                    _ ->
+                                        insert
+                                            journalCol
+                                            k
+                                            ( encodeJournalDelete
+                                                (view journalIso v)
+                                            )
                     , opsQuery = query kvCol
                     }
             , toFull = do
@@ -935,6 +995,8 @@ journalEntriesToPatchOps journalIso fromKV = map convert
             hash = fromV fromKV v
         in  case tag of
                 JInsert ->
+                    (k, PatchInsert treeKey hash)
+                JUpdate ->
                     (k, PatchInsert treeKey hash)
                 JDelete ->
                     (k, PatchDelete treeKey)
