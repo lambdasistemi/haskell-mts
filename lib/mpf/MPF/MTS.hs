@@ -38,6 +38,7 @@ import Control.Monad (unless, when)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.IORef (newIORef, readIORef, writeIORef)
+import Data.Maybe (fromMaybe, isNothing)
 import Database.KV.Cursor
     ( Cursor
     , Entry (..)
@@ -46,7 +47,9 @@ import Database.KV.Cursor
     )
 import Database.KV.Database (Database, KV)
 import Database.KV.Transaction
-    ( Transaction
+    ( GCompare
+    , Selector
+    , Transaction
     , delete
     , insert
     , iterating
@@ -58,7 +61,11 @@ import MPF.Backend.Standalone
     , MPFStandaloneCF
     , MPFStandaloneOp
     )
-import MPF.Deletion (deleteSubtree, deleting, deletingTreeOnly)
+import MPF.Deletion
+    ( deleteSubtree
+    , deleting
+    , deletingTreeOnly
+    )
 import MPF.Hashes (MPFHash, MPFHashing (..))
 import MPF.Insertion
     ( MPFCompose
@@ -90,6 +97,7 @@ import MTS.Interface
     , MtsKV (..)
     , MtsKey
     , MtsLeaf
+    , MtsMetrics (..)
     , MtsPrefix
     , MtsProof
     , MtsTransition (..)
@@ -108,7 +116,9 @@ type instance MtsValue MpfImpl = ByteString
 type instance MtsHash MpfImpl = MPFHash
 type instance MtsProof MpfImpl = MPFProof MPFHash
 type instance MtsLeaf MpfImpl = HexIndirect MPFHash
-type instance MtsCompletenessProof MpfImpl = MPFCompose MPFHash
+type instance
+    MtsCompletenessProof MpfImpl =
+        MPFCompose MPFHash
 type instance MtsPrefix MpfImpl = HexKey
 
 -- | Journal entry tag bytes.
@@ -128,7 +138,8 @@ encodeJournalDelete v = journalDeleteTag <> v
 data JournalTag = JInsert | JDelete
 
 -- | Parse a journal entry into tag + value payload.
-parseJournalEntry :: ByteString -> (JournalTag, ByteString)
+parseJournalEntry
+    :: ByteString -> (JournalTag, ByteString)
 parseJournalEntry bs = case B.uncons bs of
     Just (0x01, rest) -> (JInsert, rest)
     Just (0x00, rest) -> (JDelete, rest)
@@ -136,11 +147,56 @@ parseJournalEntry bs = case B.uncons bs of
 
 -- | Compute the MPF root hash from the root node.
 mpfRootFromNode
-    :: MPFHashing MPFHash -> HexIndirect MPFHash -> MPFHash
+    :: MPFHashing MPFHash
+    -> HexIndirect MPFHash
+    -> MPFHash
 mpfRootFromNode hashing i =
     if hexIsLeaf i
-        then leafHash hashing (hexJump i) (hexValue i)
+        then
+            leafHash hashing (hexJump i) (hexValue i)
         else hexValue i
+
+-- ------------------------------------------------------------------
+-- Metrics helpers
+-- ------------------------------------------------------------------
+
+-- | Metric counter key for KV entry count.
+kvCountKey :: ByteString
+kvCountKey = "kv"
+
+-- | Metric counter key for journal entry count.
+journalSizeKey :: ByteString
+journalSizeKey = "j"
+
+-- | Read a counter, defaulting to 0 if not set.
+readCounter
+    :: (Monad m, GCompare d)
+    => Selector d ByteString Int
+    -> ByteString
+    -> Transaction m cf d op Int
+readCounter sel key =
+    fromMaybe 0 <$> query sel key
+
+-- | Adjust a counter by a delta.
+adjustCounter
+    :: (Monad m, GCompare d)
+    => Selector d ByteString Int
+    -> ByteString
+    -> Int
+    -> Transaction m cf d op ()
+adjustCounter sel key delta = do
+    current <- readCounter sel key
+    insert sel key (current + delta)
+
+-- | Read current MTS metrics from the metrics column.
+readMetricsT
+    :: (Monad m, GCompare d)
+    => Selector d ByteString Int
+    -> Transaction m cf d op MtsMetrics
+readMetricsT sel =
+    MtsMetrics
+        <$> readCounter sel kvCountKey
+        <*> readCounter sel journalSizeKey
 
 -- ------------------------------------------------------------------
 -- Full mode
@@ -158,7 +214,11 @@ mpfMerkleTreeStoreT
         ( Transaction
             m
             MPFStandaloneCF
-            (MPFStandalone ByteString ByteString MPFHash)
+            ( MPFStandalone
+                ByteString
+                ByteString
+                MPFHash
+            )
             MPFStandaloneOp
         )
 mpfMerkleTreeStoreT prefix fromKV hashing =
@@ -166,26 +226,47 @@ mpfMerkleTreeStoreT prefix fromKV hashing =
   where
     kv =
         MtsKV
-            { mtsInsert =
+            { mtsInsert = \k v -> do
+                existed <-
+                    query MPFStandaloneKVCol k
                 inserting
                     prefix
                     fromKV
                     hashing
                     MPFStandaloneKVCol
                     MPFStandaloneMPFCol
-            , mtsDelete =
+                    k
+                    v
+                when (isNothing existed)
+                    $ adjustCounter
+                        MPFStandaloneMetricsCol
+                        kvCountKey
+                        1
+            , mtsDelete = \k -> do
+                existed <-
+                    query MPFStandaloneKVCol k
                 deleting
                     prefix
                     fromKV
                     hashing
                     MPFStandaloneKVCol
                     MPFStandaloneMPFCol
+                    k
+                when (not $ isNothing existed)
+                    $ adjustCounter
+                        MPFStandaloneMetricsCol
+                        kvCountKey
+                        (-1)
+            , mtsMetrics =
+                readMetricsT MPFStandaloneMetricsCol
             }
     tree =
         MtsTree
             { mtsRootHash = do
-                mi <- query MPFStandaloneMPFCol prefix
-                pure $ fmap (mpfRootFromNode hashing) mi
+                mi <-
+                    query MPFStandaloneMPFCol prefix
+                pure
+                    $ fmap (mpfRootFromNode hashing) mi
             , mtsMkProof = \k -> do
                 mp <-
                     mkMPFInclusionProof
@@ -198,11 +279,18 @@ mpfMerkleTreeStoreT prefix fromKV hashing =
                     Nothing -> pure Nothing
                     Just proof -> do
                         mi <-
-                            query MPFStandaloneMPFCol prefix
+                            query
+                                MPFStandaloneMPFCol
+                                prefix
                         pure $ case mi of
                             Nothing -> Nothing
                             Just i ->
-                                Just (mpfRootFromNode hashing i, proof)
+                                Just
+                                    ( mpfRootFromNode
+                                        hashing
+                                        i
+                                    , proof
+                                    )
             , mtsVerifyProof =
                 verifyMPFInclusionProof
                     prefix
@@ -219,18 +307,32 @@ mpfMerkleTreeStoreT prefix fromKV hashing =
                     MPFStandaloneKVCol
                     MPFStandaloneMPFCol
             , mtsCollectLeaves =
-                collectMPFLeaves MPFStandaloneMPFCol prefix
+                collectMPFLeaves
+                    MPFStandaloneMPFCol
+                    prefix
             , mtsMkCompletenessProof =
-                generateMPFCompletenessProof MPFStandaloneMPFCol prefix
-            , mtsVerifyCompletenessProof = \leaves proof -> do
-                mi <- query MPFStandaloneMPFCol prefix
-                let currentRoot = fmap (mpfRootFromNode hashing) mi
-                    computed =
-                        foldMPFCompletenessProof hashing leaves proof
-                pure $ case (currentRoot, computed) of
-                    (Just r, Just computedRoot) ->
-                        computedRoot == r
-                    _ -> False
+                generateMPFCompletenessProof
+                    MPFStandaloneMPFCol
+                    prefix
+            , mtsVerifyCompletenessProof =
+                \leaves proof -> do
+                    mi <-
+                        query
+                            MPFStandaloneMPFCol
+                            prefix
+                    let currentRoot =
+                            fmap
+                                (mpfRootFromNode hashing)
+                                mi
+                        computed =
+                            foldMPFCompletenessProof
+                                hashing
+                                leaves
+                                proof
+                    pure $ case (currentRoot, computed) of
+                        (Just r, Just computedRoot) ->
+                            computedRoot == r
+                        _ -> False
             }
 
 -- | Build an IO 'Full' 'MerkleTreeStore' for MPF.
@@ -244,7 +346,11 @@ mpfMerkleTreeStore
     -> Database
         m
         MPFStandaloneCF
-        (MPFStandalone ByteString ByteString MPFHash)
+        ( MPFStandalone
+            ByteString
+            ByteString
+            MPFHash
+        )
         MPFStandaloneOp
     -> FromHexKV ByteString ByteString MPFHash
     -> MPFHashing MPFHash
@@ -257,7 +363,11 @@ mpfMerkleTreeStore prefix run db fromKV hashing = do
     pure
         $ hoistMTS
             (run . runTransactionUnguarded db)
-            (mpfMerkleTreeStoreT prefix fromKV hashing)
+            ( mpfMerkleTreeStoreT
+                prefix
+                fromKV
+                hashing
+            )
 
 -- | Build a transactional 'NamespacedMTS' for MPF.
 mpfNamespacedMTST
@@ -269,13 +379,20 @@ mpfNamespacedMTST
         ( Transaction
             m
             MPFStandaloneCF
-            (MPFStandalone ByteString ByteString MPFHash)
+            ( MPFStandalone
+                ByteString
+                ByteString
+                MPFHash
+            )
             MPFStandaloneOp
         )
 mpfNamespacedMTST fromKV hashing =
     NamespacedMTS
         { nsStore = \prefix ->
-            mpfMerkleTreeStoreT prefix fromKV hashing
+            mpfMerkleTreeStoreT
+                prefix
+                fromKV
+                hashing
         , nsDelete =
             deleteSubtree MPFStandaloneMPFCol
         }
@@ -287,7 +404,11 @@ mpfNamespacedMTS
     -> Database
         m
         MPFStandaloneCF
-        (MPFStandalone ByteString ByteString MPFHash)
+        ( MPFStandalone
+            ByteString
+            ByteString
+            MPFHash
+        )
         MPFStandaloneOp
     -> FromHexKV ByteString ByteString MPFHash
     -> MPFHashing MPFHash
@@ -311,28 +432,67 @@ mpfKVOnlyStoreT
         ( Transaction
             m
             MPFStandaloneCF
-            (MPFStandalone ByteString ByteString MPFHash)
+            ( MPFStandalone
+                ByteString
+                ByteString
+                MPFHash
+            )
             MPFStandaloneOp
         )
 mpfKVOnlyStoreT _fromKV =
     MkKVOnly
         MtsKV
             { mtsInsert = \k v -> do
+                existing <-
+                    query MPFStandaloneKVCol k
+                mj <-
+                    query MPFStandaloneJournalCol k
                 insert MPFStandaloneKVCol k v
                 insert
                     MPFStandaloneJournalCol
                     k
                     (encodeJournalInsert v)
+                when (isNothing existing)
+                    $ adjustCounter
+                        MPFStandaloneMetricsCol
+                        kvCountKey
+                        1
+                when (isNothing mj)
+                    $ adjustCounter
+                        MPFStandaloneMetricsCol
+                        journalSizeKey
+                        1
             , mtsDelete = \k -> do
                 mv <- query MPFStandaloneKVCol k
                 case mv of
                     Nothing -> pure ()
                     Just v -> do
                         delete MPFStandaloneKVCol k
-                        insert
-                            MPFStandaloneJournalCol
-                            k
-                            (encodeJournalDelete v)
+                        adjustCounter
+                            MPFStandaloneMetricsCol
+                            kvCountKey
+                            (-1)
+                        mj <-
+                            query
+                                MPFStandaloneJournalCol
+                                k
+                        case mj of
+                            Nothing -> do
+                                insert
+                                    MPFStandaloneJournalCol
+                                    k
+                                    (encodeJournalDelete v)
+                                adjustCounter
+                                    MPFStandaloneMetricsCol
+                                    journalSizeKey
+                                    1
+                            Just _ ->
+                                insert
+                                    MPFStandaloneJournalCol
+                                    k
+                                    (encodeJournalDelete v)
+            , mtsMetrics =
+                readMetricsT MPFStandaloneMetricsCol
             }
 
 -- | Build an IO 'KVOnly' 'MerkleTreeStore' for MPF.
@@ -342,7 +502,11 @@ mpfKVOnlyStore
     -> Database
         m
         MPFStandaloneCF
-        (MPFStandalone ByteString ByteString MPFHash)
+        ( MPFStandalone
+            ByteString
+            ByteString
+            MPFHash
+        )
         MPFStandaloneOp
     -> FromHexKV ByteString ByteString MPFHash
     -> MerkleTreeStore 'KVOnly MpfImpl IO
@@ -370,48 +534,69 @@ mpfManagedTransition
     -> Database
         m
         MPFStandaloneCF
-        (MPFStandalone ByteString ByteString MPFHash)
+        ( MPFStandalone
+            ByteString
+            ByteString
+            MPFHash
+        )
         MPFStandaloneOp
     -> FromHexKV ByteString ByteString MPFHash
     -> MPFHashing MPFHash
     -> IO (MtsTransition MpfImpl IO)
-mpfManagedTransition prefix chunkSize run db fromKV hashing = do
-    locked <- newIORef False
-    let guardedRun
-            :: forall b
-             . Transaction
-                m
-                MPFStandaloneCF
-                (MPFStandalone ByteString ByteString MPFHash)
-                MPFStandaloneOp
-                b
-            -> IO b
-        guardedRun txn = do
-            isLocked <- readIORef locked
-            when isLocked
-                $ fail
-                    "KVOnly store disabled after transition"
-            run (runTransactionUnguarded db txn)
-    pure
-        MtsTransition
-            { transitionKVStore =
-                hoistMTS
-                    guardedRun
-                    (mpfKVOnlyStoreT fromKV)
-            , transitionToFull = do
-                writeIORef locked True
-                mpfReplayJournal
-                    prefix
-                    chunkSize
-                    run
-                    db
-                    fromKV
-                    hashing
-                pure
-                    $ hoistMTS
-                        (run . runTransactionUnguarded db)
-                        (mpfMerkleTreeStoreT prefix fromKV hashing)
-            }
+mpfManagedTransition
+    prefix
+    chunkSize
+    run
+    db
+    fromKV
+    hashing = do
+        locked <- newIORef False
+        let guardedRun
+                :: forall b
+                 . Transaction
+                    m
+                    MPFStandaloneCF
+                    ( MPFStandalone
+                        ByteString
+                        ByteString
+                        MPFHash
+                    )
+                    MPFStandaloneOp
+                    b
+                -> IO b
+            guardedRun txn = do
+                isLocked <- readIORef locked
+                when isLocked
+                    $ fail
+                        "KVOnly store disabled after transition"
+                run (runTransactionUnguarded db txn)
+        pure
+            MtsTransition
+                { transitionKVStore =
+                    hoistMTS
+                        guardedRun
+                        (mpfKVOnlyStoreT fromKV)
+                , transitionToFull = do
+                    writeIORef locked True
+                    mpfReplayJournal
+                        prefix
+                        chunkSize
+                        run
+                        db
+                        fromKV
+                        hashing
+                    pure
+                        $ hoistMTS
+                            ( run
+                                . runTransactionUnguarded
+                                    db
+                            )
+                            ( mpfMerkleTreeStoreT
+                                prefix
+                                fromKV
+                                hashing
+                            )
+                }
 
 -- ------------------------------------------------------------------
 -- Journal replay
@@ -424,12 +609,19 @@ mpfJournalEmpty
     -> Database
         m
         MPFStandaloneCF
-        (MPFStandalone ByteString ByteString MPFHash)
+        ( MPFStandalone
+            ByteString
+            ByteString
+            MPFHash
+        )
         MPFStandaloneOp
     -> IO Bool
 mpfJournalEmpty run db =
     run $ runTransactionUnguarded db $ do
-        me <- iterating MPFStandaloneJournalCol firstEntry
+        me <-
+            iterating
+                MPFStandaloneJournalCol
+                firstEntry
         pure $ case me of
             Nothing -> True
             Just _ -> False
@@ -443,26 +635,53 @@ mpfReplayJournal
     -> Database
         m
         MPFStandaloneCF
-        (MPFStandalone ByteString ByteString MPFHash)
+        ( MPFStandalone
+            ByteString
+            ByteString
+            MPFHash
+        )
         MPFStandaloneOp
     -> FromHexKV ByteString ByteString MPFHash
     -> MPFHashing MPFHash
     -> IO ()
-mpfReplayJournal prefix chunkSize run db fromKV hashing = loop
-  where
-    loop = do
-        done <- run $ runTransactionUnguarded db $ do
-            entries <- iterating MPFStandaloneJournalCol $ do
-                me <- firstEntry
-                case me of
-                    Nothing -> pure []
-                    Just e -> collectN (chunkSize - 1) [e]
-            if null entries
-                then pure True
-                else do
-                    mpfReplayEntries prefix fromKV hashing entries
-                    pure False
-        unless done loop
+mpfReplayJournal
+    prefix
+    chunkSize
+    run
+    db
+    fromKV
+    hashing = loop
+      where
+        loop = do
+            done <-
+                run $ runTransactionUnguarded db $ do
+                    entries <-
+                        iterating
+                            MPFStandaloneJournalCol
+                            $ do
+                                me <- firstEntry
+                                case me of
+                                    Nothing -> pure []
+                                    Just e ->
+                                        collectN
+                                            (chunkSize - 1)
+                                            [e]
+                    if null entries
+                        then pure True
+                        else do
+                            mpfReplayEntries
+                                prefix
+                                fromKV
+                                hashing
+                                entries
+                            adjustCounter
+                                MPFStandaloneMetricsCol
+                                journalSizeKey
+                                ( negate
+                                    $ length entries
+                                )
+                            pure False
+            unless done loop
 
 -- | Collect up to @n@ more entries after the first.
 collectN
@@ -487,15 +706,22 @@ mpfReplayEntries
     -> Transaction
         m
         MPFStandaloneCF
-        (MPFStandalone ByteString ByteString MPFHash)
+        ( MPFStandalone
+            ByteString
+            ByteString
+            MPFHash
+        )
         MPFStandaloneOp
         ()
 mpfReplayEntries prefix fromKV hashing entries = do
     mapM_ applyEntry entries
-    mapM_ (delete MPFStandaloneJournalCol . entryKey) entries
+    mapM_
+        (delete MPFStandaloneJournalCol . entryKey)
+        entries
   where
     applyEntry e =
-        let (tag, v) = parseJournalEntry (entryValue e)
+        let (tag, v) =
+                parseJournalEntry (entryValue e)
             k = entryKey e
         in  case tag of
                 JInsert ->

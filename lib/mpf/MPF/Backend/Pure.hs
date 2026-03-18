@@ -22,6 +22,7 @@ import Data.ByteString (ByteString)
 import Data.Foldable (forM_)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Serialize.Extra (intCodec)
 import Database.KV.Database
     ( Database (..)
     , Pos (..)
@@ -91,7 +92,8 @@ nextCursor c@Cursor{position = Nothing} = c
 nextCursor c@Cursor{position = Just k, snapshot} =
     let (_, k') = Map.split k snapshot
     in  case Map.lookupMin k' of
-            Just (knext, _) -> c{position = Just knext}
+            Just (knext, _) ->
+                c{position = Just knext}
             Nothing -> c{position = Nothing}
 
 prevCursor :: Cursor -> Cursor
@@ -99,7 +101,8 @@ prevCursor c@Cursor{position = Nothing} = c
 prevCursor c@Cursor{position = Just k, snapshot} =
     let (kprev, _) = Map.split k snapshot
     in  case Map.lookupMax kprev of
-            Just (kprev', _) -> c{position = Just kprev'}
+            Just (kprev', _) ->
+                c{position = Just kprev'}
             Nothing -> c{position = Nothing}
 
 -- | In-memory database for MPF
@@ -107,6 +110,7 @@ data MPFInMemoryDB = MPFInMemoryDB
     { mpfInMemoryMPF :: Map ByteString ByteString
     , mpfInMemoryKV :: Map ByteString ByteString
     , mpfInMemoryJournal :: Map ByteString ByteString
+    , mpfInMemoryMetrics :: Map ByteString ByteString
     , mpfInMemoryIterators :: Map Int Cursor
     }
     deriving (Show, Eq)
@@ -114,25 +118,46 @@ data MPFInMemoryDB = MPFInMemoryDB
 -- | Empty in-memory database
 emptyMPFInMemoryDB :: MPFInMemoryDB
 emptyMPFInMemoryDB =
-    MPFInMemoryDB Map.empty Map.empty Map.empty Map.empty
+    MPFInMemoryDB
+        Map.empty
+        Map.empty
+        Map.empty
+        Map.empty
+        Map.empty
 
 onMPF
-    :: (Map ByteString ByteString -> Map ByteString ByteString)
+    :: ( Map ByteString ByteString
+         -> Map ByteString ByteString
+       )
     -> MPFInMemoryDB
     -> MPFInMemoryDB
 onMPF f m = m{mpfInMemoryMPF = f (mpfInMemoryMPF m)}
 
 onKV
-    :: (Map ByteString ByteString -> Map ByteString ByteString)
+    :: ( Map ByteString ByteString
+         -> Map ByteString ByteString
+       )
     -> MPFInMemoryDB
     -> MPFInMemoryDB
 onKV f m = m{mpfInMemoryKV = f (mpfInMemoryKV m)}
 
 onJournal
-    :: (Map ByteString ByteString -> Map ByteString ByteString)
+    :: ( Map ByteString ByteString
+         -> Map ByteString ByteString
+       )
     -> MPFInMemoryDB
     -> MPFInMemoryDB
-onJournal f m = m{mpfInMemoryJournal = f (mpfInMemoryJournal m)}
+onJournal f m =
+    m{mpfInMemoryJournal = f (mpfInMemoryJournal m)}
+
+onMetrics
+    :: ( Map ByteString ByteString
+         -> Map ByteString ByteString
+       )
+    -> MPFInMemoryDB
+    -> MPFInMemoryDB
+onMetrics f m =
+    m{mpfInMemoryMetrics = f (mpfInMemoryMetrics m)}
 
 -- | Pure monad for MPF operations
 type MPFPure = StateT MPFInMemoryDB Catch
@@ -143,11 +168,16 @@ runMPFPure
     -> MPFPure b
     -> (b, MPFInMemoryDB)
 runMPFPure p s = case runCatch (runStateT s p) of
-    Left err -> error $ "runMPFPure: unexpected error: " ++ show err
+    Left err ->
+        error
+            $ "runMPFPure: unexpected error: "
+            ++ show err
     Right res -> res
 
 pureValueAt
-    :: MPFStandaloneCF -> ByteString -> MPFPure (Maybe ByteString)
+    :: MPFStandaloneCF
+    -> ByteString
+    -> MPFPure (Maybe ByteString)
 pureValueAt MPFStandaloneKV k = do
     kv <- gets mpfInMemoryKV
     pure $ Map.lookup k kv
@@ -157,21 +187,35 @@ pureValueAt MPFStandaloneMPF k = do
 pureValueAt MPFStandaloneJournal k = do
     journal <- gets mpfInMemoryJournal
     pure $ Map.lookup k journal
+pureValueAt MPFStandaloneMetrics k = do
+    metrics <- gets mpfInMemoryMetrics
+    pure $ Map.lookup k metrics
 
 pureApplyOps :: [MPFStandaloneOp] -> MPFPure ()
-pureApplyOps ops = forM_ ops $ \(cf, k, mv) -> case (cf, mv) of
-    (MPFStandaloneKV, Nothing) -> modify' $ onKV $ Map.delete k
-    (MPFStandaloneKV, Just v) -> modify' $ onKV $ Map.insert k v
-    (MPFStandaloneMPF, Nothing) -> modify' $ onMPF $ Map.delete k
-    (MPFStandaloneMPF, Just v) -> modify' $ onMPF $ Map.insert k v
-    (MPFStandaloneJournal, Nothing) ->
-        modify' $ onJournal $ Map.delete k
-    (MPFStandaloneJournal, Just v) ->
-        modify' $ onJournal $ Map.insert k v
+pureApplyOps ops = forM_ ops $ \(cf, k, mv) ->
+    case (cf, mv) of
+        (MPFStandaloneKV, Nothing) ->
+            modify' $ onKV $ Map.delete k
+        (MPFStandaloneKV, Just v) ->
+            modify' $ onKV $ Map.insert k v
+        (MPFStandaloneMPF, Nothing) ->
+            modify' $ onMPF $ Map.delete k
+        (MPFStandaloneMPF, Just v) ->
+            modify' $ onMPF $ Map.insert k v
+        (MPFStandaloneJournal, Nothing) ->
+            modify' $ onJournal $ Map.delete k
+        (MPFStandaloneJournal, Just v) ->
+            modify' $ onJournal $ Map.insert k v
+        (MPFStandaloneMetrics, Nothing) ->
+            modify' $ onMetrics $ Map.delete k
+        (MPFStandaloneMetrics, Just v) ->
+            modify' $ onMetrics $ Map.insert k v
 
 standaloneMPFPureCols
     :: MPFStandaloneCodecs k v a
-    -> DMap (MPFStandalone k v a) (Column MPFStandaloneCF)
+    -> DMap
+        (MPFStandalone k v a)
+        (Column MPFStandaloneCF)
 standaloneMPFPureCols
     MPFStandaloneCodecs
         { mpfKeyCodec = pk
@@ -192,25 +236,46 @@ standaloneMPFPureCols
             , MPFStandaloneJournalCol
                 :=> Column
                     { family = MPFStandaloneJournal
-                    , codecs = Codecs (iso id id) (iso id id)
+                    , codecs =
+                        Codecs
+                            (iso id id)
+                            (iso id id)
+                    }
+            , MPFStandaloneMetricsCol
+                :=> Column
+                    { family = MPFStandaloneMetrics
+                    , codecs =
+                        Codecs
+                            (iso id id)
+                            intCodec
                     }
             ]
 
-pureIterator :: MPFStandaloneCF -> MPFPure (QueryIterator MPFPure)
+pureIterator
+    :: MPFStandaloneCF
+    -> MPFPure (QueryIterator MPFPure)
 pureIterator cf = do
     db <- gets $ case cf of
         MPFStandaloneKV -> mpfInMemoryKV
         MPFStandaloneMPF -> mpfInMemoryMPF
         MPFStandaloneJournal -> mpfInMemoryJournal
-    nextId <- gets $ \m -> case Map.lookupMax (mpfInMemoryIterators m) of
-        Just (i, _) -> i + 1
-        Nothing -> 0
+        MPFStandaloneMetrics -> mpfInMemoryMetrics
+    nextId <- gets $ \m ->
+        case
+            Map.lookupMax (mpfInMemoryIterators m)
+            of
+                Just (i, _) -> i + 1
+                Nothing -> 0
     modify' $ \m ->
         m
             { mpfInMemoryIterators =
                 Map.insert
                     nextId
-                    (Cursor{position = Nothing, snapshot = db})
+                    ( Cursor
+                        { position = Nothing
+                        , snapshot = db
+                        }
+                    )
                     (mpfInMemoryIterators m)
             }
     pure
@@ -220,14 +285,19 @@ pureIterator cf = do
             , entry = pureEntryIterator nextId
             }
 
-pureStepIterator :: Int -> Pos -> StateT MPFInMemoryDB Catch ()
+pureStepIterator
+    :: Int
+    -> Pos
+    -> StateT MPFInMemoryDB Catch ()
 pureStepIterator itId pos = do
     iterators <- gets mpfInMemoryIterators
     case pos of
         PosDestroy -> modify' $ \m ->
             m
                 { mpfInMemoryIterators =
-                    Map.delete itId (mpfInMemoryIterators m)
+                    Map.delete
+                        itId
+                        (mpfInMemoryIterators m)
                 }
         _ -> case Map.lookup itId iterators of
             Just cursor -> do
@@ -240,34 +310,57 @@ pureStepIterator itId pos = do
                 modify' $ \m ->
                     m
                         { mpfInMemoryIterators =
-                            Map.insert itId cursor' (mpfInMemoryIterators m)
+                            Map.insert
+                                itId
+                                cursor'
+                                ( mpfInMemoryIterators
+                                    m
+                                )
                         }
-            Nothing -> error "pureStepIterator: invalid iterator id"
+            Nothing ->
+                error
+                    "pureStepIterator: invalid iterator id"
 
 pureEntryIterator
-    :: Int -> StateT MPFInMemoryDB Catch (Maybe (ByteString, ByteString))
+    :: Int
+    -> StateT
+        MPFInMemoryDB
+        Catch
+        (Maybe (ByteString, ByteString))
 pureEntryIterator itId = do
     iterators <- gets mpfInMemoryIterators
     case Map.lookup itId iterators of
-        Just cursor -> pure $ entryCursor (snapshot cursor) cursor
-        Nothing -> error "pureEntryIterator: invalid iterator id"
+        Just cursor ->
+            pure
+                $ entryCursor (snapshot cursor) cursor
+        Nothing ->
+            error
+                "pureEntryIterator: invalid iterator id"
 
-pureIsValidIterator :: Int -> StateT MPFInMemoryDB Catch Bool
+pureIsValidIterator
+    :: Int -> StateT MPFInMemoryDB Catch Bool
 pureIsValidIterator itId = do
     iterators <- gets mpfInMemoryIterators
     case Map.lookup itId iterators of
         Just cursor -> pure $ isValidCursor cursor
-        Nothing -> error "pureIsValidIterator: invalid iterator id"
+        Nothing ->
+            error
+                "pureIsValidIterator: invalid iterator id"
 
 mpfPureDatabase
     :: MPFStandaloneCodecs k v a
-    -> Database MPFPure MPFStandaloneCF (MPFStandalone k v a) MPFStandaloneOp
+    -> Database
+        MPFPure
+        MPFStandaloneCF
+        (MPFStandalone k v a)
+        MPFStandaloneOp
 mpfPureDatabase codecs =
     let db =
             Database
                 { valueAt = pureValueAt
                 , applyOps = pureApplyOps
-                , columns = standaloneMPFPureCols codecs
+                , columns =
+                    standaloneMPFPureCols codecs
                 , mkOperation = mkMPFStandaloneOp
                 , newIterator = pureIterator
                 , withSnapshot = \f -> f db
@@ -283,4 +376,5 @@ runMPFPureTransaction
         MPFStandaloneOp
         b
     -> MPFPure b
-runMPFPureTransaction codecs = runTransactionUnguarded (mpfPureDatabase codecs)
+runMPFPureTransaction codecs =
+    runTransactionUnguarded (mpfPureDatabase codecs)

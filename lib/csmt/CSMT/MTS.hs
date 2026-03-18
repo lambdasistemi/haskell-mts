@@ -141,6 +141,7 @@ import Database.KV.Transaction
     , query
     , runTransactionUnguarded
     )
+import Data.Maybe (fromMaybe, isNothing)
 import MTS.Interface
     ( MerkleTreeStore (..)
     , Mode (..)
@@ -149,6 +150,7 @@ import MTS.Interface
     , MtsKV (..)
     , MtsKey
     , MtsLeaf
+    , MtsMetrics (..)
     , MtsPrefix
     , MtsProof
     , MtsTransition (..)
@@ -158,6 +160,48 @@ import MTS.Interface
     , hoistMTS
     , hoistNamespacedMTS
     )
+
+-- ------------------------------------------------------------------
+-- Metrics helpers
+-- ------------------------------------------------------------------
+
+-- | Metric counter key for KV entry count.
+kvCountKey :: ByteString
+kvCountKey = "kv"
+
+-- | Metric counter key for journal entry count.
+journalSizeKey :: ByteString
+journalSizeKey = "j"
+
+-- | Read a counter, defaulting to 0 if not set.
+readCounter
+    :: (Monad m, GCompare d)
+    => Selector d ByteString Int
+    -> ByteString
+    -> Transaction m cf d op Int
+readCounter sel key =
+    fromMaybe 0 <$> query sel key
+
+-- | Adjust a counter by a delta.
+adjustCounter
+    :: (Monad m, GCompare d)
+    => Selector d ByteString Int
+    -> ByteString
+    -> Int
+    -> Transaction m cf d op ()
+adjustCounter sel key delta = do
+    current <- readCounter sel key
+    insert sel key (current + delta)
+
+-- | Read current MTS metrics from the metrics column.
+readMetricsT
+    :: (Monad m, GCompare d)
+    => Selector d ByteString Int
+    -> Transaction m cf d op MtsMetrics
+readMetricsT sel =
+    MtsMetrics
+        <$> readCounter sel kvCountKey
+        <*> readCounter sel journalSizeKey
 
 -- | Phantom type tag for the CSMT implementation.
 data CsmtImpl
@@ -396,20 +440,39 @@ csmtMerkleTreeStoreT prefix fromKV hashing =
   where
     kv =
         MtsKV
-            { mtsInsert =
+            { mtsInsert = \k v -> do
+                existed <-
+                    query StandaloneKVCol k
                 inserting
                     prefix
                     fromKV
                     hashing
                     StandaloneKVCol
                     StandaloneCSMTCol
-            , mtsDelete =
+                    k
+                    v
+                when (isNothing existed)
+                    $ adjustCounter
+                        StandaloneMetricsCol
+                        kvCountKey
+                        1
+            , mtsDelete = \k -> do
+                existed <-
+                    query StandaloneKVCol k
                 deleting
                     prefix
                     fromKV
                     hashing
                     StandaloneKVCol
                     StandaloneCSMTCol
+                    k
+                when (not $ isNothing existed)
+                    $ adjustCounter
+                        StandaloneMetricsCol
+                        kvCountKey
+                        (-1)
+            , mtsMetrics =
+                readMetricsT StandaloneMetricsCol
             }
     tree =
         MtsTree
@@ -438,7 +501,17 @@ csmtMerkleTreeStoreT prefix fromKV hashing =
                         && verifyInclusionProof hashing proof
             , mtsFoldProof =
                 computeRootHash hashing
-            , mtsBatchInsert =
+            , mtsBatchInsert = \kvs -> do
+                newCount <-
+                    fmap (length . filter id)
+                        $ mapM
+                            ( \(k, _) ->
+                                isNothing
+                                    <$> query
+                                        StandaloneKVCol
+                                        k
+                            )
+                            kvs
                 mapM_
                     ( uncurry
                         ( inserting
@@ -449,6 +522,12 @@ csmtMerkleTreeStoreT prefix fromKV hashing =
                             StandaloneCSMTCol
                         )
                     )
+                    kvs
+                when (newCount > 0)
+                    $ adjustCounter
+                        StandaloneMetricsCol
+                        kvCountKey
+                        newCount
             , mtsCollectLeaves =
                 collectValues StandaloneCSMTCol prefix []
             , mtsMkCompletenessProof =
@@ -572,21 +651,52 @@ csmtKVOnlyStoreT _fromKV =
                 insert StandaloneJournalCol k $ case tag of
                     JInsert -> encodeJournalInsert v
                     _ -> encodeJournalUpdate v
+                -- Metrics: new KV key → kvCount +1
+                when (isNothing existing)
+                    $ adjustCounter
+                        StandaloneMetricsCol
+                        kvCountKey
+                        1
+                -- Metrics: new journal entry → journalSize +1
+                when (isNothing mj)
+                    $ adjustCounter
+                        StandaloneMetricsCol
+                        journalSizeKey
+                        1
             , mtsDelete = \k -> do
                 mv <- query StandaloneKVCol k
                 case mv of
                     Nothing -> pure ()
                     Just v -> do
                         delete StandaloneKVCol k
+                        adjustCounter
+                            StandaloneMetricsCol
+                            kvCountKey
+                            (-1)
                         mj <- query StandaloneJournalCol k
                         case fmap (fst . parseJournalEntry) mj of
-                            Just JInsert ->
+                            Just JInsert -> do
                                 delete StandaloneJournalCol k
+                                adjustCounter
+                                    StandaloneMetricsCol
+                                    journalSizeKey
+                                    (-1)
+                            Nothing -> do
+                                insert
+                                    StandaloneJournalCol
+                                    k
+                                    (encodeJournalDelete v)
+                                adjustCounter
+                                    StandaloneMetricsCol
+                                    journalSizeKey
+                                    1
                             _ ->
                                 insert
                                     StandaloneJournalCol
                                     k
                                     (encodeJournalDelete v)
+            , mtsMetrics =
+                readMetricsT StandaloneMetricsCol
             }
 
 -- | Build an IO 'KVOnly' 'MerkleTreeStore' for CSMT.
@@ -797,6 +907,10 @@ replayJournalChunkT prefix chunkSize fromKV hashing = do
         then pure True
         else do
             replayEntries prefix fromKV hashing entries
+            adjustCounter
+                StandaloneMetricsCol
+                journalSizeKey
+                (negate $ length entries)
             pure False
 
 -- | Apply journal entries to the tree and clear them.

@@ -7,11 +7,16 @@ module MPF.Backend.RocksDB
     )
 where
 
-import Control.Concurrent (newEmptyMVar, putMVar, readMVar)
+import Control.Concurrent
+    ( newEmptyMVar
+    , putMVar
+    , readMVar
+    )
 import Control.Concurrent.Async (async, link)
 import Control.Lens (iso)
 import Control.Monad ((<=<))
 import Control.Monad.Trans.Reader (ReaderT (..), ask)
+import Data.Serialize.Extra (intCodec)
 import Database.KV.Database (Database (..))
 import Database.KV.RocksDB (mkRocksDBDatabase)
 import Database.KV.Transaction
@@ -42,15 +47,25 @@ type MPFRocksDB = ReaderT DB IO
 mpfStandaloneRocksDBCols
     :: MPFStandaloneCodecs k v a
     -> [ColumnFamily]
-    -> DMap (MPFStandalone k v a) (Column ColumnFamily)
+    -> DMap
+        (MPFStandalone k v a)
+        (Column ColumnFamily)
 mpfStandaloneRocksDBCols
-    MPFStandaloneCodecs{mpfKeyCodec, mpfValueCodec, mpfNodeCodec}
-    [kvcf, mpfcf, journalcf] =
+    MPFStandaloneCodecs
+        { mpfKeyCodec
+        , mpfValueCodec
+        , mpfNodeCodec
+        }
+    [kvcf, mpfcf, journalcf, metricscf] =
         fromPairList
             [ MPFStandaloneKVCol
                 :=> Column
                     { family = kvcf
-                    , codecs = Codecs{keyCodec = mpfKeyCodec, valueCodec = mpfValueCodec}
+                    , codecs =
+                        Codecs
+                            { keyCodec = mpfKeyCodec
+                            , valueCodec = mpfValueCodec
+                            }
                     }
             , MPFStandaloneMPFCol
                 :=> Column
@@ -60,27 +75,50 @@ mpfStandaloneRocksDBCols
             , MPFStandaloneJournalCol
                 :=> Column
                     { family = journalcf
-                    , codecs = Codecs (iso id id) (iso id id)
+                    , codecs =
+                        Codecs
+                            (iso id id)
+                            (iso id id)
+                    }
+            , MPFStandaloneMetricsCol
+                :=> Column
+                    { family = metricscf
+                    , codecs =
+                        Codecs
+                            (iso id id)
+                            intCodec
                     }
             ]
 mpfStandaloneRocksDBCols _ _ =
     error
-        "mpfStandaloneRocksDBCols: expected exactly three column families"
+        "mpfStandaloneRocksDBCols: expected exactly four column families"
 
 -- | Create a RocksDB database for MPF
 mpfStandaloneRocksDBDatabase
     :: MonadUnliftIO m
     => MPFStandaloneCodecs k v a
-    -> MPFRocksDB (Database m ColumnFamily (MPFStandalone k v a) BatchOp)
+    -> MPFRocksDB
+        ( Database
+            m
+            ColumnFamily
+            (MPFStandalone k v a)
+            BatchOp
+        )
 mpfStandaloneRocksDBDatabase codecs = do
     db@DB{columnFamilies} <- ask
     pure
-        $ mkRocksDBDatabase db (mpfStandaloneRocksDBCols codecs columnFamilies)
+        $ mkRocksDBDatabase
+            db
+            ( mpfStandaloneRocksDBCols
+                codecs
+                columnFamilies
+            )
 
 -- | Runner for RocksDB operations
-newtype RunMPFRocksDB = RunMPFRocksDB (forall a. MPFRocksDB a -> IO a)
+newtype RunMPFRocksDB
+    = RunMPFRocksDB (forall a. MPFRocksDB a -> IO a)
 
--- | Open a RocksDB database for MPF with the given configuration
+-- | Open a RocksDB database for MPF
 withMPFRocksDB
     :: FilePath
     -> Int
@@ -96,13 +134,19 @@ withMPFRocksDB path mpfMaxFiles kvMaxFiles action = do
         [ ("kv", configKV kvMaxFiles)
         , ("mpf", configMPF mpfMaxFiles)
         , ("journal", configJournal)
+        , ("metrics", configMetrics)
         ]
         $ \db -> do
-            action $ RunMPFRocksDB $ flip runReaderT db
+            action
+                $ RunMPFRocksDB
+                $ flip runReaderT db
 
 -- | Open a RocksDB database unsafely (returns close action)
 unsafeWithMPFRocksDB
-    :: FilePath -> Int -> Int -> IO (RunMPFRocksDB, IO ())
+    :: FilePath
+    -> Int
+    -> Int
+    -> IO (RunMPFRocksDB, IO ())
 unsafeWithMPFRocksDB path mpfMaxFiles kvMaxFiles = do
     wait <- newEmptyMVar
     dbv <- newEmptyMVar
@@ -114,9 +158,14 @@ unsafeWithMPFRocksDB path mpfMaxFiles kvMaxFiles = do
             [ ("kv", configKV kvMaxFiles)
             , ("mpf", configMPF mpfMaxFiles)
             , ("journal", configJournal)
+            , ("metrics", configMetrics)
             ]
             $ \db -> do
-                putMVar dbv (RunMPFRocksDB $ flip runReaderT db)
+                putMVar
+                    dbv
+                    ( RunMPFRocksDB
+                        $ flip runReaderT db
+                    )
                 readMVar wait
         putMVar done ()
     rdb <- readMVar dbv
@@ -162,6 +211,18 @@ configKV n =
 -- | Configuration for the journal column family
 configJournal :: Config
 configJournal =
+    Config
+        { createIfMissing = True
+        , errorIfExists = False
+        , paranoidChecks = False
+        , maxFiles = Nothing
+        , prefixLength = Nothing
+        , bloomFilter = False
+        }
+
+-- | Configuration for the metrics column family
+configMetrics :: Config
+configMetrics =
     Config
         { createIfMissing = True
         , errorIfExists = False

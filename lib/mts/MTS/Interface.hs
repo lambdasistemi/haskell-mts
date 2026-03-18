@@ -11,6 +11,9 @@ module MTS.Interface
     ( -- * Mode
       Mode (..)
 
+      -- * Metrics
+    , MtsMetrics (..)
+
       -- * Operation records
     , MtsKV (..)
     , MtsTree (..)
@@ -65,12 +68,24 @@ type family MtsCompletenessProof imp
 -- 'Full' after replay (all operations).
 data Mode = KVOnly | Full
 
+-- | Persistent store metrics. Maintained transactionally
+-- alongside data mutations for O(1) queries.
+data MtsMetrics = MtsMetrics
+    { metricsKVCount :: Int
+    -- ^ Number of key-value entries
+    , metricsJournalSize :: Int
+    -- ^ Number of pending journal entries
+    }
+    deriving stock (Show, Eq)
+
 -- | KV operations -- available in both modes.
 data MtsKV imp m = MtsKV
     { mtsInsert :: MtsKey imp -> MtsValue imp -> m ()
     -- ^ Insert a key-value pair
     , mtsDelete :: MtsKey imp -> m ()
     -- ^ Delete a key
+    , mtsMetrics :: m MtsMetrics
+    -- ^ Query current metrics
     }
 
 -- | Tree operations -- only available in 'Full' mode.
@@ -140,6 +155,7 @@ hoistMtsKV f s =
     MtsKV
         { mtsInsert = \k v -> f (mtsInsert s k v)
         , mtsDelete = f . mtsDelete s
+        , mtsMetrics = f (mtsMetrics s)
         }
 
 -- | Transform the monad of 'MtsTree'.
