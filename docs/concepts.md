@@ -165,17 +165,72 @@ completeness proofs are planned.
 
 ## Storage Model
 
-Both implementations use a dual-column storage model:
+Both implementations use a three-column storage model:
 
 | Column | Key | Value | Purpose |
 |--------|-----|-------|---------|
 | KV | User key | User value | Original key-value pairs |
 | Trie | Derived tree key | Node (jump + hash) | Merkle tree structure |
+| Journal | User key | Tagged value | KVOnly replay log |
 
 The tree key is derived from the user key (and optionally a prefix from
-the value) using the `FromKV`/`FromHexKV` conversion records. This dual
-storage allows efficient tree operations, original value retrieval, and
-proof generation.
+the value) using the `FromKV`/`FromHexKV` conversion records. The Journal
+column records mutations made in KVOnly mode for later replay against the
+tree.
 
 See [Storage Layer](architecture/storage.md) for implementation-specific
 details.
+
+## Operational Modes
+
+MTS operates in one of two modes, enforced at the type level by the
+`Mode` kind and the `Ops` GADT:
+
+- **KVOnly** — mutations write to the KV and Journal columns only.
+  No tree operations are available (no root hash, no proofs). This is
+  the fast-ingest mode.
+- **Full** — mutations write to KV and update the CSMT/MPF tree.
+  Root hash, inclusion proofs, and completeness proofs are available.
+
+The mode is not observable from the database alone; it is tracked by
+the `Ops` GADT in memory.
+
+## Lifecycle and Transition
+
+The `Ops` GADT provides bidirectional transitions:
+
+- **`toFull`** (KVOnly → Full): replays journal entries against the tree
+  via `patchParallel` with concurrent bucket execution, then returns
+  `OpsFull`.
+- **`toKVOnly`** (Full → KVOnly): verifies the journal is empty, then
+  returns `OpsKVOnly`.
+
+The `MtsTransition` record provides a managed lifecycle with a one-shot
+`transitionToFull` action that locks the KVOnly store before replaying.
+
+## Crash Safety
+
+Each bucket transaction in the parallel replay is atomic (tree ops +
+journal entry deletes in a single transaction). A **sentinel flag** in
+the journal column brackets the non-atomic `toFull` sequence:
+
+1. Write sentinel (bucket bits + prefix)
+2. `expandToBucketDepth`
+3. Replay loop (parallel bucket transactions)
+4. `mergeSubtreeRoots` + delete sentinel (atomic)
+
+If the process crashes between steps 1–4, the next `toFull` detects the
+sentinel, runs `mergeSubtreeRoots` to fix the tree top, then continues
+with the normal replay of remaining journal entries.
+
+The `DbState` type exposes this as a three-state open result:
+
+- `NeedsRecovery` — sentinel found, must run recovery first
+- `Ready` — clean state, choose KVOnly or Full
+
+## Rollbacks
+
+The `rollbacks` library implements a swap-partition model where two
+database partitions alternate between "live" and "staging" roles.
+Rollbacks discard the staging partition and swap back. Formal
+correctness is proved in Lean 4 (see `lean/` directory).

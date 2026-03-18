@@ -156,12 +156,46 @@ data Ops (mode :: Mode) m cf d ops k v a where
 
 ### Crash Safety
 
+The `toFull` transition performs three non-atomic steps:
+
+1. `expandToBucketDepth` — separate transaction
+2. `mapConcurrently_ (runTx . snd) bucketTxns` — N parallel
+   transactions (each deletes its journal entries)
+3. `mergeSubtreeRoots` — separate transaction
+
+A **sentinel flag** in the journal column brackets this sequence:
+
+```
+1. Write sentinel (bucketBits, prefix) → journal[""]
+2. expandToBucketDepth
+3. replayLoop (parallel bucket transactions)
+4. mergeSubtreeRoots + delete sentinel (one transaction)
+```
+
+If the process crashes between steps 1–4, the next `toFull` call
+detects the sentinel, runs `mergeSubtreeRoots` to fix the tree
+top, deletes the sentinel, then replays remaining journal entries
+normally.
+
+**Sentinel format**: key = `""` (empty, sorts first), value =
+`0xFF || Word8(bucketBits) || encodedPrefix`.
+
+**Recovery guarantees**:
+
 - Each bucket transaction is atomic (tree ops + journal deletes)
-- Committed buckets are consistent; uncommitted entries remain in
-  the journal and are replayed on restart
-- `expandToBucketDepth` is idempotent on restart
-- CSMT is unusable until replay completes (KVOnly returns `Nothing`
-  for root hash)
+- Committed buckets are consistent; their journal entries are gone
+- Uncommitted entries remain in the journal for re-replay
+- `expandToBucketDepth` is idempotent
+- `mergeSubtreeRoots` reads subtree roots and rebuilds the top;
+  safe to re-run after partial bucket commits
+
+The `DbState` type exposes recovery at database open time:
+
+```haskell
+data DbState m cf d ops k v a
+    = NeedsRecovery (IO (DbState m cf d ops k v a))
+    | Ready (ReadyState m cf d ops k v a)
+```
 
 ## Benchmarks
 

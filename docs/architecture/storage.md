@@ -1,20 +1,37 @@
 # Storage Layer
 
-Both MTS implementations use a dual-column storage model with RocksDB as
+Both MTS implementations use a three-column storage model with RocksDB as
 the persistent backend and in-memory backends for testing.
 
 ## Shared Model
 
-Both CSMT and MPF store data in two columns:
+Both CSMT and MPF store data in three columns:
 
 | Column | Key | Value | Purpose |
 |--------|-----|-------|---------|
 | KV | User key (`k`) | User value (`v`) | Original key-value pairs |
 | Trie | Derived tree key | Node reference | Merkle tree structure |
+| Journal | User key (`k`) | Tagged value | KVOnly mode replay log |
 
 The KV column stores original key-value pairs, enabling value retrieval
 and proof generation. The trie column stores the Merkle tree structure
-with implementation-specific node types.
+with implementation-specific node types. The journal column records
+mutations made in KVOnly mode.
+
+### Journal Entry Format
+
+Journal values are tagged with a single byte prefix:
+
+| Tag | Byte | Meaning |
+|-----|------|---------|
+| Insert | `0x01` | New key (not in CSMT), safe to elide on delete |
+| Update | `0x02` | Overwrite of key already in CSMT |
+| Delete | `0x00` | Key removed, CSMT must delete it |
+| Sentinel | `0xFF` | Crash recovery flag (not a real entry) |
+
+The sentinel entry uses key `""` (empty) and value
+`0xFF ++ Word8(bucketBits) ++ encodedPrefix`. It brackets the
+non-atomic `toFull` transition to enable crash recovery.
 
 ---
 
@@ -143,8 +160,9 @@ Jump encoding followed by hash encoding:
 
 ```haskell
 data Standalone k v a x where
-    StandaloneKVCol   :: Standalone k v a (KV k v)
-    StandaloneCSMTCol :: Standalone k v a (KV Key (Indirect a))
+    StandaloneKVCol      :: Standalone k v a (KV k v)
+    StandaloneCSMTCol    :: Standalone k v a (KV Key (Indirect a))
+    StandaloneJournalCol :: Standalone k v a (KV ByteString ByteString)
 ```
 
 ---

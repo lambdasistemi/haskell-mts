@@ -8,7 +8,7 @@ and multiple ways to interact with them.
 ```mermaid
 graph TD
     CLI[MTS CLI] -->|CSMT ops| CSMT[CSMT Library]
-    App[Haskell Application] -->|MTS Interface| MTS[MerkleTreeStore]
+    App[Haskell Application] -->|Ops GADT / MTS Interface| MTS[MerkleTreeStore]
     MTS --> CSMT
     MTS --> MPF[MPF Library]
     CSMT -->|Read/Write| RDB1[RocksDB / In-Memory]
@@ -20,10 +20,11 @@ graph TD
 
 | Layer | Description |
 |-------|-------------|
-| **MTS Interface** | Shared `MerkleTreeStore` record with type families. Application code targets this layer. |
-| **CSMT Implementation** | Binary trie with path compression, CBOR proofs, completeness proofs, CLI. |
+| **MTS Interface** | Shared `MerkleTreeStore` record with type families. Mode-indexed by `KVOnly` / `Full`. |
+| **Ops GADT** | `CommonOps` + `Ops` GADT with bidirectional transitions (`toFull` / `toKVOnly`). |
+| **CSMT Implementation** | Binary trie with path compression, CBOR proofs, completeness proofs, CLI, crash recovery. |
 | **MPF Implementation** | 16-ary trie with hex nibble keys, batch/streaming inserts, Aiken-compatible hashes. |
-| **Storage Backends** | RocksDB (persistent) and in-memory (testing) for both implementations. |
+| **Storage Backends** | RocksDB (persistent) and in-memory (testing) for both implementations. Three columns: KV, Trie, Journal. |
 
 ### Components
 
