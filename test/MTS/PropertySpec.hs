@@ -15,6 +15,11 @@ import CSMT.Backend.Standalone
     , StandaloneOp
     )
 import CSMT.Hashes (Hash, fromKVHashes, hashHashing, isoHash)
+import CSMT.Insertion
+    ( expandToBucketDepth
+    , mergeSubtreeRoots
+    )
+import CSMT.Interface (FromKV (..), Indirect, Key)
 import CSMT.MTS
     ( CommonOps (..)
     , CsmtImpl
@@ -23,12 +28,17 @@ import CSMT.MTS
     , csmtManagedTransition
     , csmtMerkleTreeStore
     , csmtReplayJournal
+    , encodePatchSentinel
+    , journalEntriesToPatchOps
     , mkFullOps
     , mkKVOnlyOps
+    , patchSentinelKey
+    , readJournalChunkT
     )
+import CSMT.Populate (patchParallel)
 import Control.Exception (SomeException, try)
 import Control.Lens (Iso', iso)
-import Control.Monad (foldM, foldM_)
+import Control.Monad (foldM, foldM_, forM_)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Either (isLeft)
@@ -43,7 +53,9 @@ import Database.KV.Cursor
     )
 import Database.KV.Database (KeyOf, ValueOf)
 import Database.KV.Transaction
-    ( iterating
+    ( delete
+    , insert
+    , iterating
     , runTransactionUnguarded
     )
 import Database.KV.Transaction qualified as Transaction
@@ -825,17 +837,6 @@ spec = do
                         $ iterating StandaloneJournalCol collectAll
                 let kvMap = Map.fromList kvEntries
                     journalMap = Map.fromList journalEntries
-                -- Reconstruct expected from CSMT + journal
-                freshFromCSMT <- mkCsmtStore
-                -- Get what CSMT has by querying each possible key
-                -- (CSMT is frozen from round 1's toFull)
-                -- Instead: build expected from journal + CSMT root
-                -- by checking that KV matches apply(journal, CSMT)
-                -- For keys in journal: KV = journal value
-                -- For keys not in journal: KV = CSMT
-                -- Check journal keys match expected
-                let journalKeys = Map.keysSet journalMap
-                    kvKeys = Map.keysSet kvMap
                 -- Every JIns/JUpd journal key should be in KV
                 -- Every JDel journal key should NOT be in KV
                 mapM_
@@ -907,25 +908,52 @@ spec = do
             $ forAll genBSPairs
             $ \kvs -> do
                 (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
-                let (first, second) = splitAt (max 1 $ length kvs `div` 2) kvs
-                mapM_ (\(k, v) -> rtx $ opsInsert (kvCommon ops0) k v) first
-                Just full1 <- toFull ops0
-                Just kv2 <- toKVOnly full1
-                -- Insert second chunk and delete one from first
-                mapM_ (\(k, v) -> rtx $ opsInsert (kvCommon kv2) k v) second
-                rtx $ opsDelete (kvCommon kv2) $ fst $ Prelude.head first
-                Just full2 <- toFull kv2
-                -- Fresh tree with expected state
-                freshStore <- mkCsmtStore
-                let expected' =
-                        Map.delete
-                            (fst $ Prelude.head first)
-                            $ Map.fromList kvs
-                mapM_ (uncurry $ mtsInsert $ mtsKV freshStore)
-                    $ Map.toList expected'
-                expected <- mtsRootHash $ mtsTree freshStore
-                actual <- rtx $ opsRootHash full2
-                actual `shouldBe` expected
+                let (first, second) =
+                        splitAt
+                            (max 1 $ length kvs `div` 2)
+                            kvs
+                case first of
+                    ((fk, _) : _) -> do
+                        mapM_
+                            ( \(k, v) ->
+                                rtx
+                                    $ opsInsert
+                                        (kvCommon ops0)
+                                        k
+                                        v
+                            )
+                            first
+                        Just full1 <- toFull ops0
+                        Just kv2 <- toKVOnly full1
+                        mapM_
+                            ( \(k, v) ->
+                                rtx
+                                    $ opsInsert
+                                        (kvCommon kv2)
+                                        k
+                                        v
+                            )
+                            second
+                        rtx
+                            $ opsDelete (kvCommon kv2) fk
+                        Just full2 <- toFull kv2
+                        freshStore <- mkCsmtStore
+                        let expected' =
+                                Map.delete fk
+                                    $ Map.fromList kvs
+                        mapM_
+                            ( uncurry
+                                $ mtsInsert
+                                $ mtsKV freshStore
+                            )
+                            $ Map.toList expected'
+                        expected <-
+                            mtsRootHash
+                                $ mtsTree freshStore
+                        actual <-
+                            rtx $ opsRootHash full2
+                        actual `shouldBe` expected
+                    _ -> pure ()
         it "two-cycle realistic ops matches fresh"
             $ property
             $ forAll genOps
@@ -974,56 +1002,86 @@ spec = do
         it "cross-boundary overwrite + delete matches fresh"
             $ property
             $ forAll (vectorOf 4 genBSPair)
-            $ \kvs -> do
-                (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
-                -- Round 1: insert all
-                mapM_ (\(k, v) -> rtx $ opsInsert (kvCommon ops0) k v) kvs
-                Just full1 <- toFull ops0
-                -- Round 2: overwrite first two, delete third
-                Just kv2 <- toKVOnly full1
-                let ((k1, _) : (k2, _) : (k3, _) : _) = kvs
-                rtx $ opsInsert (kvCommon kv2) k1 "new1"
-                rtx $ opsInsert (kvCommon kv2) k2 "new2"
-                rtx $ opsDelete (kvCommon kv2) k3
-                Just full2 <- toFull kv2
-                -- Fresh tree
-                freshStore <- mkCsmtStore
-                let expected' =
-                        Map.delete k3
-                            $ Map.insert k2 "new2"
-                            $ Map.insert k1 "new1"
-                            $ Map.fromList kvs
-                mapM_ (uncurry $ mtsInsert $ mtsKV freshStore)
-                    $ Map.toList expected'
-                expected <- mtsRootHash $ mtsTree freshStore
-                actual <- rtx $ opsRootHash full2
-                actual `shouldBe` expected
+            $ \kvs -> case kvs of
+                ((k1, _) : (k2, _) : (k3, _) : _) -> do
+                    (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
+                    mapM_
+                        ( \(k, v) ->
+                            rtx
+                                $ opsInsert (kvCommon ops0) k v
+                        )
+                        kvs
+                    Just full1 <- toFull ops0
+                    Just kv2 <- toKVOnly full1
+                    rtx $ opsInsert (kvCommon kv2) k1 "new1"
+                    rtx $ opsInsert (kvCommon kv2) k2 "new2"
+                    rtx $ opsDelete (kvCommon kv2) k3
+                    Just full2 <- toFull kv2
+                    freshStore <- mkCsmtStore
+                    let expected' =
+                            Map.delete k3
+                                $ Map.insert k2 "new2"
+                                $ Map.insert k1 "new1"
+                                $ Map.fromList kvs
+                    mapM_
+                        ( uncurry
+                            $ mtsInsert
+                            $ mtsKV freshStore
+                        )
+                        $ Map.toList expected'
+                    expected <-
+                        mtsRootHash $ mtsTree freshStore
+                    actual <- rtx $ opsRootHash full2
+                    actual `shouldBe` expected
+                _ -> pure ()
         it "cross-boundary new inserts + delete matches fresh"
             $ property
             $ forAll (vectorOf 6 genBSPair)
             $ \kvs -> do
                 (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
                 let (first, second) = splitAt 3 kvs
-                -- Round 1
-                mapM_ (\(k, v) -> rtx $ opsInsert (kvCommon ops0) k v) first
-                Just full1 <- toFull ops0
-                -- Round 2: insert new + delete old
-                Just kv2 <- toKVOnly full1
-                mapM_ (\(k, v) -> rtx $ opsInsert (kvCommon kv2) k v) second
-                rtx $ opsDelete (kvCommon kv2) $ fst $ Prelude.head first
-                rtx $ opsInsert (kvCommon kv2) (fst $ first !! 1) "overwritten"
-                Just full2 <- toFull kv2
-                -- Fresh
-                freshStore <- mkCsmtStore
-                let expected' =
-                        Map.insert (fst $ first !! 1) "overwritten"
-                            $ Map.delete (fst $ Prelude.head first)
-                            $ Map.fromList kvs
-                mapM_ (uncurry $ mtsInsert $ mtsKV freshStore)
-                    $ Map.toList expected'
-                expected <- mtsRootHash $ mtsTree freshStore
-                actual <- rtx $ opsRootHash full2
-                actual `shouldBe` expected
+                case first of
+                    ((fk0, _) : (fk1, _) : _) -> do
+                        -- Round 1
+                        mapM_
+                            ( \(k, v) ->
+                                rtx
+                                    $ opsInsert (kvCommon ops0) k v
+                            )
+                            first
+                        Just full1 <- toFull ops0
+                        -- Round 2: insert new + delete old
+                        Just kv2 <- toKVOnly full1
+                        mapM_
+                            ( \(k, v) ->
+                                rtx
+                                    $ opsInsert (kvCommon kv2) k v
+                            )
+                            second
+                        rtx $ opsDelete (kvCommon kv2) fk0
+                        rtx
+                            $ opsInsert
+                                (kvCommon kv2)
+                                fk1
+                                "overwritten"
+                        Just full2 <- toFull kv2
+                        -- Fresh
+                        freshStore <- mkCsmtStore
+                        let expected' =
+                                Map.insert fk1 "overwritten"
+                                    $ Map.delete fk0
+                                    $ Map.fromList kvs
+                        mapM_
+                            ( uncurry
+                                $ mtsInsert
+                                $ mtsKV freshStore
+                            )
+                            $ Map.toList expected'
+                        expected <-
+                            mtsRootHash $ mtsTree freshStore
+                        actual <- rtx $ opsRootHash full2
+                        actual `shouldBe` expected
+                    _ -> pure ()
         it "single-round realistic ops produce correct hash"
             $ property
             $ forAll genOps
@@ -1103,3 +1161,109 @@ spec = do
                 kv3 <- applyChunk kvOps4 kv2 chunk3
                 Just full5 <- toFull kvOps4
                 assertAfterReplay full5 kv3
+
+    describe "CSMT crash recovery" $ do
+        it "recovery after simulated crash matches clean replay"
+            $ property
+            $ forAll genBSPairs
+            $ \kvs -> do
+                -- Step 1: reference — clean KVOnly → Full
+                refStore <- mkCsmtStore
+                mapM_
+                    (uncurry $ mtsInsert $ mtsKV refStore)
+                    kvs
+                expected <-
+                    mtsRootHash $ mtsTree refStore
+
+                -- Step 2: simulate crash mid-toFull
+                ref <- newIORef emptyInMemoryDB
+                let run :: forall b. Pure b -> IO b
+                    run action = do
+                        s <- readIORef ref
+                        let (a, s') = runPure s action
+                        writeIORef ref s'
+                        pure a
+                    db = pureDatabase csmtCodecs
+                    rtx = run . runTransactionUnguarded db
+                    bucketBits = 2
+
+                -- Insert via KVOnly
+                let kvOps =
+                        mkKVOnlyOps
+                            []
+                            bucketBits
+                            100
+                            StandaloneKVCol
+                            StandaloneCSMTCol
+                            StandaloneJournalCol
+                            (iso id id)
+                            fromKVHashes
+                            hashHashing
+                            rtx
+                            (const $ pure ())
+                mapM_
+                    ( \(k, v) ->
+                        rtx
+                            $ opsInsert (kvCommon kvOps) k v
+                    )
+                    kvs
+
+                -- Write sentinel
+                rtx
+                    $ insert
+                        StandaloneJournalCol
+                        (patchSentinelKey :: ByteString)
+                        (encodePatchSentinel bucketBits [])
+                -- Expand tree
+                rtx
+                    $ expandToBucketDepth
+                        []
+                        bucketBits
+                        StandaloneCSMTCol
+                -- Run a subset of bucket transactions
+                entries <-
+                    rtx
+                        $ readJournalChunkT
+                            StandaloneJournalCol
+                            10000
+                let ops =
+                        journalEntriesToPatchOps
+                            (iso id id)
+                            fromKVHashes
+                            entries
+                    bucketTxns =
+                        patchParallel
+                            bucketBits
+                            []
+                            hashHashing
+                            StandaloneCSMTCol
+                            StandaloneJournalCol
+                            ops
+                -- Only run first half of bucket
+                -- transactions (crash simulation)
+                let halfN =
+                        max 1
+                            $ length bucketTxns `div` 2
+                forM_ (take halfN bucketTxns) $ \(_, txn) ->
+                    rtx txn
+                -- DO NOT run mergeSubtreeRoots
+                -- DO NOT delete sentinel
+                -- → tree top is broken, sentinel present
+
+                -- Step 3: recover via toFull
+                let kvOps2 =
+                        mkKVOnlyOps
+                            []
+                            bucketBits
+                            100
+                            StandaloneKVCol
+                            StandaloneCSMTCol
+                            StandaloneJournalCol
+                            (iso id id)
+                            fromKVHashes
+                            hashHashing
+                            rtx
+                            (const $ pure ())
+                Just fullOps <- toFull kvOps2
+                actual <- rtx $ opsRootHash fullOps
+                actual `shouldBe` expected

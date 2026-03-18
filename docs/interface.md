@@ -41,24 +41,48 @@ type family MtsCompletenessProof imp -- Completeness proof type
 
 ## MerkleTreeStore Record
 
-The `MerkleTreeStore` record provides 10 operations:
+The `MerkleTreeStore` record is indexed by `Mode` (`KVOnly` or `Full`):
 
 ```haskell
-data MerkleTreeStore imp m = MerkleTreeStore
-    { mtsInsert       :: MtsKey imp -> MtsValue imp -> m ()
-    , mtsDelete       :: MtsKey imp -> m ()
-    , mtsRootHash     :: m (Maybe (MtsHash imp))
-    , mtsMkProof      :: MtsKey imp -> m (Maybe (MtsProof imp))
-    , mtsVerifyProof  :: MtsValue imp -> MtsProof imp -> m Bool
-    , mtsFoldProof    :: MtsHash imp -> MtsProof imp -> MtsHash imp
-    , mtsBatchInsert  :: [(MtsKey imp, MtsValue imp)] -> m ()
-    , mtsCollectLeaves :: m [MtsLeaf imp]
-    , mtsMkCompletenessProof
-        :: m (Maybe (MtsCompletenessProof imp))
-    , mtsVerifyCompletenessProof
-        :: [MtsLeaf imp] -> MtsCompletenessProof imp -> m Bool
-    }
+data MerkleTreeStore (mode :: Mode) imp m where
+    MkKVOnly :: MtsKV imp m -> MerkleTreeStore 'KVOnly imp m
+    MkFull   :: MtsKV imp m -> MtsTree imp m -> MerkleTreeStore 'Full imp m
 ```
+
+`MtsKV` provides insert/delete/query. `MtsTree` provides root hash,
+proofs, batch insert, and completeness operations. In KVOnly mode,
+only KV operations are available.
+
+## Split-Mode Ops GADT
+
+For applications that need bidirectional mode transitions, the `Ops`
+GADT provides type-safe mode switching:
+
+```haskell
+data CommonOps m cf d ops k v = CommonOps
+    { opsInsert :: k -> v -> Transaction m cf d ops ()
+    , opsDelete :: k -> Transaction m cf d ops ()
+    , opsQuery  :: k -> Transaction m cf d ops (Maybe v)
+    }
+
+data Ops (mode :: Mode) m cf d ops k v a where
+    OpsKVOnly
+        :: { kvCommon :: CommonOps m cf d ops k v
+           , toFull   :: IO (Maybe (Ops 'Full ...))
+           }
+        -> Ops 'KVOnly m cf d ops k v a
+    OpsFull
+        :: { fullCommon  :: CommonOps m cf d ops k v
+           , opsRootHash :: Transaction m cf d ops (Maybe a)
+           , toKVOnly    :: IO (Maybe (Ops 'KVOnly ...))
+           }
+        -> Ops 'Full m cf d ops k v a
+```
+
+- **`mkKVOnlyOps`** — builds KVOnly ops with journal-based mutations
+  and `toFull` via `patchParallel`
+- **`mkFullOps`** — builds Full ops with tree-updating mutations and
+  `toKVOnly` (requires empty journal)
 
 ## Constructors
 

@@ -60,14 +60,15 @@ integration), use the `mts:csmt` sub-library directly.
 | `CSMT` | Re-exports the public API |
 | `CSMT.Hashes` | Blake2b-256 operations, `fromKVHashes`, `hashHashing` |
 | `CSMT.Interface` | `FromKV`, `Hashing`, `Indirect`, `root` |
-| `CSMT.Insertion` | `inserting` |
+| `CSMT.Insertion` | `inserting`, `expandToBucketDepth`, `mergeSubtreeRoots` |
 | `CSMT.Deletion` | `deleting` |
+| `CSMT.Populate` | `patchParallel`, `PatchOp` — bucketed parallel replay |
 | `CSMT.Proof.Insertion` | `buildInclusionProof`, `verifyInclusionProof`, `computeRootHash` |
 | `CSMT.Proof.Completeness` | `generateProof`, `collectValues`, `foldProof` |
 | `CSMT.Backend.RocksDB` | RocksDB persistent backend |
 | `CSMT.Backend.Pure` | In-memory backend for testing |
 | `CSMT.Backend.Standalone` | Column selectors and codecs |
-| `CSMT.MTS` | `CsmtImpl`, `csmtMerkleTreeStore` |
+| `CSMT.MTS` | `CsmtImpl`, `Ops` GADT, `CommonOps`, `DbState`, `csmtMerkleTreeStore` |
 
 ### Insert and Delete
 
@@ -131,6 +132,36 @@ CSMT uses type-safe GADT column selectors:
 
 - `StandaloneKVCol` - Key-value column
 - `StandaloneCSMTCol` - CSMT tree column
+- `StandaloneJournalCol` - Journal column (KVOnly replay)
+
+### KVOnly Mode
+
+For high-throughput ingest without tree overhead, use KVOnly mode
+via the `Ops` GADT:
+
+```haskell
+import CSMT.MTS (mkKVOnlyOps, Ops(..), CommonOps(..))
+
+-- Build KVOnly ops
+let ops = mkKVOnlyOps prefix bucketBits chunkSize
+            kvCol csmtCol journalCol journalIso
+            fromKV hashing runTx trace
+
+-- Insert (writes KV + journal, no tree)
+runTx $ opsInsert (kvCommon ops) key value
+
+-- Transition to Full (replays journal via patchParallel)
+Just fullOps <- toFull ops
+rootHash <- runTx $ opsRootHash fullOps
+```
+
+### Parallel Replay
+
+The `toFull` transition replays journal entries using
+`patchParallel`, which splits operations by tree key prefix
+into independent bucket transactions that run concurrently.
+See [CSMT](csmt.md#parallel-population-patchparallel) for
+benchmarks.
 
 ## 3. MPF Direct API
 

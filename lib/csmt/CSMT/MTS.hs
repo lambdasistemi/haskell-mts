@@ -28,6 +28,12 @@
 --   transitions
 -- * 'mkKVOnlyOps' — build 'KVOnly' ops with 'toFull' replay
 -- * 'mkFullOps' — build 'Full' ops with 'toKVOnly' transition
+--
+-- Crash recovery:
+--
+-- * 'DbState' — three-state open result
+-- * 'ReadyState' — mode choice after recovery
+-- * 'patchSentinelKey' — sentinel key in journal
 module CSMT.MTS
     ( CsmtImpl
     , csmtMerkleTreeStoreT
@@ -58,6 +64,18 @@ module CSMT.MTS
 
       -- * Replay tracing
     , ReplayEvent (..)
+
+      -- * Crash recovery
+    , DbState (..)
+    , ReadyState (..)
+    , patchSentinelKey
+    , encodePatchSentinel
+    , decodePatchSentinel
+    , checkPatchRecovery
+
+      -- * Journal helpers (for testing)
+    , readJournalChunkT
+    , journalEntriesToPatchOps
     )
 where
 
@@ -79,6 +97,8 @@ import CSMT.Interface
     , Hashing (..)
     , Indirect (..)
     , Key
+    , getKey
+    , putKey
     , root
     )
 import CSMT.Populate (PatchOp (..), patchParallel)
@@ -100,6 +120,9 @@ import Control.Monad (unless, when)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.IORef (newIORef, readIORef, writeIORef)
+import Data.Serialize (getWord8, putWord8)
+import Data.Serialize.Extra (evalGetM, evalPutM)
+import Data.Word (Word8)
 import Database.KV.Cursor
     ( Cursor
     , Entry (..)
@@ -179,6 +202,94 @@ parseJournalEntry bs = case B.uncons bs of
     Just (0x02, rest) -> (JUpdate, rest)
     Just (0x00, rest) -> (JDelete, rest)
     _ -> error "parseJournalEntry: invalid tag byte"
+
+-- ------------------------------------------------------------------
+-- Crash recovery sentinel
+-- ------------------------------------------------------------------
+
+-- | Sentinel tag byte, distinct from journal tags
+-- (@0x00@, @0x01@, @0x02@).
+patchSentinelTag :: Word8
+patchSentinelTag = 0xFF
+
+-- | Sentinel key in the journal column.
+--
+-- @mempty@ (empty bytestring for 'ByteString') sorts
+-- before all real keys in both RocksDB and
+-- 'Data.Map.Strict'.
+patchSentinelKey :: (Monoid k) => k
+patchSentinelKey = mempty
+
+-- | Check if a journal value is a sentinel (tag @0xFF@).
+isSentinelValue :: ByteString -> Bool
+isSentinelValue bs = case B.uncons bs of
+    Just (w, _) -> w == patchSentinelTag
+    Nothing -> False
+
+-- | Encode a patch sentinel value.
+--
+-- Format: @0xFF ++ Word8(bucketBits) ++ encodedPrefix@
+encodePatchSentinel :: Int -> Key -> ByteString
+encodePatchSentinel bucketBits prefix =
+    evalPutM $ do
+        putWord8 patchSentinelTag
+        putWord8 (fromIntegral bucketBits)
+        putKey prefix
+
+-- | Decode a patch sentinel value.
+--
+-- Returns @Just (bucketBits, prefix)@ if the value starts
+-- with @0xFF@, @Nothing@ otherwise.
+decodePatchSentinel
+    :: ByteString -> Maybe (Int, Key)
+decodePatchSentinel = evalGetM $ do
+    tag <- getWord8
+    if tag /= patchSentinelTag
+        then fail "not a sentinel"
+        else do
+            bits <- fromIntegral <$> getWord8
+            pfx <- getKey
+            pure (bits, pfx)
+
+-- | Check the journal for a recovery sentinel
+-- (transactional).
+--
+-- Returns @Just (bucketBits, prefix)@ when
+-- recovery is needed, @Nothing@ otherwise.
+checkPatchRecovery
+    :: (Monad m, GCompare d, Ord k, Monoid k)
+    => Selector d k ByteString
+    -- ^ Journal column
+    -> Transaction m cf d op (Maybe (Int, Key))
+checkPatchRecovery journalCol = do
+    mv <- query journalCol patchSentinelKey
+    pure $ mv >>= decodePatchSentinel
+
+-- ------------------------------------------------------------------
+-- Three-state open API
+-- ------------------------------------------------------------------
+
+-- | Result of opening a database with crash recovery
+-- awareness.
+--
+-- If a sentinel flag is present (from a crashed
+-- @toFull@ transition), 'NeedsRecovery' forces the
+-- caller to run recovery before accessing any mode.
+data DbState m cf d ops k v a
+    = -- | Sentinel found. Run recovery first.
+      NeedsRecovery
+        (IO (DbState m cf d ops k v a))
+    | -- | No sentinel. Choose a mode.
+      Ready (ReadyState m cf d ops k v a)
+
+-- | Mode choice after recovery (or clean open).
+data ReadyState m cf d ops k v a
+    = -- | Start in KVOnly mode.
+      ChooseKVOnly
+        (Ops 'KVOnly m cf d ops k v a)
+    | -- | Start in Full mode (replays journal).
+      ChooseFull
+        (IO (Ops 'Full m cf d ops k v a))
 
 -- ------------------------------------------------------------------
 -- Full mode
@@ -558,7 +669,14 @@ journalEmptyT
     -- ^ Journal column
     -> Transaction m cf d op Bool
 journalEmptyT journalCol = do
-    me <- iterating journalCol firstEntry
+    me <- iterating journalCol $ do
+        e <- firstEntry
+        case e of
+            Nothing -> pure Nothing
+            Just entry
+                | isSentinelValue (entryValue entry) ->
+                    nextEntry
+                | otherwise -> pure (Just entry)
     pure $ case me of
         Nothing -> True
         Just _ -> False
@@ -591,7 +709,11 @@ replayJournalChunkT prefix chunkSize fromKV hashing = do
         me <- firstEntry
         case me of
             Nothing -> pure []
-            Just e -> collectN (chunkSize - 1) [e]
+            Just e
+                | isSentinelValue (entryValue e) ->
+                    collectN chunkSize []
+                | otherwise ->
+                    collectN (chunkSize - 1) [e]
     if null entries
         then pure True
         else do
@@ -727,7 +849,7 @@ data ReplayEvent
 -- Insert/delete write KV + journal atomically. Query reads
 -- KV. 'toFull' replays the journal via 'patchParallel'.
 mkKVOnlyOps
-    :: (Monad m, GCompare d, Ord k)
+    :: (Monad m, GCompare d, Ord k, Monoid k)
     => Key
     -- ^ Prefix
     -> Int
@@ -814,18 +936,52 @@ mkKVOnlyOps
                     , opsQuery = query kvCol
                     }
             , toFull = do
+                -- Check for incomplete prior transition
+                mRecovery <-
+                    runTx
+                        $ checkPatchRecovery journalCol
+                case mRecovery of
+                    Just _ -> do
+                        -- Crashed mid-transition: merge
+                        -- subtree roots to fix the top,
+                        -- then delete sentinel. Remaining
+                        -- journal entries will be replayed
+                        -- in the replayLoop below.
+                        runTx $ do
+                            mergeSubtreeRoots
+                                prefix
+                                hashing
+                                csmtCol
+                                bucketBits
+                            delete
+                                journalCol
+                                patchSentinelKey
+                    Nothing -> pure ()
+                -- Write sentinel before expand
+                runTx
+                    $ insert
+                        journalCol
+                        patchSentinelKey
+                        ( encodePatchSentinel
+                            bucketBits
+                            prefix
+                        )
                 runTx
                     $ expandToBucketDepth
                         prefix
                         bucketBits
                         csmtCol
                 replayLoop
-                runTx
-                    $ mergeSubtreeRoots
+                -- Merge + delete sentinel atomically
+                runTx $ do
+                    mergeSubtreeRoots
                         prefix
                         hashing
                         csmtCol
                         bucketBits
+                    delete
+                        journalCol
+                        patchSentinelKey
                 pure
                     $ Just
                     $ mkFullOps
@@ -885,7 +1041,7 @@ mkKVOnlyOps
 -- 'toKVOnly' verifies journal is empty and returns 'KVOnly'
 -- ops.
 mkFullOps
-    :: (Monad m, GCompare d, Ord k)
+    :: (Monad m, GCompare d, Ord k, Monoid k)
     => Key
     -- ^ Prefix
     -> Int
@@ -962,6 +1118,9 @@ mkFullOps
             }
 
 -- | Read up to @n@ journal entries (transactional).
+--
+-- Skips sentinel entries (tag byte @0xFF@) that may
+-- be present during a 'toFull' transition.
 readJournalChunkT
     :: (Monad m, GCompare d)
     => Selector d k ByteString
@@ -973,7 +1132,13 @@ readJournalChunkT journalCol chunkSize = do
         me <- firstEntry
         case me of
             Nothing -> pure []
-            Just e -> collectN (chunkSize - 1) [e]
+            Just e
+                | isSentinelValue (entryValue e) ->
+                    -- Sentinel is first: skip it and
+                    -- collect chunkSize from remainder
+                    collectN chunkSize []
+                | otherwise ->
+                    collectN (chunkSize - 1) [e]
     pure [(entryKey e, entryValue e) | e <- entries]
 
 -- | Convert journal entries to 'PatchOp' pairs for
