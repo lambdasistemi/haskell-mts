@@ -1208,15 +1208,13 @@ spec = do
                     )
                     kvs
 
-                -- Write sentinel
-                rtx
-                    $ insert
+                -- Write sentinel + expand atomically
+                rtx $ do
+                    insert
                         StandaloneJournalCol
                         (patchSentinelKey :: ByteString)
                         (encodePatchSentinel bucketBits [])
-                -- Expand tree
-                rtx
-                    $ expandToBucketDepth
+                    expandToBucketDepth
                         []
                         bucketBits
                         StandaloneCSMTCol

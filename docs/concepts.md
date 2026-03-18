@@ -214,10 +214,9 @@ Each bucket transaction in the parallel replay is atomic (tree ops +
 journal entry deletes in a single transaction). A **sentinel flag** in
 the journal column brackets the non-atomic `toFull` sequence:
 
-1. Write sentinel (bucket bits + prefix)
-2. `expandToBucketDepth`
-3. Replay loop (parallel bucket transactions)
-4. `mergeSubtreeRoots` + delete sentinel (atomic)
+1. Write sentinel + `expandToBucketDepth` (atomic)
+2. Replay loop (parallel bucket transactions)
+3. `mergeSubtreeRoots` + delete sentinel (atomic)
 
 If the process crashes between steps 1–4, the next `toFull` detects the
 sentinel, runs `mergeSubtreeRoots` to fix the tree top, then continues
