@@ -764,21 +764,21 @@ mkKVOnlyOps
         OpsKVOnly
             { kvCommon =
                 CommonOps
-                    -- Journal tag compositions:
-                    --
-                    -- INSERT (journal × KV → journal'):
-                    --   Nothing × Nothing → JInsert  (new key)
-                    --   Nothing × Just _  → JUpdate  (key from CSMT)
-                    --   JInsert × _       → JInsert  (still new)
-                    --   JUpdate × _       → JUpdate  (still CSMT)
-                    --   JDelete × _       → JUpdate  (re-insert, CSMT has it)
-                    --
-                    -- DELETE (journal → journal'):
-                    --   Nothing           → JDelete  (key from CSMT)
-                    --   JInsert           → ∅ elide   (new, not in CSMT)
-                    --   JUpdate           → JDelete  (CSMT key removed)
-                    --   JDelete           → ⊥         (KV empty, unreachable)
-                    { opsInsert = \k v -> do
+                    { -- Journal tag compositions:
+                      --
+                      -- INSERT (journal × KV → journal'):
+                      --   Nothing × Nothing → JInsert  (new key)
+                      --   Nothing × Just _  → JUpdate  (key from CSMT)
+                      --   JInsert × _       → JInsert  (still new)
+                      --   JUpdate × _       → JUpdate  (still CSMT)
+                      --   JDelete × _       → JUpdate  (re-insert, CSMT has it)
+                      --
+                      -- DELETE (journal → journal'):
+                      --   Nothing           → JDelete  (key from CSMT)
+                      --   JInsert           → ∅ elide   (new, not in CSMT)
+                      --   JUpdate           → JDelete  (CSMT key removed)
+                      --   JDelete           → ⊥         (KV empty, unreachable)
+                      opsInsert = \k v -> do
                         mj <- query journalCol k
                         existing <- query kvCol k
                         let encoded = view journalIso v

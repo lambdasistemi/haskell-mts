@@ -466,7 +466,7 @@ mergeSubtreeRoots pfx hashing csmtCol bucketBits = do
     -- previous merge may have written. Without this,
     -- stale intermediate nodes persist when buckets empty.
     let aboveBucket =
-            concatMap (allPrefixes) [0 .. bucketBits - 1]
+            concatMap allPrefixes [0 .. bucketBits - 1]
     mapM_ (\p -> delete csmtCol (pfx <> p)) aboveBucket
     case mergeComposeForest roots of
         Nothing -> pure ()
