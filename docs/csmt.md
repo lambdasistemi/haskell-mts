@@ -166,10 +166,9 @@ The `toFull` transition performs three non-atomic steps:
 A **sentinel flag** in the journal column brackets this sequence:
 
 ```
-1. Write sentinel (bucketBits, prefix) → journal[""]
-2. expandToBucketDepth
-3. replayLoop (parallel bucket transactions)
-4. mergeSubtreeRoots + delete sentinel (one transaction)
+1. Write sentinel + expandToBucketDepth (one transaction)
+2. replayLoop (parallel bucket transactions)
+3. mergeSubtreeRoots + delete sentinel (one transaction)
 ```
 
 If the process crashes between steps 1–4, the next `toFull` call

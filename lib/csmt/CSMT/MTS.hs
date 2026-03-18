@@ -957,17 +957,16 @@ mkKVOnlyOps
                                 journalCol
                                 patchSentinelKey
                     Nothing -> pure ()
-                -- Write sentinel before expand
-                runTx
-                    $ insert
+                -- Write sentinel + expand atomically
+                runTx $ do
+                    insert
                         journalCol
                         patchSentinelKey
                         ( encodePatchSentinel
                             bucketBits
                             prefix
                         )
-                runTx
-                    $ expandToBucketDepth
+                    expandToBucketDepth
                         prefix
                         bucketBits
                         csmtCol
