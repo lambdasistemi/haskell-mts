@@ -27,12 +27,25 @@ import CSMT.MTS
     , mkKVOnlyOps
     )
 import Control.Exception (SomeException, try)
+import Control.Monad (foldM)
 import Control.Lens (Iso', iso)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Either (isLeft)
 import Data.IORef (newIORef, readIORef, writeIORef)
-import Database.KV.Transaction (runTransactionUnguarded)
+import Data.List (nub)
+import Data.Map.Strict qualified as Map
+import Database.KV.Cursor
+    ( Cursor
+    , Entry (..)
+    , firstEntry
+    , nextEntry
+    )
+import Database.KV.Database (KeyOf, ValueOf)
+import Database.KV.Transaction
+    ( iterating
+    , runTransactionUnguarded
+    )
 import Database.KV.Transaction qualified as Transaction
 import MPF.Backend.Pure
     ( MPFPure
@@ -77,6 +90,7 @@ import Test.Hspec
 import Test.QuickCheck
     ( Gen
     , arbitrary
+    , chooseInt
     , forAll
     , listOf1
     , property
@@ -341,6 +355,57 @@ mkCsmtKVOnlyOps = do
         )
 
 -- ------------------------------------------------------------------
+-- Helpers
+-- ------------------------------------------------------------------
+
+-- | Count all entries in a column via cursor iteration.
+countEntries :: (Monad m) => Cursor m c Int
+countEntries = do
+    me <- firstEntry
+    case me of
+        Nothing -> pure 0
+        Just _ -> go 1
+  where
+    go n = do
+        me <- nextEntry
+        case me of
+            Nothing -> pure n
+            Just _ -> go (n + 1)
+
+-- | Collect all (key, value) pairs from a column.
+collectAll
+    :: (Monad m) => Cursor m c [(KeyOf c, ValueOf c)]
+collectAll = do
+    me <- firstEntry
+    case me of
+        Nothing -> pure []
+        Just e -> go [(entryKey e, entryValue e)]
+  where
+    go acc = do
+        me <- nextEntry
+        case me of
+            Nothing -> pure (reverse acc)
+            Just e -> go ((entryKey e, entryValue e) : acc)
+
+-- | Apply a KVOp and track expected KV state.
+applyOp
+    :: CommonOps m cf d op ByteString ByteString
+    -> (forall b. Transaction.Transaction m cf d op b -> IO b)
+    -> Map.Map ByteString ByteString
+    -> KVOp ByteString ByteString
+    -> IO (Map.Map ByteString ByteString)
+applyOp common rtx kv = \case
+    Insert k v -> do
+        rtx $ opsInsert common k v
+        pure $ Map.insert k v kv
+    Overwrite k v -> do
+        rtx $ opsInsert common k v
+        pure $ Map.insert k v kv
+    Delete k -> do
+        rtx $ opsDelete common k
+        pure $ Map.delete k kv
+
+-- ------------------------------------------------------------------
 -- Generators
 -- ------------------------------------------------------------------
 
@@ -359,6 +424,46 @@ genBSTriple = do
     v <- B.pack <$> vectorOf 8 arbitrary
     v' <- B.pack <$> vectorOf 8 arbitrary
     pure (k, v, v')
+
+-- | A single KV operation: insert, overwrite, or delete.
+data KVOp k v
+    = Insert k v
+    | Overwrite k v
+    | Delete k
+    deriving stock (Show)
+
+-- | Generate a realistic sequence of KV operations, one at
+-- a time, maintaining a running set of live keys. At each
+-- step: 60% insert new, 20% delete existing, 20% overwrite
+-- existing. Models the actual UTxO lifecycle.
+genOps :: Gen [KVOp ByteString ByteString]
+genOps = go [] Map.empty
+  where
+    go acc live = do
+        n <- chooseInt (0, 9)
+        if length acc > 20
+            then pure $ reverse acc
+            else case (n, Map.toList live) of
+                (_, []) -> doInsert acc live
+                (n', _)
+                    | n' < 6 -> doInsert acc live
+                    | n' < 8 -> doDelete acc live
+                    | otherwise -> doOverwrite acc live
+    doInsert acc live = do
+        k <- B.pack <$> vectorOf 8 arbitrary
+        v <- B.pack <$> vectorOf 8 arbitrary
+        go (Insert k v : acc) (Map.insert k v live)
+    doDelete acc live = do
+        let keys = Map.keys live
+        i <- chooseInt (0, length keys - 1)
+        let k = keys !! i
+        go (Delete k : acc) (Map.delete k live)
+    doOverwrite acc live = do
+        let keys = Map.keys live
+        i <- chooseInt (0, length keys - 1)
+        let k = keys !! i
+        v <- B.pack <$> vectorOf 8 arbitrary
+        go (Overwrite k v : acc) (Map.insert k v live)
 
 -- ------------------------------------------------------------------
 -- Spec
@@ -614,3 +719,80 @@ spec = do
                         Nothing -> pure ()
                         Just _ ->
                             fail "toKVOnly should fail with non-empty journal"
+        it "single-round realistic ops produce correct hash"
+            $ property
+            $ forAll genOps
+            $ \ops -> do
+                (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
+                freshStore <- mkCsmtStore
+                kv <- foldM (applyOp (kvCommon ops0) rtx) Map.empty ops
+                Just full <- toFull ops0
+                mapM_
+                    (uncurry $ mtsInsert $ mtsKV freshStore)
+                    $ Map.toList kv
+                expected <- mtsRootHash $ mtsTree freshStore
+                actual <- rtx $ opsRootHash full
+                actual `shouldBe` expected
+        it "overwrite across replay produces correct hash" $ do
+                (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
+                freshStore <- mkCsmtStore
+                -- Round 1: insert K with V1
+                rtx $ opsInsert (kvCommon ops0) "key" "val1"
+                Just full1 <- toFull ops0
+                -- Round 2: overwrite K with V2
+                Just kv2 <- toKVOnly full1
+                rtx $ opsInsert (kvCommon kv2) "key" "val2"
+                Just full2 <- toFull kv2
+                -- Fresh tree with just K:V2
+                mtsInsert (mtsKV freshStore) "key" "val2"
+                expected <- mtsRootHash $ mtsTree freshStore
+                actual <- rtx $ opsRootHash full2
+                actual `shouldBe` expected
+        it "delete all after replay cycle empties CSMT" $ do
+                (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
+                rtx $ opsInsert (kvCommon ops0) "aaa" "111"
+                rtx $ opsInsert (kvCommon ops0) "bbb" "222"
+                Just full1 <- toFull ops0
+                _ <- rtx $ opsRootHash full1
+                Just kv2 <- toKVOnly full1
+                rtx $ opsDelete (kvCommon kv2) "aaa"
+                rtx $ opsDelete (kvCommon kv2) "bbb"
+                Just full2 <- toFull kv2
+                r2 <- rtx $ opsRootHash full2
+                r2 `shouldBe` Nothing
+        it "journal empty and CSMT == KV after each replay cycle"
+            $ property
+            $ forAll genOps
+            $ \ops -> do
+                (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
+                let applyChunk kvOps kv chunk =
+                        foldM (applyOp (kvCommon kvOps) rtx) kv chunk
+                    assertAfterReplay fullOps expectedKV = do
+                        jn <- rtx
+                            $ iterating StandaloneJournalCol
+                            $ countEntries
+                        jn `shouldBe` 0
+                        freshStore <- mkCsmtStore
+                        mapM_
+                            (uncurry $ mtsInsert $ mtsKV freshStore)
+                            $ Map.toList expectedKV
+                        expected <- mtsRootHash $ mtsTree freshStore
+                        actual <- rtx $ opsRootHash fullOps
+                        actual `shouldBe` expected
+                    -- Split ops into 3 chunks at arbitrary points
+                    (chunk1, rest1) = splitAt (length ops `div` 3) ops
+                    (chunk2, chunk3) = splitAt (length rest1 `div` 2) rest1
+                -- Round 1
+                kv1 <- applyChunk ops0 Map.empty chunk1
+                Just full1 <- toFull ops0
+                assertAfterReplay full1 kv1
+                -- Round 2
+                Just kvOps2 <- toKVOnly full1
+                kv2 <- applyChunk kvOps2 kv1 chunk2
+                Just full3 <- toFull kvOps2
+                assertAfterReplay full3 kv2
+                -- Round 3
+                Just kvOps4 <- toKVOnly full3
+                kv3 <- applyChunk kvOps4 kv2 chunk3
+                Just full5 <- toFull kvOps4
+                assertAfterReplay full5 kv3
