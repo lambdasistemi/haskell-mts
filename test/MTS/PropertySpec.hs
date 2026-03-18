@@ -27,8 +27,8 @@ import CSMT.MTS
     , mkKVOnlyOps
     )
 import Control.Exception (SomeException, try)
-import Control.Monad (foldM)
 import Control.Lens (Iso', iso)
+import Control.Monad (foldM, foldM_)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Either (isLeft)
@@ -448,7 +448,8 @@ data KVOp k v
 -- | Shrink an ops list by removing one op at a time,
 -- keeping only sequences where deletes/overwrites target
 -- keys that were previously inserted.
-shrinkOps :: [KVOp ByteString ByteString] -> [[KVOp ByteString ByteString]]
+shrinkOps
+    :: [KVOp ByteString ByteString] -> [[KVOp ByteString ByteString]]
 shrinkOps ops =
     [ candidate
     | i <- [0 .. length ops - 1]
@@ -760,35 +761,42 @@ spec = do
             $ forAll genOps
             $ \ops -> do
                 (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
-                _ <- foldM (applyOp (kvCommon ops0) rtx) Map.empty ops
-                kvCount <- rtx
-                    $ iterating StandaloneKVCol countEntries
-                journalCount <- rtx
-                    $ iterating StandaloneJournalCol countEntries
+                foldM_ (applyOp (kvCommon ops0) rtx) Map.empty ops
+                kvCount <-
+                    rtx
+                        $ iterating StandaloneKVCol countEntries
+                journalCount <-
+                    rtx
+                        $ iterating StandaloneJournalCol countEntries
                 journalCount `shouldBe` kvCount
         it "QC1: genesis journal content matches KV"
             $ property
             $ forAll genOps
             $ \ops -> do
                 (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
-                _ <- foldM (applyOp (kvCommon ops0) rtx) Map.empty ops
-                kvEntries <- rtx
-                    $ iterating StandaloneKVCol collectAll
-                journalEntries <- rtx
-                    $ iterating StandaloneJournalCol collectAll
+                foldM_ (applyOp (kvCommon ops0) rtx) Map.empty ops
+                kvEntries <-
+                    rtx
+                        $ iterating StandaloneKVCol collectAll
+                journalEntries <-
+                    rtx
+                        $ iterating StandaloneJournalCol collectAll
                 let kvMap = Map.fromList kvEntries
-                    journalMap = Map.fromList
-                        $ map (\(k, v) -> (k, snd $ parseTag v))
-                            journalEntries
+                    journalMap =
+                        Map.fromList
+                            $ map
+                                (\(k, v) -> (k, snd $ parseTag v))
+                                journalEntries
                 journalMap `shouldBe` kvMap
         it "QC1: genesis journal entries are all JInsert"
             $ property
             $ forAll genOps
             $ \ops -> do
                 (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
-                _ <- foldM (applyOp (kvCommon ops0) rtx) Map.empty ops
-                journalEntries <- rtx
-                    $ iterating StandaloneJournalCol collectAll
+                foldM_ (applyOp (kvCommon ops0) rtx) Map.empty ops
+                journalEntries <-
+                    rtx
+                        $ iterating StandaloneJournalCol collectAll
                 let tags = map (fst . parseTag . snd) journalEntries
                 all (== JIns) tags `shouldBe` True
         -- ======================================================
@@ -802,17 +810,19 @@ spec = do
                 (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
                 let (first, second) = splitAt (length ops `div` 2) ops
                 -- Round 1
-                _ <- foldM (applyOp (kvCommon ops0) rtx) Map.empty first
+                foldM_ (applyOp (kvCommon ops0) rtx) Map.empty first
                 Just full1 <- toFull ops0
                 Just kv2 <- toKVOnly full1
                 -- Round 2 ops (no replay yet)
-                _ <- foldM (applyOp (kvCommon kv2) rtx) Map.empty second
+                foldM_ (applyOp (kvCommon kv2) rtx) Map.empty second
                 -- Check general invariant: for each key,
                 -- KV = apply(journal, CSMT)
-                kvEntries <- rtx
-                    $ iterating StandaloneKVCol collectAll
-                journalEntries <- rtx
-                    $ iterating StandaloneJournalCol collectAll
+                kvEntries <-
+                    rtx
+                        $ iterating StandaloneKVCol collectAll
+                journalEntries <-
+                    rtx
+                        $ iterating StandaloneJournalCol collectAll
                 let kvMap = Map.fromList kvEntries
                     journalMap = Map.fromList journalEntries
                 -- Reconstruct expected from CSMT + journal
@@ -828,13 +838,15 @@ spec = do
                     kvKeys = Map.keysSet kvMap
                 -- Every JIns/JUpd journal key should be in KV
                 -- Every JDel journal key should NOT be in KV
-                mapM_ (\(k, raw) -> do
-                    let (tag, v) = parseTag raw
-                    case tag of
-                        JIns -> Map.lookup k kvMap `shouldBe` Just v
-                        JUpd -> Map.lookup k kvMap `shouldBe` Just v
-                        JDel -> Map.member k kvMap `shouldBe` False
-                    ) journalEntries
+                mapM_
+                    ( \(k, raw) -> do
+                        let (tag, v) = parseTag raw
+                        case tag of
+                            JIns -> Map.lookup k kvMap `shouldBe` Just v
+                            JUpd -> Map.lookup k kvMap `shouldBe` Just v
+                            JDel -> Map.member k kvMap `shouldBe` False
+                    )
+                    journalEntries
         -- ======================================================
         -- Part 2: JInsert ↔ not in CSMT, JUpd/JDel ↔ in CSMT
         -- ======================================================
@@ -850,23 +862,26 @@ spec = do
                 -- CSMT now has kv1
                 Just kv2 <- toKVOnly full1
                 -- Round 2: ops without replay
-                _ <- foldM (applyOp (kvCommon kv2) rtx) kv1 second
-                journalEntries <- rtx
-                    $ iterating StandaloneJournalCol collectAll
-                mapM_ (\(k, raw) -> do
-                    let (tag, _) = parseTag raw
-                    case tag of
-                        JIns ->
-                            -- New key: should NOT have been
-                            -- in CSMT (= kv1)
-                            Map.member k kv1 `shouldBe` False
-                        JUpd ->
-                            -- Overwrite: should be in CSMT
-                            Map.member k kv1 `shouldBe` True
-                        JDel ->
-                            -- Delete: should be in CSMT
-                            Map.member k kv1 `shouldBe` True
-                    ) journalEntries
+                foldM_ (applyOp (kvCommon kv2) rtx) kv1 second
+                journalEntries <-
+                    rtx
+                        $ iterating StandaloneJournalCol collectAll
+                mapM_
+                    ( \(k, raw) -> do
+                        let (tag, _) = parseTag raw
+                        case tag of
+                            JIns ->
+                                -- New key: should NOT have been
+                                -- in CSMT (= kv1)
+                                Map.member k kv1 `shouldBe` False
+                            JUpd ->
+                                -- Overwrite: should be in CSMT
+                                Map.member k kv1 `shouldBe` True
+                            JDel ->
+                                -- Delete: should be in CSMT
+                                Map.member k kv1 `shouldBe` True
+                    )
+                    journalEntries
         -- ======================================================
         -- Targeted tests
         -- ======================================================
@@ -902,9 +917,10 @@ spec = do
                 Just full2 <- toFull kv2
                 -- Fresh tree with expected state
                 freshStore <- mkCsmtStore
-                let expected' = Map.delete
-                        (fst $ Prelude.head first)
-                        $ Map.fromList kvs
+                let expected' =
+                        Map.delete
+                            (fst $ Prelude.head first)
+                            $ Map.fromList kvs
                 mapM_ (uncurry $ mtsInsert $ mtsKV freshStore)
                     $ Map.toList expected'
                 expected <- mtsRootHash $ mtsTree freshStore
@@ -965,19 +981,18 @@ spec = do
                 Just full1 <- toFull ops0
                 -- Round 2: overwrite first two, delete third
                 Just kv2 <- toKVOnly full1
-                let (k1, _) = kvs !! 0
-                    (k2, _) = kvs !! 1
-                    (k3, _) = kvs !! 2
+                let ((k1, _) : (k2, _) : (k3, _) : _) = kvs
                 rtx $ opsInsert (kvCommon kv2) k1 "new1"
                 rtx $ opsInsert (kvCommon kv2) k2 "new2"
                 rtx $ opsDelete (kvCommon kv2) k3
                 Just full2 <- toFull kv2
                 -- Fresh tree
                 freshStore <- mkCsmtStore
-                let expected' = Map.delete k3
-                        $ Map.insert k2 "new2"
-                        $ Map.insert k1 "new1"
-                        $ Map.fromList kvs
+                let expected' =
+                        Map.delete k3
+                            $ Map.insert k2 "new2"
+                            $ Map.insert k1 "new1"
+                            $ Map.fromList kvs
                 mapM_ (uncurry $ mtsInsert $ mtsKV freshStore)
                     $ Map.toList expected'
                 expected <- mtsRootHash $ mtsTree freshStore
@@ -1000,9 +1015,10 @@ spec = do
                 Just full2 <- toFull kv2
                 -- Fresh
                 freshStore <- mkCsmtStore
-                let expected' = Map.insert (fst $ first !! 1) "overwritten"
-                        $ Map.delete (fst $ Prelude.head first)
-                        $ Map.fromList kvs
+                let expected' =
+                        Map.insert (fst $ first !! 1) "overwritten"
+                            $ Map.delete (fst $ Prelude.head first)
+                            $ Map.fromList kvs
                 mapM_ (uncurry $ mtsInsert $ mtsKV freshStore)
                     $ Map.toList expected'
                 expected <- mtsRootHash $ mtsTree freshStore
@@ -1023,43 +1039,45 @@ spec = do
                 actual <- rtx $ opsRootHash full
                 actual `shouldBe` expected
         it "overwrite across replay produces correct hash" $ do
-                (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
-                freshStore <- mkCsmtStore
-                -- Round 1: insert K with V1
-                rtx $ opsInsert (kvCommon ops0) "key" "val1"
-                Just full1 <- toFull ops0
-                -- Round 2: overwrite K with V2
-                Just kv2 <- toKVOnly full1
-                rtx $ opsInsert (kvCommon kv2) "key" "val2"
-                Just full2 <- toFull kv2
-                -- Fresh tree with just K:V2
-                mtsInsert (mtsKV freshStore) "key" "val2"
-                expected <- mtsRootHash $ mtsTree freshStore
-                actual <- rtx $ opsRootHash full2
-                actual `shouldBe` expected
+            (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
+            freshStore <- mkCsmtStore
+            -- Round 1: insert K with V1
+            rtx $ opsInsert (kvCommon ops0) "key" "val1"
+            Just full1 <- toFull ops0
+            -- Round 2: overwrite K with V2
+            Just kv2 <- toKVOnly full1
+            rtx $ opsInsert (kvCommon kv2) "key" "val2"
+            Just full2 <- toFull kv2
+            -- Fresh tree with just K:V2
+            mtsInsert (mtsKV freshStore) "key" "val2"
+            expected <- mtsRootHash $ mtsTree freshStore
+            actual <- rtx $ opsRootHash full2
+            actual `shouldBe` expected
         it "delete all after replay cycle empties CSMT" $ do
-                (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
-                rtx $ opsInsert (kvCommon ops0) "aaa" "111"
-                rtx $ opsInsert (kvCommon ops0) "bbb" "222"
-                Just full1 <- toFull ops0
-                _ <- rtx $ opsRootHash full1
-                Just kv2 <- toKVOnly full1
-                rtx $ opsDelete (kvCommon kv2) "aaa"
-                rtx $ opsDelete (kvCommon kv2) "bbb"
-                Just full2 <- toFull kv2
-                r2 <- rtx $ opsRootHash full2
-                r2 `shouldBe` Nothing
+            (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
+            rtx $ opsInsert (kvCommon ops0) "aaa" "111"
+            rtx $ opsInsert (kvCommon ops0) "bbb" "222"
+            Just full1 <- toFull ops0
+            _ <- rtx $ opsRootHash full1
+            Just kv2 <- toKVOnly full1
+            rtx $ opsDelete (kvCommon kv2) "aaa"
+            rtx $ opsDelete (kvCommon kv2) "bbb"
+            Just full2 <- toFull kv2
+            r2 <- rtx $ opsRootHash full2
+            r2 `shouldBe` Nothing
         it "journal empty and CSMT == KV after each replay cycle"
             $ property
             $ forAll genOps
             $ \ops -> do
                 (ops0, RunTxPure rtx) <- mkCsmtKVOnlyOps
-                let applyChunk kvOps kv chunk =
-                        foldM (applyOp (kvCommon kvOps) rtx) kv chunk
+                let applyChunk kvOps =
+                        foldM (applyOp (kvCommon kvOps) rtx)
                     assertAfterReplay fullOps expectedKV = do
-                        jn <- rtx
-                            $ iterating StandaloneJournalCol
-                            $ countEntries
+                        jn <-
+                            rtx
+                                $ iterating
+                                    StandaloneJournalCol
+                                    countEntries
                         jn `shouldBe` 0
                         freshStore <- mkCsmtStore
                         mapM_
