@@ -23,7 +23,9 @@ import CSMT.Interface (FromKV (..), Indirect, Key)
 import CSMT.MTS
     ( CommonOps (..)
     , CsmtImpl
+    , DbState (..)
     , Ops (..)
+    , ReadyState (..)
     , csmtKVOnlyStore
     , csmtManagedTransition
     , csmtMerkleTreeStore
@@ -32,6 +34,7 @@ import CSMT.MTS
     , journalEntriesToPatchOps
     , mkFullOps
     , mkKVOnlyOps
+    , openOps
     , patchSentinelKey
     , readJournalChunkT
     )
@@ -1248,20 +1251,27 @@ spec = do
                 -- DO NOT delete sentinel
                 -- → tree top is broken, sentinel present
 
-                -- Step 3: recover via toFull
-                let kvOps2 =
-                        mkKVOnlyOps
-                            []
-                            bucketBits
-                            100
-                            StandaloneKVCol
-                            StandaloneCSMTCol
-                            StandaloneJournalCol
-                            (iso id id)
-                            fromKVHashes
-                            hashHashing
-                            rtx
-                            (const $ pure ())
-                Just fullOps <- toFull kvOps2
-                actual <- rtx $ opsRootHash fullOps
-                actual `shouldBe` expected
+                -- Step 3: open → must be NeedsRecovery
+                state0 <-
+                    openOps
+                        []
+                        bucketBits
+                        100
+                        StandaloneKVCol
+                        StandaloneCSMTCol
+                        StandaloneJournalCol
+                        (iso id id)
+                        fromKVHashes
+                        hashHashing
+                        rtx
+                        (const $ pure ())
+                case state0 of
+                    NeedsRecovery recover -> do
+                        Ready (ChooseKVOnly kvOps2) <-
+                            recover
+                        Just fullOps <- toFull kvOps2
+                        actual <-
+                            rtx $ opsRootHash fullOps
+                        actual `shouldBe` expected
+                    Ready _ ->
+                        fail "expected NeedsRecovery"

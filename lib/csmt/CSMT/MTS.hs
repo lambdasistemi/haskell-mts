@@ -68,6 +68,7 @@ module CSMT.MTS
       -- * Crash recovery
     , DbState (..)
     , ReadyState (..)
+    , openOps
     , patchSentinelKey
     , encodePatchSentinel
     , decodePatchSentinel
@@ -290,6 +291,84 @@ data ReadyState m cf d ops k v a
     | -- | Start in Full mode (replays journal).
       ChooseFull
         (IO (Ops 'Full m cf d ops k v a))
+
+-- | Open the database and check for crash recovery.
+--
+-- If a sentinel is present from a crashed @toFull@,
+-- returns 'NeedsRecovery'. The recovery action runs
+-- 'mergeSubtreeRoots' + deletes sentinel, then returns
+-- 'Ready'.
+--
+-- If no sentinel is found, returns 'Ready' immediately.
+openOps
+    :: (Monad m, GCompare d, Ord k, Monoid k)
+    => Key
+    -- ^ Prefix
+    -> Int
+    -- ^ Bucket bits
+    -> Int
+    -- ^ Chunk size
+    -> Selector d k v
+    -- ^ KV column
+    -> Selector d Key (Indirect a)
+    -- ^ CSMT column
+    -> Selector d k ByteString
+    -- ^ Journal column
+    -> Iso' v ByteString
+    -- ^ Journal value serialization
+    -> FromKV k v a
+    -> Hashing a
+    -> (forall b. Transaction m cf d ops b -> IO b)
+    -- ^ Transaction runner
+    -> (ReplayEvent -> IO ())
+    -- ^ Trace callback
+    -> IO (DbState m cf d ops k v a)
+openOps
+    prefix
+    bucketBits
+    chunkSize
+    kvCol
+    csmtCol
+    journalCol
+    journalIso
+    fromKV
+    hashing
+    runTx
+    trace = do
+        mRecovery <-
+            runTx $ checkPatchRecovery journalCol
+        case mRecovery of
+            Just _ ->
+                pure
+                    $ NeedsRecovery
+                    $ do
+                        runTx $ do
+                            mergeSubtreeRoots
+                                prefix
+                                hashing
+                                csmtCol
+                                bucketBits
+                            delete
+                                journalCol
+                                patchSentinelKey
+                        pure $ Ready ready
+            Nothing ->
+                pure $ Ready ready
+      where
+        ready =
+            ChooseKVOnly
+                $ mkKVOnlyOps
+                    prefix
+                    bucketBits
+                    chunkSize
+                    kvCol
+                    csmtCol
+                    journalCol
+                    journalIso
+                    fromKV
+                    hashing
+                    runTx
+                    trace
 
 -- ------------------------------------------------------------------
 -- Full mode
@@ -936,27 +1015,6 @@ mkKVOnlyOps
                     , opsQuery = query kvCol
                     }
             , toFull = do
-                -- Check for incomplete prior transition
-                mRecovery <-
-                    runTx
-                        $ checkPatchRecovery journalCol
-                case mRecovery of
-                    Just _ -> do
-                        -- Crashed mid-transition: merge
-                        -- subtree roots to fix the top,
-                        -- then delete sentinel. Remaining
-                        -- journal entries will be replayed
-                        -- in the replayLoop below.
-                        runTx $ do
-                            mergeSubtreeRoots
-                                prefix
-                                hashing
-                                csmtCol
-                                bucketBits
-                            delete
-                                journalCol
-                                patchSentinelKey
-                    Nothing -> pure ()
                 -- Write sentinel + expand atomically
                 runTx $ do
                     insert
