@@ -55,6 +55,9 @@ module CSMT.MTS
         )
     , mkKVOnlyOps
     , mkFullOps
+
+      -- * Replay tracing
+    , ReplayEvent (..)
     )
 where
 
@@ -668,6 +671,24 @@ data Ops (mode :: Mode) m cf d ops k v a where
            }
         -> Ops 'Full m cf d ops k v a
 
+-- | Replay trace events. Emitted in pairs: 'ReplayStart'
+-- before the concurrent batch, 'ReplayStop' after.
+data ReplayEvent
+    = -- | About to run bucket transactions concurrently.
+      ReplayStart
+        { rsChunkSize :: Int
+        -- ^ Journal entries in this chunk
+        , rsBuckets :: Int
+        -- ^ Active buckets (with ops)
+        , rsTotalBuckets :: Int
+        -- ^ Total bucket count (2^bucketBits)
+        , rsOpsPerBucket :: [Int]
+        -- ^ Ops per active bucket
+        }
+    | -- | Concurrent batch completed.
+      ReplayStop
+    deriving stock (Show)
+
 -- | Build 'KVOnly' ops for generic column types.
 --
 -- Insert/delete write KV + journal atomically. Query reads
@@ -692,6 +713,8 @@ mkKVOnlyOps
     -> Hashing a
     -> (forall b. Transaction m cf d ops b -> IO b)
     -- ^ Transaction runner (must be thread-safe)
+    -> (ReplayEvent -> IO ())
+    -- ^ Trace callback (called per replay chunk)
     -> Ops 'KVOnly m cf d ops k v a
 mkKVOnlyOps
     prefix
@@ -703,7 +726,8 @@ mkKVOnlyOps
     journalIso
     fromKV
     hashing
-    runTx =
+    runTx
+    trace =
         OpsKVOnly
             { kvCommon =
                 CommonOps
@@ -755,8 +779,10 @@ mkKVOnlyOps
                         fromKV
                         hashing
                         runTx
+                        trace
             }
       where
+        totalBuckets = 2 ^ bucketBits :: Int
         replayLoop = do
             entries <-
                 runTx
@@ -771,7 +797,7 @@ mkKVOnlyOps
                                 journalIso
                                 fromKV
                                 entries
-                        txns =
+                        bucketTxns =
                             patchParallel
                                 bucketBits
                                 prefix
@@ -779,7 +805,18 @@ mkKVOnlyOps
                                 csmtCol
                                 journalCol
                                 ops
-                    mapConcurrently_ runTx txns
+                    trace
+                        ReplayStart
+                            { rsChunkSize = length entries
+                            , rsBuckets = length bucketTxns
+                            , rsTotalBuckets = totalBuckets
+                            , rsOpsPerBucket =
+                                map fst bucketTxns
+                            }
+                    mapConcurrently_
+                        (runTx . snd)
+                        bucketTxns
+                    trace ReplayStop
                     replayLoop
 
 -- | Build 'Full' ops for generic column types.
@@ -807,6 +844,8 @@ mkFullOps
     -> Hashing a
     -> (forall b. Transaction m cf d ops b -> IO b)
     -- ^ Transaction runner
+    -> (ReplayEvent -> IO ())
+    -- ^ Trace callback (passed through to 'mkKVOnlyOps')
     -> Ops 'Full m cf d ops k v a
 mkFullOps
     prefix
@@ -818,7 +857,8 @@ mkFullOps
     journalIso
     fromKV
     hashing
-    runTx =
+    runTx
+    trace =
         OpsFull
             { fullCommon =
                 CommonOps
@@ -857,6 +897,7 @@ mkFullOps
                                 fromKV
                                 hashing
                                 runTx
+                                trace
                     else pure Nothing
             }
 
