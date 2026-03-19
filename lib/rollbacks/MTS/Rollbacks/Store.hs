@@ -15,6 +15,14 @@
 -- Downstream chooses it (e.g. @WithOrigin slot@,
 -- @Maybe slot@). The library only requires
 -- @Ord key@.
+--
+-- == Counted variants
+--
+-- Functions prefixed with @counted@ maintain a
+-- persistent counter that tracks the number of
+-- rollback points. The counter is updated
+-- atomically in the same transaction. Use
+-- 'readCount' to query it.
 module MTS.Rollbacks.Store
     ( -- * Forward (store rollback point)
       storeRollbackPoint
@@ -35,11 +43,22 @@ module MTS.Rollbacks.Store
 
       -- * Inspection
     , countPoints
+
+      -- * Persistent counter
+    , RollbackCounter (..)
+    , readCount
+    , countedStore
+    , countedRollbackTo
+    , countedPruneBelow
+    , countedArmageddonCleanup
+    , countedArmageddonSetup
     )
 where
 
 import Control.Monad.Trans.Class (lift)
+import Data.ByteString (ByteString)
 import Data.Function (fix)
+import Data.Maybe (fromMaybe)
 import Database.KV.Cursor
     ( Entry (..)
     , firstEntry
@@ -50,10 +69,12 @@ import Database.KV.Cursor
     )
 import Database.KV.Transaction
     ( GCompare
+    , Selector
     , Transaction
     , delete
     , insert
     , iterating
+    , query
     )
 import MTS.Rollbacks.Column
     ( RollbackCol
@@ -233,3 +254,110 @@ countPoints col =
             Just _ -> do
                 next <- nextEntry
                 (+ 1) <$> go next
+
+-- ------------------------------------------------------------------
+-- Persistent counter
+-- ------------------------------------------------------------------
+
+-- | A persistent counter for rollback points,
+-- stored in a metrics column. The counter is
+-- updated atomically in the same transaction
+-- as the rollback point operations.
+data RollbackCounter t = RollbackCounter
+    { rcSelector :: Selector t ByteString Int
+    -- ^ Metrics column selector
+    , rcKey :: ByteString
+    -- ^ Counter key within the metrics column
+    }
+
+-- | Read the current rollback point count.
+readCount
+    :: (Monad m, GCompare t)
+    => RollbackCounter t
+    -> Transaction m cf t op Int
+readCount RollbackCounter{rcSelector, rcKey} =
+    fromMaybe 0 <$> query rcSelector rcKey
+
+-- | Adjust the counter by a delta.
+adjustCount
+    :: (Monad m, GCompare t)
+    => RollbackCounter t
+    -> Int
+    -> Transaction m cf t op ()
+adjustCount rc delta = do
+    current <- readCount rc
+    insert (rcSelector rc) (rcKey rc) (current + delta)
+
+-- | Store a rollback point and increment the
+-- counter.
+countedStore
+    :: (Ord key, Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -> RollbackCounter t
+    -> key
+    -> RollbackPoint inv meta
+    -> Transaction m cf t op ()
+countedStore col rc key rp = do
+    storeRollbackPoint col key rp
+    adjustCount rc 1
+
+-- | Roll back and decrement the counter by the
+-- number of deleted points.
+countedRollbackTo
+    :: (Ord key, Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -> RollbackCounter t
+    -> ( RollbackPoint inv meta
+         -> Transaction m cf t op ()
+       )
+    -> key
+    -> Transaction m cf t op RollbackResult
+countedRollbackTo col rc applyInverses key = do
+    result <- rollbackTo col applyInverses key
+    case result of
+        RollbackSucceeded n ->
+            adjustCount rc (negate n)
+        RollbackImpossible -> pure ()
+    pure result
+
+-- | Prune and decrement the counter by the
+-- number of pruned points.
+countedPruneBelow
+    :: (Ord key, Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -> RollbackCounter t
+    -> key
+    -> Transaction m cf t op Int
+countedPruneBelow col rc key = do
+    n <- pruneBelow col key
+    adjustCount rc (negate n)
+    pure n
+
+-- | Armageddon cleanup. Resets the counter to 0
+-- on the last batch (when no more entries remain).
+countedArmageddonCleanup
+    :: (Ord key, Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -> RollbackCounter t
+    -> Int
+    -> Transaction m cf t op Bool
+countedArmageddonCleanup col rc batchSz = do
+    more <- armageddonCleanup col batchSz
+    if more
+        then pure True
+        else do
+            insert (rcSelector rc) (rcKey rc) 0
+            pure False
+
+-- | Armageddon setup. Sets the counter to 1
+-- (the sentinel point).
+countedArmageddonSetup
+    :: (Ord key, Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -> RollbackCounter t
+    -> key
+    -> Maybe meta
+    -> Transaction m cf t op ()
+countedArmageddonSetup col rc key meta = do
+    armageddonSetup col key meta
+    insert (rcSelector rc) (rcKey rc) 1

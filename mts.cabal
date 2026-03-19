@@ -82,6 +82,7 @@ library rollbacks
 
   build-depends:
     , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
     , rocksdb-kv-transactions:kv-transactions
     , transformers                             >=0.6  && <0.7
 
@@ -232,6 +233,7 @@ test-suite unit-tests
     , cereal                                   >=0.5  && <0.6
     , containers                               >=0.6  && <0.7
     , data-default                             >=0.8  && <0.9
+    , exceptions                               >=0.10 && <0.11
     , filepath                                 >=1.4  && <1.5
     , hspec                                    >=2.11 && <2.12
     , lens                                     >=5.3  && <5.4
@@ -240,6 +242,7 @@ test-suite unit-tests
     , mts:csmt-test-lib
     , mts:mpf
     , mts:mpf-test-lib
+    , mts:rollbacks
     , QuickCheck                               >=2.14 && <2.18
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
     , rocksdb-kv-transactions                  >=0.1  && <0.2
@@ -272,6 +275,7 @@ test-suite unit-tests
     MPF.Proof.InsertionSpec
     MPF.PropertySpec
     MTS.PropertySpec
+    MTS.RollbacksSpec
 
 benchmark bench
   import:           warnings
