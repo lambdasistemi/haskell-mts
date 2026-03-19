@@ -145,7 +145,7 @@ import CSMT.MTS (mkKVOnlyOps, Ops(..), CommonOps(..))
 -- Build KVOnly ops
 let ops = mkKVOnlyOps prefix bucketBits chunkSize
             kvCol csmtCol journalCol journalIso
-            fromKV hashing runTx trace
+            fromKV hashing runTx runTxReplay trace
 
 -- Insert (writes KV + journal, no tree)
 runTx $ opsInsert (kvCommon ops) key value
@@ -154,6 +154,73 @@ runTx $ opsInsert (kvCommon ops) key value
 Just fullOps <- toFull ops
 rootHash <- runTx $ opsRootHash fullOps
 ```
+
+### Crash Recovery
+
+`openOps` checks for a sentinel flag left by a crashed `toFull`
+transition and returns a `DbState` value:
+
+```mermaid
+stateDiagram-v2
+    [*] --> openOps
+    openOps --> NeedsRecovery : sentinel present
+    openOps --> Ready : no sentinel
+
+    NeedsRecovery --> Ready : merge subtrees + delete sentinel
+
+    Ready --> ChooseKVOnly
+    Ready --> ChooseFull
+
+    state "Mode transitions" as modes {
+        ChooseKVOnly --> KVOnly
+        ChooseFull --> Full : replays journal
+
+        KVOnly --> Full : toFull (replay)
+        Full --> KVOnly : toKVOnly (journal empty)
+    }
+```
+
+If the process crashes mid-`toFull` (after the sentinel is
+written but before merge completes), the next `openOps` call
+detects the sentinel, runs `mergeSubtreeRoots`, and returns
+a clean `Ready` state.
+
+### Transaction Runners
+
+`mkKVOnlyOps` and `openOps` take two transaction runners:
+
+- **`runTx`** — guarded (e.g. MVar-locked), used for normal
+  insert/delete operations where concurrent block processing
+  requires serialization.
+- **`runTxReplay`** — unguarded, used exclusively during the
+  `toFull` journal replay where `patchParallel` splits work
+  into independent bucket transactions.
+
+```mermaid
+flowchart TB
+    subgraph "Normal operations"
+        ins[opsInsert / opsDelete] -->|runTx| db[(Database)]
+    end
+
+    subgraph "toFull replay"
+        journal[Journal chunks] --> patch[patchParallel]
+        patch --> b1[Bucket 1]
+        patch --> b2[Bucket 2]
+        patch --> bN[Bucket N]
+        b1 -->|runTxReplay| db
+        b2 -->|runTxReplay| db
+        bN -->|runTxReplay| db
+    end
+
+    style b1 fill:#e8f5e9
+    style b2 fill:#e8f5e9
+    style bN fill:#e8f5e9
+```
+
+Bucket transactions are safe to run without a lock because
+`patchParallel` partitions operations by tree key prefix —
+each bucket writes to a disjoint subtree, so there are no
+data races.
 
 ### Parallel Replay
 

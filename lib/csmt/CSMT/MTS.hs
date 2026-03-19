@@ -363,7 +363,9 @@ openOps
     -> FromKV k v a
     -> Hashing a
     -> (forall b. Transaction m cf d ops b -> IO b)
-    -- ^ Transaction runner
+    -- ^ Transaction runner (guarded, for normal ops)
+    -> (forall b. Transaction m cf d ops b -> IO b)
+    -- ^ Unguarded runner for parallel replay
     -> (ReplayEvent -> IO ())
     -- ^ Trace callback
     -> IO (DbState m cf d ops k v a)
@@ -378,6 +380,7 @@ openOps
     fromKV
     hashing
     runTx
+    runTxReplay
     trace = do
         mRecovery <-
             runTx $ checkPatchRecovery journalCol
@@ -412,6 +415,7 @@ openOps
                     fromKV
                     hashing
                     runTx
+                    runTxReplay
                     trace
 
 -- ------------------------------------------------------------------
@@ -1060,7 +1064,9 @@ mkKVOnlyOps
     -> FromKV k v a
     -> Hashing a
     -> (forall b. Transaction m cf d ops b -> IO b)
-    -- ^ Transaction runner (must be thread-safe)
+    -- ^ Guarded runner for normal ops
+    -> (forall b. Transaction m cf d ops b -> IO b)
+    -- ^ Unguarded runner for parallel replay
     -> (ReplayEvent -> IO ())
     -- ^ Trace callback (called per replay chunk)
     -> Ops 'KVOnly m cf d ops k v a
@@ -1075,6 +1081,7 @@ mkKVOnlyOps
     fromKV
     hashing
     runTx
+    runTxReplay
     trace =
         OpsKVOnly
             { kvCommon =
@@ -1166,13 +1173,14 @@ mkKVOnlyOps
                         fromKV
                         hashing
                         runTx
+                        runTxReplay
                         trace
             }
       where
         totalBuckets = 2 ^ bucketBits :: Int
         replayLoop = do
             entries <-
-                runTx
+                runTxReplay
                     $ readJournalChunkT
                         journalCol
                         chunkSize
@@ -1201,7 +1209,7 @@ mkKVOnlyOps
                                 map fst bucketTxns
                             }
                     mapConcurrently_
-                        (runTx . snd)
+                        (runTxReplay . snd)
                         bucketTxns
                     trace ReplayStop
                     replayLoop
@@ -1230,7 +1238,9 @@ mkFullOps
     -> FromKV k v a
     -> Hashing a
     -> (forall b. Transaction m cf d ops b -> IO b)
-    -- ^ Transaction runner
+    -- ^ Guarded runner for normal ops
+    -> (forall b. Transaction m cf d ops b -> IO b)
+    -- ^ Unguarded runner for parallel replay
     -> (ReplayEvent -> IO ())
     -- ^ Trace callback (passed through to 'mkKVOnlyOps')
     -> Ops 'Full m cf d ops k v a
@@ -1245,6 +1255,7 @@ mkFullOps
     fromKV
     hashing
     runTx
+    runTxReplay
     trace =
         OpsFull
             { fullCommon =
@@ -1284,6 +1295,7 @@ mkFullOps
                                 fromKV
                                 hashing
                                 runTx
+                                runTxReplay
                                 trace
                     else pure Nothing
             }
