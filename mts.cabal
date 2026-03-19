@@ -275,6 +275,7 @@ test-suite unit-tests
     MPF.Proof.InsertionSpec
     MPF.PropertySpec
     MTS.PropertySpec
+    MTS.Rollbacks.StoreSpec
     MTS.RollbacksSpec
 
 benchmark bench

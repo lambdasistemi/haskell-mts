@@ -36,6 +36,7 @@ module MTS.Rollbacks.Store
 
       -- * Finality (prune old points)
     , pruneBelow
+    , pruneExcess
 
       -- * Armageddon (full cleanup)
     , armageddonCleanup
@@ -192,6 +193,32 @@ pruneBelow col k =
                     next <- nextEntry
                     (+ 1) <$> go next
                 | otherwise -> pure 0
+
+-- | Keep at most @maxToKeep@ rollback points,
+-- deleting the oldest excess. Returns the number
+-- of points pruned.
+pruneExcess
+    :: (Ord key, Monad m, GCompare t)
+    => RollbackCol t key inv meta
+    -- ^ Column selector
+    -> Int
+    -- ^ Maximum number of points to keep
+    -> Transaction m cf t op Int
+pruneExcess col maxToKeep = do
+    total <- countPoints col
+    let toDelete = max 0 (total - maxToKeep)
+    if toDelete <= 0
+        then pure 0
+        else iterating col $ do
+            me <- firstEntry
+            ($ (me, toDelete)) $ fix $ \go -> \case
+                (_, 0) -> pure 0
+                (Nothing, _) -> pure 0
+                (Just Entry{entryKey}, remaining) -> do
+                    lift
+                        $ delete col entryKey
+                    next <- nextEntry
+                    (+ 1) <$> go (next, remaining - 1)
 
 -- | Delete rollback points in a batch. Returns
 -- 'True' if more entries remain (caller should
