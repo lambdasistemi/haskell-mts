@@ -503,7 +503,7 @@ csmtMerkleTreeStoreT prefix fromKV hashing =
                 computeRootHash hashing
             , mtsBatchInsert = \kvs -> do
                 newCount <-
-                    (length . filter id)
+                    length . filter id
                         <$> mapM
                             ( \(k, _) ->
                                 isNothing

@@ -85,9 +85,10 @@ import MPF.MTS
     , mpfReplayJournal
     )
 import MTS.Interface
-    ( MerkleTreeStore
+    ( MerkleTreeStore (..)
     , Mode (..)
     , MtsKV (..)
+    , MtsMetrics (..)
     , MtsTransition (..)
     , MtsTree (..)
     , mtsKV
@@ -1275,3 +1276,96 @@ spec = do
                         actual `shouldBe` expected
                     Ready _ ->
                         fail "expected NeedsRecovery"
+
+    describe "CSMT metrics" $ do
+        it "kvCount matches actual KV entries after ops"
+            $ property
+            $ forAll genOps
+            $ \ops -> do
+                store <- mkCsmtStore
+                let kv = mtsKV store
+                finalKV <-
+                    foldM
+                        ( \m -> \case
+                            Insert k v -> do
+                                mtsInsert kv k v
+                                pure $ Map.insert k v m
+                            Overwrite k v -> do
+                                mtsInsert kv k v
+                                pure $ Map.insert k v m
+                            Delete k -> do
+                                mtsDelete kv k
+                                pure $ Map.delete k m
+                        )
+                        Map.empty
+                        ops
+                MtsMetrics{metricsKVCount} <-
+                    mtsMetrics $ mtsKV store
+                metricsKVCount
+                    `shouldBe` Map.size finalKV
+        it "journalSize matches actual journal entries"
+            $ property
+            $ forAll genOps
+            $ \ops -> do
+                (kvStore, _, _) <- mkCsmtReplayEnv
+                let kv = mtsKV kvStore
+                finalKV <-
+                    foldM
+                        ( \m -> \case
+                            Insert k v -> do
+                                mtsInsert kv k v
+                                pure $ Map.insert k v m
+                            Overwrite k v -> do
+                                mtsInsert kv k v
+                                pure $ Map.insert k v m
+                            Delete k -> do
+                                mtsDelete kv k
+                                pure $ Map.delete k m
+                        )
+                        Map.empty
+                        ops
+                MtsMetrics{metricsJournalSize} <-
+                    mtsMetrics $ mtsKV kvStore
+                -- Journal has one entry per live key
+                -- (genesis invariant: all JInsert)
+                metricsJournalSize
+                    `shouldBe` Map.size finalKV
+        it "kvCount matches KV column scan after ops"
+            $ property
+            $ forAll genOps
+            $ \ops -> do
+                ref <- newIORef emptyInMemoryDB
+                let run :: forall b. Pure b -> IO b
+                    run action = do
+                        s <- readIORef ref
+                        let (a, s') = runPure s action
+                        writeIORef ref s'
+                        pure a
+                    db = pureDatabase csmtCodecs
+                    rtx = run . runTransactionUnguarded db
+                store <-
+                    csmtMerkleTreeStore
+                        []
+                        run
+                        db
+                        fromKVHashes
+                        hashHashing
+                let kv = mtsKV store
+                mapM_
+                    ( \case
+                        Insert k v -> mtsInsert kv k v
+                        Overwrite k v -> mtsInsert kv k v
+                        Delete k -> mtsDelete kv k
+                    )
+                    ops
+                -- Cached metric
+                MtsMetrics{metricsKVCount} <-
+                    mtsMetrics kv
+                -- Actual scan
+                actualCount <-
+                    rtx
+                        $ iterating
+                            StandaloneKVCol
+                            countEntries
+                metricsKVCount
+                    `shouldBe` actualCount
