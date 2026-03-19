@@ -367,6 +367,7 @@ mkCsmtKVOnlyOps = do
             fromKVHashes
             hashHashing
             runTx
+            runTx
             (const $ pure ())
         , RunTxPure runTx
         )
@@ -742,6 +743,7 @@ spec = do
                         fromKVHashes
                         hashHashing
                         runTx
+                        runTx
                         (const $ pure ())
             runTx (opsInsert (fullCommon fullOps) "k" "v")
             mKV <- toKVOnly fullOps
@@ -761,6 +763,7 @@ spec = do
                                 (iso id id)
                                 fromKVHashes
                                 hashHashing
+                                runTx
                                 runTx
                                 (const $ pure ())
                     mKV2 <- toKVOnly fullOps2
@@ -1204,6 +1207,7 @@ spec = do
                             fromKVHashes
                             hashHashing
                             rtx
+                            rtx
                             (const $ pure ())
                 mapM_
                     ( \(k, v) ->
@@ -1264,6 +1268,7 @@ spec = do
                         (iso id id)
                         fromKVHashes
                         hashHashing
+                        rtx
                         rtx
                         (const $ pure ())
                 case state0 of

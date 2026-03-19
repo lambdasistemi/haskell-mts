@@ -80,9 +80,12 @@ data Ops (mode :: Mode) m cf d ops k v a where
 ```
 
 - **`mkKVOnlyOps`** — builds KVOnly ops with journal-based mutations
-  and `toFull` via `patchParallel`
+  and `toFull` via `patchParallel`. Takes two transaction runners:
+  a guarded one for normal ops and an unguarded one for parallel
+  replay (see [Transaction Runners](library.md#transaction-runners)).
 - **`mkFullOps`** — builds Full ops with tree-updating mutations and
-  `toKVOnly` (requires empty journal)
+  `toKVOnly` (requires empty journal). Also takes dual runners,
+  passed through when transitioning back to KVOnly.
 
 ## Constructors
 
