@@ -2,54 +2,189 @@
 
 module MPF.HashesSpec (spec) where
 
+import Control.Lens (preview, review)
+import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import MPF.Hashes
-    ( computeLeafHash
+    ( MPFHash (..)
+    , computeLeafHash
     , computeMerkleRoot
+    , isoMPFHash
+    , merkleProof
     , mkMPFHash
+    , nibbleBytes
     , nullHash
+    , packHexKey
+    , parseMPFHash
     , renderMPFHash
     )
 import MPF.Interface (HexDigit (..))
 import Test.Hspec
+import Test.Hspec.QuickCheck (prop)
+import Test.QuickCheck
+
+-- | Generate a HexDigit (0-15)
+genHexDigit :: Gen HexDigit
+genHexDigit = HexDigit <$> choose (0, 15)
+
+-- | Generate a HexKey of given length
+genHexKey :: Gen [HexDigit]
+genHexKey = listOf genHexDigit
+
+-- | Generate an arbitrary 32-byte MPFHash
+genMPFHash :: Gen MPFHash
+genMPFHash = MPFHash . B.pack <$> vectorOf 32 arbitrary
+
+-- | Generate an arbitrary ByteString
+genBS :: Gen ByteString
+genBS = B.pack <$> listOf arbitrary
 
 spec :: Spec
 spec = describe "MPF.Hashes" $ do
     describe "nullHash" $ do
-        it "is 32 bytes of zeros" $ do
-            renderMPFHash nullHash `shouldSatisfy` \bs ->
+        it "is 32 bytes of zeros"
+            $ renderMPFHash nullHash
+            `shouldSatisfy` \bs ->
                 all (== 0) (B.unpack bs)
 
     describe "mkMPFHash" $ do
-        it "produces 32-byte hashes" $ do
-            let h = mkMPFHash "hello"
-            B.length (renderMPFHash h) `shouldBe` 32
+        prop "produces 32-byte hashes"
+            $ forAll genBS
+            $ \bs ->
+                B.length (renderMPFHash (mkMPFHash bs))
+                    === 32
 
-        it "is deterministic" $ do
-            mkMPFHash "test" `shouldBe` mkMPFHash "test"
+        prop "is deterministic"
+            $ forAll genBS
+            $ \bs -> mkMPFHash bs === mkMPFHash bs
 
-        it "produces different hashes for different inputs" $ do
-            mkMPFHash "a" `shouldNotBe` mkMPFHash "b"
+    describe "parseMPFHash" $ do
+        prop "accepts 32-byte input"
+            $ forAll (B.pack <$> vectorOf 32 arbitrary)
+            $ \bs -> parseMPFHash bs === Just (MPFHash bs)
+
+        prop "rejects non-32-byte input"
+            $ forAll genBS
+            $ \bs ->
+                B.length bs /= 32 ==>
+                    parseMPFHash bs === Nothing
+
+        prop "roundtrips with renderMPFHash"
+            $ forAll genMPFHash
+            $ \h ->
+                parseMPFHash (renderMPFHash h) === Just h
+
+    describe "isoMPFHash" $ do
+        prop "review then preview roundtrips"
+            $ forAll genMPFHash
+            $ \h ->
+                preview isoMPFHash (review isoMPFHash h)
+                    === Just h
+
+    describe "packHexKey" $ do
+        prop "packs pairs of nibbles"
+            $ forAll (vectorOf 4 genHexDigit)
+            $ \key ->
+                B.length (packHexKey key) === 2
+
+        prop "single nibble produces one byte"
+            $ forAll genHexDigit
+            $ \d -> B.length (packHexKey [d]) === 1
+
+        it "empty key packs to empty"
+            $ packHexKey []
+            `shouldBe` B.empty
+
+    describe "nibbleBytes" $ do
+        prop "one byte per nibble"
+            $ forAll genHexKey
+            $ \key ->
+                B.length (nibbleBytes key)
+                    === length key
+
+        prop "each byte equals nibble value"
+            $ forAll genHexKey
+            $ \key ->
+                B.unpack (nibbleBytes key)
+                    === map (\(HexDigit d) -> d) key
 
     describe "computeLeafHash" $ do
-        it "produces different hashes for different suffixes" $ do
-            let v = mkMPFHash "value"
-                h1 = computeLeafHash [] v
-                h2 = computeLeafHash [HexDigit 1] v
-            h1 `shouldNotBe` h2
+        prop "produces 32-byte output"
+            $ forAll ((,) <$> genHexKey <*> genMPFHash)
+            $ \(suffix, v) ->
+                B.length
+                    (renderMPFHash (computeLeafHash suffix v))
+                    === 32
 
-        it "handles empty suffix" $ do
-            let v = mkMPFHash "value"
-                h = computeLeafHash [] v
-            B.length (renderMPFHash h) `shouldBe` 32
+        prop "even-length suffix uses 0xff head"
+            $ forAll
+                ( (,)
+                    <$> ( do
+                            n <- choose (1, 10)
+                            vectorOf (n * 2) genHexDigit
+                        )
+                    <*> genMPFHash
+                )
+            $ \(suffix, v) ->
+                computeLeafHash suffix v
+                    =/= computeLeafHash [] v
+
+        prop "odd-length suffix uses 0x00 head"
+            $ forAll
+                ( (,)
+                    <$> ( do
+                            n <- choose (0, 9)
+                            vectorOf (n * 2 + 1) genHexDigit
+                        )
+                    <*> genMPFHash
+                )
+            $ \(suffix, v) ->
+                computeLeafHash suffix v
+                    =/= computeLeafHash [] v
 
     describe "computeMerkleRoot" $ do
-        it "handles all Nothing (sparse array)" $ do
-            let result = computeMerkleRoot (replicate 16 Nothing)
-            B.length (renderMPFHash result) `shouldBe` 32
+        prop "produces 32-byte output"
+            $ forAll (vectorOf 16 (oneof [pure Nothing, Just <$> genMPFHash]))
+            $ \children ->
+                B.length
+                    (renderMPFHash (computeMerkleRoot children))
+                    === 32
 
-        it "handles single element" $ do
-            let h = mkMPFHash "child"
-                children = Just h : replicate 15 Nothing
-                result = computeMerkleRoot children
-            B.length (renderMPFHash result) `shouldBe` 32
+        prop "is deterministic"
+            $ forAll (vectorOf 16 (oneof [pure Nothing, Just <$> genMPFHash]))
+            $ \children ->
+                computeMerkleRoot children
+                    === computeMerkleRoot children
+
+        it "handles all Nothing"
+            $ B.length
+                ( renderMPFHash
+                    $ computeMerkleRoot (replicate 16 Nothing)
+                )
+            `shouldBe` 32
+
+    describe "merkleProof" $ do
+        prop "produces exactly 4 hashes"
+            $ forAll
+                ( (,)
+                    <$> vectorOf
+                        16
+                        (oneof [pure Nothing, Just <$> genMPFHash])
+                    <*> choose (0, 15)
+                )
+            $ \(children, pos) ->
+                length (merkleProof children pos) === 4
+
+        prop "each proof hash is 32 bytes"
+            $ forAll
+                ( (,)
+                    <$> vectorOf
+                        16
+                        (oneof [pure Nothing, Just <$> genMPFHash])
+                    <*> choose (0, 15)
+                )
+            $ \(children, pos) ->
+                all
+                    (\h -> B.length (renderMPFHash h) == 32)
+                    (merkleProof children pos)
+                    === True
