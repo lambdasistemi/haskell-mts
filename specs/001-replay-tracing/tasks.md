@@ -31,7 +31,7 @@
 
 **Independent Test**: Replay a journal with known entry count, verify callback receives monotonically decreasing entries-remaining ending at 0
 
-- [ ] T004 [US1] Add QuickCheck property in `test/` verifying `rsEntriesRemaining` starts at total journal size and decreases monotonically to 0 during composed CSMT replay
+- [x] T004 [US1] Add QuickCheck property in `lib/mts/MTS/Properties.hs` and `test/MTS/PropertySpec.hs` verifying `rsEntriesRemaining` decreases monotonically to 0
 - [x] T005 [US1] Add Haddock documentation on `rsEntriesRemaining` field and updated `ReplayEvent` type in `lib/mts/MTS/Interface.hs`
 
 **Checkpoint**: Composed CSMT replay tracing fully works with entries-remaining. Property test passes.
@@ -47,7 +47,7 @@
 - [x] T006 [US2] Add `(ReplayEvent -> IO ())` trace callback parameter to `mpfReplayJournal` in `lib/mpf/MPF/MTS.hs`
 - [x] T007 [US2] Implement entries-remaining tracking in `mpfReplayJournal` replay loop: read journal size from metrics, emit `ReplayStart`/`ReplayStop` per chunk in `lib/mpf/MPF/MTS.hs`
 - [x] T008 [US2] Update all call sites of `mpfReplayJournal` to pass trace callback (including `mpfManagedTransition` in `lib/mpf/MPF/MTS.hs`)
-- [ ] T009 [US2] Add test in `test/MPF/` verifying MPF replay emits trace events with correct entries-remaining counts
+- [x] T009 [US2] Add test in `test/MTS/PropertySpec.hs` verifying MPF replay emits trace events with correct entries-remaining counts
 - [x] T010 [US2] Add Haddock documentation on the new trace parameter in `lib/mpf/MPF/MTS.hs`
 
 **Checkpoint**: MPF replay tracing works with same event structure as CSMT.
@@ -63,7 +63,7 @@
 - [x] T011 [US3] Add `(ReplayEvent -> IO ())` trace callback parameter to `csmtReplayJournal` in `lib/csmt/CSMT/MTS.hs`
 - [x] T012 [US3] Implement entries-remaining tracking in `csmtReplayJournal` replay loop: read journal size from metrics, emit `ReplayStart`/`ReplayStop` per chunk in `lib/csmt/CSMT/MTS.hs`
 - [x] T013 [US3] Update all call sites of `csmtReplayJournal` to pass trace callback (including `csmtManagedTransition` in `lib/csmt/CSMT/MTS.hs`)
-- [ ] T014 [US3] Add test in `test/CSMT/` verifying standalone CSMT replay emits trace events with correct entries-remaining counts
+- [x] T014 [US3] Add test in `test/MTS/PropertySpec.hs` verifying standalone CSMT replay emits trace events with correct entries-remaining counts
 - [x] T015 [US3] Add Haddock documentation on the new trace parameter in `lib/csmt/CSMT/MTS.hs`
 
 **Checkpoint**: All three replay entry points support tracing with entries-remaining.
@@ -74,7 +74,7 @@
 
 - [x] T016 Run `just format` to ensure fourmolu compliance
 - [x] T017 Run `just hlint` and fix any warnings
-- [ ] T018 Run `just ci` to verify full CI pipeline passes locally
+- [x] T018 Run `just ci` to verify full CI pipeline passes locally
 - [x] T019 Update module export lists if new symbols were added
 
 ---

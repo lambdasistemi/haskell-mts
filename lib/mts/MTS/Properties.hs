@@ -29,6 +29,9 @@ module MTS.Properties
     , propKVOnlyDeleteThenReplay
     , propReplayIdempotent
     , propJournalCompression
+
+      -- * Trace properties
+    , propReplayTraceMonotonic
     )
 where
 
@@ -43,6 +46,7 @@ import MTS.Interface
     , MtsKey
     , MtsTree (..)
     , MtsValue
+    , ReplayEvent (..)
     , mtsKV
     , mtsTree
     )
@@ -530,3 +534,41 @@ propJournalCompression mkReplayEnv gen =
         fullStore <- mkFull
         h <- mtsRootHash (mtsTree fullStore)
         pure $ isNothing h
+
+-- ------------------------------------------------------------------
+-- Trace properties
+-- ------------------------------------------------------------------
+
+-- | After inserting N unique keys via KVOnly and replaying,
+-- the 'ReplayStart' events have monotonically decreasing
+-- 'rsEntriesRemaining' ending at 0.
+propReplayTraceMonotonic
+    :: ( Show (MtsKey imp)
+       , Show (MtsValue imp)
+       )
+    => IO
+        ( MerkleTreeStore 'KVOnly imp IO
+        , IO [ReplayEvent]
+        , IO (MerkleTreeStore 'Full imp IO)
+        )
+    -> Gen [(MtsKey imp, MtsValue imp)]
+    -> Property
+propReplayTraceMonotonic mkReplayEnv genPairs =
+    forAll genPairs $ \pairs ->
+        not (null pairs) ==>
+            ioProperty $ do
+                (kvStore, replay, _) <- mkReplayEnv
+                mapM_
+                    (uncurry $ mtsInsert (mtsKV kvStore))
+                    pairs
+                events <- replay
+                let starts =
+                        [ rsEntriesRemaining
+                        | ReplayStart{rsEntriesRemaining} <-
+                            events
+                        ]
+                    monotonic xs = and $ zipWith (>=) xs (drop 1 xs)
+                pure
+                    $ not (null starts)
+                        && monotonic starts
+                        && last starts == 0
