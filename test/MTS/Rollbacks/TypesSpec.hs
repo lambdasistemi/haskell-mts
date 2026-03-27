@@ -107,4 +107,4 @@ spec = describe "MTS.Rollbacks.Types" $ do
                     <$> listOf genOp
                     <*> (arbitrary :: Gen (Maybe Int))
                 )
-            $ \rp -> length (show rp) > 0
+            $ \rp -> not (null (show rp))
