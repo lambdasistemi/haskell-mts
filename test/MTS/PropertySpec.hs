@@ -45,7 +45,12 @@ import Control.Monad (foldM, foldM_, forM_)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Either (isLeft)
-import Data.IORef (newIORef, readIORef, writeIORef)
+import Data.IORef
+    ( modifyIORef'
+    , newIORef
+    , readIORef
+    , writeIORef
+    )
 import Data.List (foldl', nub)
 import Data.Map.Strict qualified as Map
 import Database.KV.Cursor
@@ -91,6 +96,7 @@ import MTS.Interface
     , MtsMetrics (..)
     , MtsTransition (..)
     , MtsTree (..)
+    , ReplayEvent (..)
     , mtsKV
     , mtsTree
     )
@@ -256,6 +262,88 @@ mkMpfReplayEnv = do
             mpfHashing
             (const $ pure ())
         , mpfMerkleTreeStore [] run db fromHexKVBS mpfHashing
+        )
+
+-- ------------------------------------------------------------------
+-- Tracing replay factories
+-- ------------------------------------------------------------------
+
+-- | CSMT replay env that collects trace events.
+mkCsmtTracingReplayEnv
+    :: IO
+        ( MerkleTreeStore 'KVOnly CsmtImpl IO
+        , IO [ReplayEvent]
+        , IO (MerkleTreeStore 'Full CsmtImpl IO)
+        )
+mkCsmtTracingReplayEnv = do
+    ref <- newIORef emptyInMemoryDB
+    eventsRef <- newIORef ([] :: [ReplayEvent])
+    let run :: forall b. Pure b -> IO b
+        run action = do
+            s <- readIORef ref
+            let (a, s') = runPure s action
+            writeIORef ref s'
+            pure a
+        db = pureDatabase csmtCodecs
+        trace evt =
+            modifyIORef' eventsRef (evt :)
+    pure
+        ( csmtKVOnlyStore run db fromKVHashes
+        , do
+            csmtReplayJournal
+                []
+                100
+                run
+                db
+                fromKVHashes
+                hashHashing
+                trace
+            reverse <$> readIORef eventsRef
+        , csmtMerkleTreeStore
+            []
+            run
+            db
+            fromKVHashes
+            hashHashing
+        )
+
+-- | MPF replay env that collects trace events.
+mkMpfTracingReplayEnv
+    :: IO
+        ( MerkleTreeStore 'KVOnly MpfImpl IO
+        , IO [ReplayEvent]
+        , IO (MerkleTreeStore 'Full MpfImpl IO)
+        )
+mkMpfTracingReplayEnv = do
+    ref <- newIORef emptyMPFInMemoryDB
+    eventsRef <- newIORef ([] :: [ReplayEvent])
+    let run :: forall b. MPFPure b -> IO b
+        run action = do
+            s <- readIORef ref
+            let (a, s') = runMPFPure s action
+            writeIORef ref s'
+            pure a
+        db = mpfPureDatabase mpfCodecs
+        trace evt =
+            modifyIORef' eventsRef (evt :)
+    pure
+        ( mpfKVOnlyStore run db fromHexKVBS
+        , do
+            mpfReplayJournal
+                []
+                100
+                run
+                db
+                fromHexKVBS
+                mpfHashing
+                trace
+            reverse <$> readIORef eventsRef
+        , mpfMerkleTreeStore
+            []
+            run
+            db
+            fromHexKVBS
+            mpfHashing
         )
 
 -- ------------------------------------------------------------------
@@ -589,6 +677,10 @@ spec = do
             $ propReplayIdempotent mkCsmtReplayEnv
         it "journal compression"
             $ propJournalCompression mkCsmtReplayEnv genBSPair
+        it "replay trace entries-remaining monotonic"
+            $ propReplayTraceMonotonic
+                mkCsmtTracingReplayEnv
+                genBSPairs
 
     describe "MPF shared properties" $ do
         it "insert-verify"
@@ -643,6 +735,10 @@ spec = do
             $ propReplayIdempotent mkMpfReplayEnv
         it "journal compression"
             $ propJournalCompression mkMpfReplayEnv genBSPair
+        it "replay trace entries-remaining monotonic"
+            $ propReplayTraceMonotonic
+                mkMpfTracingReplayEnv
+                genBSPairs
 
     describe "CSMT mode exclusivity" $ do
         it "Full rejects non-empty journal"
