@@ -14,6 +14,9 @@ module MTS.Interface
       -- * Metrics
     , MtsMetrics (..)
 
+      -- * Replay tracing
+    , ReplayEvent (..)
+
       -- * Operation records
     , MtsKV (..)
     , MtsTree (..)
@@ -77,6 +80,26 @@ data MtsMetrics = MtsMetrics
     -- ^ Number of pending journal entries
     }
     deriving stock (Show, Eq)
+
+-- | Replay trace events. Emitted in pairs: 'ReplayStart'
+-- before processing a chunk, 'ReplayStop' after.
+data ReplayEvent
+    = -- | About to process a journal chunk.
+      ReplayStart
+        { rsChunkSize :: Int
+        -- ^ Journal entries in this chunk
+        , rsBuckets :: Int
+        -- ^ Active buckets (with ops)
+        , rsTotalBuckets :: Int
+        -- ^ Total bucket count (2^bucketBits)
+        , rsOpsPerBucket :: [Int]
+        -- ^ Ops per active bucket
+        , rsEntriesRemaining :: Int
+        -- ^ Journal entries left to process after this chunk
+        }
+    | -- | Chunk processing completed.
+      ReplayStop
+    deriving stock (Show)
 
 -- | KV operations -- available in both modes.
 data MtsKV imp m = MtsKV

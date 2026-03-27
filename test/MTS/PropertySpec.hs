@@ -167,7 +167,14 @@ mkCsmtReplayEnv = do
         db = pureDatabase csmtCodecs
     pure
         ( csmtKVOnlyStore run db fromKVHashes
-        , csmtReplayJournal [] 100 run db fromKVHashes hashHashing
+        , csmtReplayJournal
+            []
+            100
+            run
+            db
+            fromKVHashes
+            hashHashing
+            (const $ pure ())
         , csmtMerkleTreeStore [] run db fromKVHashes hashHashing
         )
 
@@ -240,7 +247,14 @@ mkMpfReplayEnv = do
         db = mpfPureDatabase mpfCodecs
     pure
         ( mpfKVOnlyStore run db fromHexKVBS
-        , mpfReplayJournal [] 100 run db fromHexKVBS mpfHashing
+        , mpfReplayJournal
+            []
+            100
+            run
+            db
+            fromHexKVBS
+            mpfHashing
+            (const $ pure ())
         , mpfMerkleTreeStore [] run db fromHexKVBS mpfHashing
         )
 
@@ -363,6 +377,7 @@ mkCsmtKVOnlyOps = do
             StandaloneKVCol
             StandaloneCSMTCol
             StandaloneJournalCol
+            StandaloneMetricsCol
             (iso id id)
             fromKVHashes
             hashHashing
@@ -739,6 +754,7 @@ spec = do
                         StandaloneKVCol
                         StandaloneCSMTCol
                         StandaloneJournalCol
+                        StandaloneMetricsCol
                         (iso id id)
                         fromKVHashes
                         hashHashing
@@ -760,6 +776,7 @@ spec = do
                                 StandaloneKVCol
                                 StandaloneCSMTCol
                                 StandaloneJournalCol
+                                StandaloneMetricsCol
                                 (iso id id)
                                 fromKVHashes
                                 hashHashing
@@ -1203,6 +1220,7 @@ spec = do
                             StandaloneKVCol
                             StandaloneCSMTCol
                             StandaloneJournalCol
+                            StandaloneMetricsCol
                             (iso id id)
                             fromKVHashes
                             hashHashing
@@ -1265,6 +1283,7 @@ spec = do
                         StandaloneKVCol
                         StandaloneCSMTCol
                         StandaloneJournalCol
+                        StandaloneMetricsCol
                         (iso id id)
                         fromKVHashes
                         hashHashing
