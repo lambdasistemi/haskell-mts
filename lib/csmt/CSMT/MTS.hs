@@ -157,6 +157,7 @@ import MTS.Interface
     , MtsTree (..)
     , MtsValue
     , NamespacedMTS (..)
+    , ReplayEvent (..)
     , hoistMTS
     , hoistNamespacedMTS
     )
@@ -358,6 +359,8 @@ openOps
     -- ^ CSMT column
     -> Selector d k ByteString
     -- ^ Journal column
+    -> Selector d ByteString Int
+    -- ^ Metrics column (for journal size counter)
     -> Iso' v ByteString
     -- ^ Journal value serialization
     -> FromKV k v a
@@ -376,6 +379,7 @@ openOps
     kvCol
     csmtCol
     journalCol
+    metricsCol
     journalIso
     fromKV
     hashing
@@ -411,6 +415,7 @@ openOps
                     kvCol
                     csmtCol
                     journalCol
+                    metricsCol
                     journalIso
                     fromKV
                     hashing
@@ -776,6 +781,7 @@ csmtManagedTransition prefix chunkSize run db fromKV hashing = do
                     db
                     fromKV
                     hashing
+                    (const $ pure ())
                 pure
                     $ hoistMTS
                         (run . runTransactionUnguarded db)
@@ -810,7 +816,8 @@ csmtJournalEmpty run db =
 -- Processes entries in chunks. Each chunk reads up to
 -- @chunkSize@ entries, applies tree-only operations, and
 -- deletes the replayed journal entries, all in one transaction.
--- Repeats until the journal is empty.
+-- Repeats until the journal is empty. The trace callback
+-- receives 'ReplayStart' and 'ReplayStop' events per chunk.
 csmtReplayJournal
     :: (MonadFail m)
     => Key
@@ -825,19 +832,49 @@ csmtReplayJournal
         StandaloneOp
     -> FromKV ByteString ByteString Hash
     -> Hashing Hash
+    -> (ReplayEvent -> IO ())
+    -- ^ Trace callback (called per replay chunk)
     -> IO ()
-csmtReplayJournal prefix chunkSize run db fromKV hashing = loop
-  where
-    loop = do
-        done <-
+csmtReplayJournal
+    prefix
+    chunkSize
+    run
+    db
+    fromKV
+    hashing
+    trace = do
+        journalSize <-
             run
                 $ runTransactionUnguarded db
-                $ replayJournalChunkT
-                    prefix
-                    chunkSize
-                    fromKV
-                    hashing
-        unless done loop
+                $ readCounter
+                    StandaloneMetricsCol
+                    journalSizeKey
+        loop journalSize
+      where
+        loop remaining = do
+            result <-
+                run
+                    $ runTransactionUnguarded db
+                    $ replayJournalChunkT
+                        prefix
+                        chunkSize
+                        fromKV
+                        hashing
+            case result of
+                Nothing -> pure ()
+                Just n -> do
+                    let remaining' = remaining - n
+                    trace
+                        ReplayStart
+                            { rsChunkSize = n
+                            , rsBuckets = 1
+                            , rsTotalBuckets = 1
+                            , rsOpsPerBucket = [n]
+                            , rsEntriesRemaining =
+                                remaining'
+                            }
+                    trace ReplayStop
+                    loop remaining'
 
 -- | Collect up to @n@ more entries after the first.
 collectN
@@ -877,9 +914,9 @@ journalEmptyT journalCol = do
 -- | Process one chunk of journal entries (transactional).
 --
 -- Reads up to @chunkSize@ journal entries, applies tree-only
--- operations, and deletes the replayed entries. Returns 'True'
--- when the journal is empty (all done), 'False' if more chunks
--- remain.
+-- operations, and deletes the replayed entries. Returns
+-- @Nothing@ when the journal is empty (all done), or
+-- @Just n@ with the number of entries processed.
 --
 -- Polymorphic in @cf@ and @op@ so it can be composed with
 -- 'mapColumns' into richer column types.
@@ -896,7 +933,7 @@ replayJournalChunkT
         cf
         (Standalone ByteString ByteString Hash)
         op
-        Bool
+        (Maybe Int)
 replayJournalChunkT prefix chunkSize fromKV hashing = do
     entries <- iterating StandaloneJournalCol $ do
         me <- firstEntry
@@ -908,14 +945,15 @@ replayJournalChunkT prefix chunkSize fromKV hashing = do
                 | otherwise ->
                     collectN (chunkSize - 1) [e]
     if null entries
-        then pure True
+        then pure Nothing
         else do
+            let n = length entries
             replayEntries prefix fromKV hashing entries
             adjustCounter
                 StandaloneMetricsCol
                 journalSizeKey
-                (negate $ length entries)
-            pure False
+                (negate n)
+            pure $ Just n
 
 -- | Apply journal entries to the tree and clear them.
 replayEntries
@@ -1023,24 +1061,6 @@ data Ops (mode :: Mode) m cf d ops k v a where
            }
         -> Ops 'Full m cf d ops k v a
 
--- | Replay trace events. Emitted in pairs: 'ReplayStart'
--- before the concurrent batch, 'ReplayStop' after.
-data ReplayEvent
-    = -- | About to run bucket transactions concurrently.
-      ReplayStart
-        { rsChunkSize :: Int
-        -- ^ Journal entries in this chunk
-        , rsBuckets :: Int
-        -- ^ Active buckets (with ops)
-        , rsTotalBuckets :: Int
-        -- ^ Total bucket count (2^bucketBits)
-        , rsOpsPerBucket :: [Int]
-        -- ^ Ops per active bucket
-        }
-    | -- | Concurrent batch completed.
-      ReplayStop
-    deriving stock (Show)
-
 -- | Build 'KVOnly' ops for generic column types.
 --
 -- Insert/delete write KV + journal atomically. Query reads
@@ -1059,6 +1079,8 @@ mkKVOnlyOps
     -- ^ CSMT column
     -> Selector d k ByteString
     -- ^ Journal column
+    -> Selector d ByteString Int
+    -- ^ Metrics column (for journal size counter)
     -> Iso' v ByteString
     -- ^ Journal value serialization
     -> FromKV k v a
@@ -1077,6 +1099,7 @@ mkKVOnlyOps
     kvCol
     csmtCol
     journalCol
+    metricsCol
     journalIso
     fromKV
     hashing
@@ -1137,7 +1160,7 @@ mkKVOnlyOps
                     }
             , toFull = do
                 -- Write sentinel + expand atomically
-                runTx $ do
+                journalSize <- runTx $ do
                     insert
                         journalCol
                         patchSentinelKey
@@ -1149,7 +1172,8 @@ mkKVOnlyOps
                         prefix
                         bucketBits
                         csmtCol
-                replayLoop
+                    readCounter metricsCol journalSizeKey
+                replayLoop journalSize
                 -- Merge + delete sentinel atomically
                 runTx $ do
                     mergeSubtreeRoots
@@ -1169,6 +1193,7 @@ mkKVOnlyOps
                         kvCol
                         csmtCol
                         journalCol
+                        metricsCol
                         journalIso
                         fromKV
                         hashing
@@ -1178,7 +1203,7 @@ mkKVOnlyOps
             }
       where
         totalBuckets = 2 ^ bucketBits :: Int
-        replayLoop = do
+        replayLoop remaining = do
             entries <-
                 runTxReplay
                     $ readJournalChunkT
@@ -1187,7 +1212,9 @@ mkKVOnlyOps
             if null entries
                 then pure ()
                 else do
-                    let ops =
+                    let n = length entries
+                        remaining' = remaining - n
+                        ops =
                             journalEntriesToPatchOps
                                 journalIso
                                 fromKV
@@ -1202,17 +1229,19 @@ mkKVOnlyOps
                                 ops
                     trace
                         ReplayStart
-                            { rsChunkSize = length entries
+                            { rsChunkSize = n
                             , rsBuckets = length bucketTxns
                             , rsTotalBuckets = totalBuckets
                             , rsOpsPerBucket =
                                 map fst bucketTxns
+                            , rsEntriesRemaining =
+                                remaining'
                             }
                     mapConcurrently_
                         (runTxReplay . snd)
                         bucketTxns
                     trace ReplayStop
-                    replayLoop
+                    replayLoop remaining'
 
 -- | Build 'Full' ops for generic column types.
 --
@@ -1233,6 +1262,8 @@ mkFullOps
     -- ^ CSMT column
     -> Selector d k ByteString
     -- ^ Journal column
+    -> Selector d ByteString Int
+    -- ^ Metrics column (passed through to 'mkKVOnlyOps')
     -> Iso' v ByteString
     -- ^ Journal value serialization
     -> FromKV k v a
@@ -1251,6 +1282,7 @@ mkFullOps
     kvCol
     csmtCol
     journalCol
+    metricsCol
     journalIso
     fromKV
     hashing
@@ -1291,6 +1323,7 @@ mkFullOps
                                 kvCol
                                 csmtCol
                                 journalCol
+                                metricsCol
                                 journalIso
                                 fromKV
                                 hashing

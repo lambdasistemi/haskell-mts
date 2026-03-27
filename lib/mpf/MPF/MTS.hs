@@ -104,6 +104,7 @@ import MTS.Interface
     , MtsTree (..)
     , MtsValue
     , NamespacedMTS (..)
+    , ReplayEvent (..)
     , hoistMTS
     , hoistNamespacedMTS
     )
@@ -585,6 +586,7 @@ mpfManagedTransition
                         db
                         fromKV
                         hashing
+                        (const $ pure ())
                     pure
                         $ hoistMTS
                             ( run
@@ -627,10 +629,16 @@ mpfJournalEmpty run db =
             Just _ -> False
 
 -- | Replay journal entries against the tree, then clear them.
+--
+-- Processes entries in chunks. Each chunk reads up to
+-- @chunkSize@ entries, applies tree operations, and deletes
+-- the replayed journal entries. The trace callback receives
+-- 'ReplayStart' and 'ReplayStop' events per chunk.
 mpfReplayJournal
     :: (MonadFail m)
     => HexKey
     -> Int
+    -- ^ Chunk size
     -> (forall b. m b -> IO b)
     -> Database
         m
@@ -643,6 +651,8 @@ mpfReplayJournal
         MPFStandaloneOp
     -> FromHexKV ByteString ByteString MPFHash
     -> MPFHashing MPFHash
+    -> (ReplayEvent -> IO ())
+    -- ^ Trace callback (called per replay chunk)
     -> IO ()
 mpfReplayJournal
     prefix
@@ -650,10 +660,18 @@ mpfReplayJournal
     run
     db
     fromKV
-    hashing = loop
+    hashing
+    trace = do
+        journalSize <-
+            run
+                $ runTransactionUnguarded db
+                $ readCounter
+                    MPFStandaloneMetricsCol
+                    journalSizeKey
+        loop journalSize
       where
-        loop = do
-            done <-
+        loop remaining = do
+            result <-
                 run $ runTransactionUnguarded db $ do
                     entries <-
                         iterating
@@ -667,21 +685,34 @@ mpfReplayJournal
                                             (chunkSize - 1)
                                             [e]
                     if null entries
-                        then pure True
+                        then pure Nothing
                         else do
                             mpfReplayEntries
                                 prefix
                                 fromKV
                                 hashing
                                 entries
+                            let n = length entries
                             adjustCounter
                                 MPFStandaloneMetricsCol
                                 journalSizeKey
-                                ( negate
-                                    $ length entries
-                                )
-                            pure False
-            unless done loop
+                                (negate n)
+                            pure $ Just n
+            case result of
+                Nothing -> pure ()
+                Just n -> do
+                    let remaining' = remaining - n
+                    trace
+                        ReplayStart
+                            { rsChunkSize = n
+                            , rsBuckets = 1
+                            , rsTotalBuckets = 1
+                            , rsOpsPerBucket = [n]
+                            , rsEntriesRemaining =
+                                remaining'
+                            }
+                    trace ReplayStop
+                    loop remaining'
 
 -- | Collect up to @n@ more entries after the first.
 collectN
