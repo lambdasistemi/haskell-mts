@@ -10,3 +10,5 @@ site
 lean/.lake
 WIP.md
 .llm
+.clj-kondo
+.lsp

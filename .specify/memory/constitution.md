@@ -73,6 +73,9 @@ logging framework.
   justification.
 - **Linear git history**: Rebase merge only. No merge commits on
   main.
+- **Mermaid diagrams**: All diagrams in spec artifacts (spec.md,
+  plan.md, data-model.md, research.md) MUST use Mermaid fenced
+  code blocks (```` ```mermaid ````), not ASCII art.
 
 ## Development Workflow
 
