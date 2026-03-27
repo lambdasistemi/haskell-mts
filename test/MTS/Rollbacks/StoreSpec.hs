@@ -30,8 +30,14 @@ import MTS.Rollbacks.Column
     , RollbackKV
     )
 import MTS.Rollbacks.Store
-    ( countPoints
+    ( RollbackResult (..)
+    , armageddonCleanup
+    , armageddonSetup
+    , countPoints
+    , pruneBelow
     , pruneExcess
+    , queryTip
+    , rollbackTo
     , storeRollbackPoint
     )
 import MTS.Rollbacks.Types
@@ -179,10 +185,15 @@ stepIt itId pos = do
                                             fst <$> Map.lookupMax before
                                         }
                         PosAny k ->
-                            let (_, after) = Map.split k (snapshot c)
+                            let (_, exact, after) =
+                                    Map.splitLookup k (snapshot c)
                             in  c
-                                    { position =
-                                        fst <$> Map.lookupMin after
+                                    { position = case exact of
+                                        Just _ -> Just k
+                                        Nothing ->
+                                            fst
+                                                <$> Map.lookupMin
+                                                    after
                                     }
                 modify' $ \m ->
                     m
@@ -294,3 +305,168 @@ spec = describe "MTS.Rollbacks.Store" $ do
                     runTx
                         $ pruneExcess RollbackPoints 2
             pruned `shouldBe` 0
+
+    describe "queryTip" $ do
+        it "returns Nothing on empty column" $ do
+            let (tip, _) =
+                    run
+                        $ runTx
+                        $ queryTip RollbackPoints
+            tip `shouldBe` (Nothing :: Maybe Int)
+
+        it "returns last key after stores" $ do
+            let (tip, _) = run $ do
+                    storeN 5
+                    runTx $ queryTip RollbackPoints
+            tip `shouldBe` Just 5
+
+        it "returns updated tip after pruning" $ do
+            let (tip, _) = run $ do
+                    storeN 3
+                    runTx
+                        $ pruneExcess RollbackPoints 1
+                    runTx $ queryTip RollbackPoints
+            tip `shouldBe` Just 3
+
+    describe "rollbackTo" $ do
+        it "returns Impossible on empty column" $ do
+            let (result, _) =
+                    run
+                        $ runTx
+                        $ rollbackTo
+                            RollbackPoints
+                            (const $ pure ())
+                            3
+            result `shouldBe` RollbackImpossible
+
+        it "returns Impossible for missing key" $ do
+            let (result, _) = run $ do
+                    storeN 5
+                    runTx
+                        $ rollbackTo
+                            RollbackPoints
+                            (const $ pure ())
+                            99
+            result `shouldBe` RollbackImpossible
+
+        it "succeeds rolling back to existing key" $ do
+            let ((result, remaining), _) = run $ do
+                    storeN 5
+                    r <-
+                        runTx
+                            $ rollbackTo
+                                RollbackPoints
+                                (const $ pure ())
+                                3
+                    c <-
+                        runTx
+                            $ countPoints RollbackPoints
+                    pure (r, c)
+            result `shouldBe` RollbackSucceeded 2
+            remaining `shouldBe` 3
+
+        it "succeeds rolling back to tip (no-op)" $ do
+            let (result, _) = run $ do
+                    storeN 5
+                    runTx
+                        $ rollbackTo
+                            RollbackPoints
+                            (const $ pure ())
+                            5
+            result `shouldBe` RollbackSucceeded 0
+
+        it "succeeds rolling back to first key" $ do
+            let ((result, remaining), _) = run $ do
+                    storeN 5
+                    r <-
+                        runTx
+                            $ rollbackTo
+                                RollbackPoints
+                                (const $ pure ())
+                                1
+                    c <-
+                        runTx
+                            $ countPoints RollbackPoints
+                    pure (r, c)
+            result `shouldBe` RollbackSucceeded 4
+            remaining `shouldBe` 1
+
+    describe "pruneBelow" $ do
+        it "does nothing on empty column" $ do
+            let (pruned, _) =
+                    run
+                        $ runTx
+                        $ pruneBelow RollbackPoints 3
+            pruned `shouldBe` 0
+
+        it "prunes entries strictly below key" $ do
+            let ((pruned, remaining), _) = run $ do
+                    storeN 5
+                    p <-
+                        runTx
+                            $ pruneBelow RollbackPoints 3
+                    c <-
+                        runTx
+                            $ countPoints RollbackPoints
+                    pure (p, c)
+            pruned `shouldBe` 2
+            remaining `shouldBe` 3
+
+        it "does nothing when all >= key" $ do
+            let (pruned, _) = run $ do
+                    storeN 5
+                    runTx
+                        $ pruneBelow RollbackPoints 1
+            pruned `shouldBe` 0
+
+    describe "armageddonCleanup" $ do
+        it "returns False on empty column" $ do
+            let (more, _) =
+                    run
+                        $ runTx
+                        $ armageddonCleanup
+                            RollbackPoints
+                            10
+            more `shouldBe` False
+
+        it "deletes all in single batch" $ do
+            let ((more, remaining), _) = run $ do
+                    storeN 3
+                    m <-
+                        runTx
+                            $ armageddonCleanup
+                                RollbackPoints
+                                10
+                    c <-
+                        runTx
+                            $ countPoints RollbackPoints
+                    pure (m, c)
+            more `shouldBe` False
+            remaining `shouldBe` 0
+
+        it "returns True when batch exhausted" $ do
+            let (more, _) = run $ do
+                    storeN 5
+                    runTx
+                        $ armageddonCleanup
+                            RollbackPoints
+                            2
+            more `shouldBe` True
+
+    describe "armageddonSetup" $ do
+        it "creates sentinel point" $ do
+            let ((tip, count), _) = run $ do
+                    runTx
+                        $ armageddonSetup
+                            RollbackPoints
+                            0
+                            Nothing
+                    t <-
+                        runTx
+                            $ queryTip RollbackPoints
+                    c <-
+                        runTx
+                            $ countPoints RollbackPoints
+                    pure (t, c)
+            tip `shouldBe` Just 0
+            count `shouldBe` 1
