@@ -254,6 +254,7 @@ test-suite unit-tests
   type:               exitcode-stdio-1.0
   main-is:            main.hs
   other-modules:
+    Data.Serialize.ExtraSpec
     CSMT.Backend.RocksDB.TransactionSpec
     CSMT.Backend.RocksDBSpec
     CSMT.DeletionSpec
