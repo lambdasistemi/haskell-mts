@@ -13,6 +13,8 @@ import MPF.Test.Lib
     , fruitsTestData
     , getRootHashM
     , insertByteStringM
+    , insertDirectByteStringM
+    , insertFaithfulByteStringM
     , insertMPF
     , insertMPFM
     , runMPFPure'
@@ -161,3 +163,137 @@ spec = describe "MPF.Insertion" $ do
             mroot `shouldSatisfy` \case
                 Just _ -> True
                 Nothing -> False
+
+    describe "direct insertion (single-path)" $ do
+        it "produces expected root hash for single apple" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertDirectByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "93c4ed2d36f2409c38b8112d70c23eaf92eeb325b5098c0195be7e5cfaf7d824"
+
+        it "produces expected root hash for apple and apricot" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertDirectByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    insertDirectByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "d9e614a87dff7b38d59706f00085d1b23f8c3e32ab9f5c39dbfa090412012003"
+
+        it "produces expected root hash for apple+banana" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertDirectByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    insertDirectByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "6a00036a5182ad02098cc99e00ab679263571dbec847b12aa7abde525affbe39"
+
+        it "produces expected root hash for 3 fruits" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertDirectByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    insertDirectByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7"
+                    insertDirectByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "3b9c8a23238aeef2bee260daec21acfdad07cb7d8f23bb5b97147323ef65ff5f"
+
+        it "produces expected root hash for full fruits dataset" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    forM_ fruitsTestData $ uncurry insertDirectByteStringM
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` encodeHex expectedFullTrieRoot
+
+        it "order independence: banana, apple, apricot" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertDirectByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c"
+                    insertDirectByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    insertDirectByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "3b9c8a23238aeef2bee260daec21acfdad07cb7d8f23bb5b97147323ef65ff5f"
+
+    describe "faithful insertion (JS port)" $ do
+        it "produces expected root hash for single apple" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertFaithfulByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "93c4ed2d36f2409c38b8112d70c23eaf92eeb325b5098c0195be7e5cfaf7d824"
+
+        it "produces expected root hash for apple and apricot" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertFaithfulByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    insertFaithfulByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "d9e614a87dff7b38d59706f00085d1b23f8c3e32ab9f5c39dbfa090412012003"
+
+        it "produces expected root hash for apple+banana" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertFaithfulByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    insertFaithfulByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "6a00036a5182ad02098cc99e00ab679263571dbec847b12aa7abde525affbe39"
+
+        it "produces expected root hash for 3 fruits" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertFaithfulByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    insertFaithfulByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7"
+                    insertFaithfulByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "3b9c8a23238aeef2bee260daec21acfdad07cb7d8f23bb5b97147323ef65ff5f"
+
+        it "order independence: banana, apple, apricot" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    insertFaithfulByteStringM "banana[uid: 218]" "\xf0\x9f\x8d\x8c"
+                    insertFaithfulByteStringM "apple[uid: 58]" "\xf0\x9f\x8d\x8e"
+                    insertFaithfulByteStringM "apricot[uid: 0]" "\xf0\x9f\xa4\xb7"
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` "3b9c8a23238aeef2bee260daec21acfdad07cb7d8f23bb5b97147323ef65ff5f"
+
+        it "produces expected root hash for full 30-fruit dataset" $ do
+            let (mroot, _db) = runMPFPure' $ do
+                    forM_ fruitsTestData $ uncurry insertFaithfulByteStringM
+                    getRootHashM
+            case mroot of
+                Nothing -> expectationFailure "Expected root hash, got Nothing"
+                Just root ->
+                    encodeHex (renderMPFHash root)
+                        `shouldBe` encodeHex expectedFullTrieRoot

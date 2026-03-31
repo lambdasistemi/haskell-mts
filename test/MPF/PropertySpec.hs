@@ -25,6 +25,7 @@ import MPF.Test.Lib
     , getRootHashM
     , insertBatchMPFM
     , insertChunkedMPFM
+    , insertDirectMPFM
     , insertMPFM
     , runMPFPure'
     , verifyMPFM
@@ -105,6 +106,19 @@ spec = do
             it "single insert produces root hash"
                 $ property propSingleInsertHasRoot
 
+        describe "direct insertion" $ do
+            it "direct insert produces same root as old insert"
+                $ property propDirectEqualsOld
+
+            it "direct insert: single key verifiable"
+                $ property propDirectInsertVerify
+
+            it "direct insert: multiple keys all verifiable"
+                $ property propDirectMultipleInsertVerify
+
+            it "direct insert: order independent root hash"
+                $ property propDirectOrderIndependence
+
 -- | Property: inserted key-value can be verified
 propInsertVerify :: TestKV -> Bool
 propInsertVerify (TestKV keyBs valBs) =
@@ -172,6 +186,61 @@ propDeletePreservesSiblings =
                                 verifyMPFM keepKey keepVal
                         in  verified
                     _ -> error "impossible: length kvs == 3"
+
+-- | Property: direct insert produces same root hash as old insert
+propDirectEqualsOld :: Property
+propDirectEqualsOld =
+    forAll (vectorOf 5 ((,) <$> genKeyBytes <*> genValue)) $ \rawKvs ->
+        let kvs = nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) rawKvs
+        in  length kvs >= 2 ==>
+                let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                    (rootOld, _) = runMPFPure' $ do
+                        forM_ kvHashed $ uncurry insertMPFM
+                        getRootHashM
+                    (rootDirect, _) = runMPFPure' $ do
+                        forM_ kvHashed $ uncurry insertDirectMPFM
+                        getRootHashM
+                in  fmap renderMPFHash rootOld === fmap renderMPFHash rootDirect
+
+-- | Property: direct insert - single key verifiable
+propDirectInsertVerify :: TestKV -> Bool
+propDirectInsertVerify (TestKV keyBs valBs) =
+    let key = toHexKey keyBs
+        value = mkMPFHash valBs
+        (verified, _) = runMPFPure' $ do
+            insertDirectMPFM key value
+            verifyMPFM key value
+    in  verified
+
+-- | Property: direct insert - multiple keys all verifiable
+propDirectMultipleInsertVerify :: Property
+propDirectMultipleInsertVerify =
+    forAll (vectorOf 3 ((,) <$> genKeyBytes <*> genValue)) $ \rawKvs ->
+        let kvs = nubBy (\(k1, _) (k2, _) -> toHexKey k1 == toHexKey k2) rawKvs
+        in  length kvs == 3 ==>
+                let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                    (verifyResults, _) = runMPFPure' $ do
+                        forM_ kvHashed $ uncurry insertDirectMPFM
+                        forM kvHashed $ \(k, v) -> do
+                            r <- verifyMPFM k v
+                            pure (r, k)
+                    allPassed = all fst verifyResults
+                in  allPassed
+
+-- | Property: direct insert - order independent root hash
+propDirectOrderIndependence :: Property
+propDirectOrderIndependence = forAll genUniqueKVs $ \kvs ->
+    length kvs >= 2 ==>
+        forAll (shuffle kvs) $ \shuffled ->
+            let kvHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- kvs]
+                shuffledHashed = [(toHexKey k, mkMPFHash v) | (k, v) <- shuffled]
+                (root1, _) = runMPFPure' $ do
+                    forM_ kvHashed $ uncurry insertDirectMPFM
+                    getRootHashM
+                (root2, _) = runMPFPure' $ do
+                    forM_ shuffledHashed $ uncurry insertDirectMPFM
+                    getRootHashM
+            in  fmap renderMPFHash root1 === fmap renderMPFHash root2
 
 -- | Property: single insert produces a root hash
 propSingleInsertHasRoot :: TestKV -> Bool

@@ -5,8 +5,12 @@ module MPF.Test.Lib
       insertMPF
     , deleteMPF
     , insertMPFM
+    , insertDirectMPFM
+    , insertFaithfulMPFM
     , deleteMPFM
     , insertByteStringM
+    , insertDirectByteStringM
+    , insertFaithfulByteStringM
     , insertBatchMPFM
     , insertChunkedMPFM
     , insertStreamMPFM
@@ -80,6 +84,8 @@ import MPF.Insertion
     , insertingChunked
     , insertingStream
     )
+import MPF.Insertion.Direct (insertingDirect)
+import MPF.Insertion.Faithful (insertingFaithful)
 import MPF.Interface
     ( FromHexKV (..)
     , HexIndirect (..)
@@ -163,6 +169,32 @@ insertMPFMAt prefix k v =
             k
             v
 
+-- | Insert using direct single-path insertion in the Pure monad
+insertDirectMPFM :: HexKey -> MPFHash -> MPFPure ()
+insertDirectMPFM k v =
+    runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
+        $ insertingDirect
+            []
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneKVCol
+            MPFStandaloneMPFCol
+            k
+            v
+
+-- | Insert using faithful JS-port insertion in the Pure monad
+insertFaithfulMPFM :: HexKey -> MPFHash -> MPFPure ()
+insertFaithfulMPFM k v =
+    runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
+        $ insertingFaithful
+            []
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneKVCol
+            MPFStandaloneMPFCol
+            k
+            v
+
 -- | Delete at a prefix in the Pure monad
 deleteMPFMAt :: HexKey -> HexKey -> MPFPure ()
 deleteMPFMAt prefix k =
@@ -180,6 +212,20 @@ deleteMPFMAt prefix k =
 insertByteStringM :: ByteString -> ByteString -> MPFPure ()
 insertByteStringM k v =
     insertMPFM
+        (byteStringToHexKey $ renderMPFHash $ mkMPFHash k)
+        (mkMPFHash v)
+
+-- | Insert using direct single-path insertion, hashing key and value (Aiken compatible)
+insertDirectByteStringM :: ByteString -> ByteString -> MPFPure ()
+insertDirectByteStringM k v =
+    insertDirectMPFM
+        (byteStringToHexKey $ renderMPFHash $ mkMPFHash k)
+        (mkMPFHash v)
+
+-- | Insert using faithful JS-port insertion, hashing key and value (Aiken compatible)
+insertFaithfulByteStringM :: ByteString -> ByteString -> MPFPure ()
+insertFaithfulByteStringM k v =
+    insertFaithfulMPFM
         (byteStringToHexKey $ renderMPFHash $ mkMPFHash k)
         (mkMPFHash v)
 
