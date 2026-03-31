@@ -107,6 +107,7 @@ library csmt
     CSMT.Frontend.CLI.App
     CSMT.Hashes
     CSMT.Hashes.CBOR
+    CSMT.Hashes.Compact
     CSMT.Hashes.Types
     CSMT.Insertion
     CSMT.Interface
