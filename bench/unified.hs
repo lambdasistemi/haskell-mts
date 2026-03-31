@@ -22,11 +22,18 @@ import CSMT.Backend.Standalone
 import CSMT.Hashes qualified as CSMT
     ( delete
     , fromKVHashes
-    , generateInclusionProof
+    , hashHashing
     , insert
     , isoHash
+    , mkHash
+    , renderHash
     )
+import CSMT.Hashes.CBOR qualified as CSMTCBOR (renderProof)
+import CSMT.Hashes.Compact (renderCompactProof)
 import CSMT.Hashes.Types (Hash)
+import CSMT.Proof.Insertion qualified as CSMTProof
+    ( buildInclusionProof
+    )
 import Control.Lens (Iso', iso)
 import Control.Monad (forM_, mapM, when)
 import Control.Monad.IO.Class (liftIO)
@@ -103,53 +110,70 @@ csmtCodecs =
         , nodeCodec = CSMT.isoHash
         }
 
+-- | Pre-hash keys for CSMT: blake2b(key) as the stored key
+csmtHashData
+    :: [(ByteString, ByteString)] -> [(ByteString, ByteString)]
+csmtHashData = map (\(k, v) -> (CSMT.renderHash (CSMT.mkHash k), v))
+
 runCSMTBench
     :: FilePath -> [(ByteString, ByteString)] -> IO BenchResult
 runCSMTBench tmpDir testData = do
     let dbPath = tmpDir </> "csmt"
+        hashed = csmtHashData testData
     cleanDir dbPath
     CSMT.withRocksDB dbPath 256 256 $ \(CSMT.RunRocksDB run) -> do
         database <- run $ CSMT.standaloneRocksDBDatabase csmtCodecs
 
-        -- Sequential insert
         insertTime <- timeAction
-            $ forM_ testData
+            $ forM_ hashed
             $ \(k, v) ->
                 runTransactionUnguarded database
                     $ CSMT.insert CSMT.fromKVHashes StandaloneKVCol StandaloneCSMTCol k v
 
-        -- Proof generation + CBOR size
         proofSizeRef <- newIORef (0 :: Int)
+        compactSizeRef <- newIORef (0 :: Int)
         proofCountRef <- newIORef (0 :: Int)
         proofTime <- timeAction
-            $ forM_ testData
+            $ forM_ hashed
             $ \(k, _) -> do
                 mp <-
                     runTransactionUnguarded database
-                        $ CSMT.generateInclusionProof
+                        $ CSMTProof.buildInclusionProof
+                            []
                             CSMT.fromKVHashes
                             StandaloneKVCol
                             StandaloneCSMTCol
+                            CSMT.hashHashing
                             k
                 case mp of
                     Nothing -> pure ()
-                    Just (_, proofBytes) -> do
-                        modifyIORef' proofSizeRef (+ BS.length proofBytes)
+                    Just (_, proof) -> do
+                        modifyIORef' proofSizeRef (+ BS.length (CSMTCBOR.renderProof proof))
+                        modifyIORef' compactSizeRef (+ BS.length (renderCompactProof proof))
                         modifyIORef' proofCountRef (+ 1)
 
-        totalProofBytes <- readIORef proofSizeRef
+        totalProofBytes <- readIORef compactSizeRef
         proofCount <- readIORef proofCountRef
+        oldProofBytes <- readIORef proofSizeRef
 
-        -- Measure DB size after insert
         dbSize <- dirSize dbPath
 
-        -- Delete half the entries
-        let deleteData = take (length testData `div` 2) testData
+        let deleteHashed = take (length hashed `div` 2) hashed
         deleteTime <- timeAction
-            $ forM_ deleteData
+            $ forM_ deleteHashed
             $ \(k, _) ->
                 runTransactionUnguarded database
                     $ CSMT.delete CSMT.fromKVHashes StandaloneKVCol StandaloneCSMTCol k
+
+        -- Print old vs compact proof sizes
+        let avgOld = if proofCount > 0 then oldProofBytes `div` proofCount else 0
+            avgCompact = if proofCount > 0 then totalProofBytes `div` proofCount else 0
+        putStrLn
+            $ "    (CSMT old proof: "
+                ++ show avgOld
+                ++ " bytes, compact: "
+                ++ show avgCompact
+                ++ " bytes)"
 
         pure
             BenchResult
@@ -158,7 +182,7 @@ runCSMTBench tmpDir testData = do
                 , brDeleteTime = deleteTime
                 , brTotalProofBytes = totalProofBytes
                 , brProofCount = proofCount
-                , brDeleteCount = length deleteData
+                , brDeleteCount = length deleteHashed
                 , brDbSizeBytes = dbSize
                 }
 
