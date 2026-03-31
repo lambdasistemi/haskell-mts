@@ -458,8 +458,8 @@ dirSize dir = do
         then pure 0
         else do
             entries <- listDirectory dir
-            fmap sum
-                $ mapM
+            sum
+                <$> mapM
                     ( \e -> do
                         let full = dir </> e
                         isDir <- doesDirectoryExist full
