@@ -109,7 +109,7 @@ NrJMih3czFriydMUwvFKFK6VYKZYVjKpKGe1WC4e+VU=
 
 ## Documentation
 
-Full documentation at [paolino.github.io/haskell-mts](https://paolino.github.io/haskell-mts/)
+Full documentation at [lambdasistemi.github.io/haskell-mts](https://lambdasistemi.github.io/haskell-mts/)
 
 ## License
 
