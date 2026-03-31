@@ -349,11 +349,11 @@ benchmark mpf-bench
   hs-source-dirs:   bench
   main-is:          mpf-bench.hs
   build-depends:
-    , base                                     >=4.19 && <5
-    , bytestring                               >=0.12 && <0.13
+    , base              >=4.19 && <5
+    , bytestring        >=0.12 && <0.13
     , mts:mpf
     , mts:mpf-test-lib
-    , time                                     >=1.12 && <1.14
+    , time              >=1.12 && <1.14
 
 benchmark mpf-bench-rocksdb
   import:           warnings
