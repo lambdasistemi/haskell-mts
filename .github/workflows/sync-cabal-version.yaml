@@ -13,7 +13,7 @@ jobs:
     if: startsWith(github.head_ref, 'release-please--')
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.GITHUB_TOKEN }}
