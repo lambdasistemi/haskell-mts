@@ -18,7 +18,7 @@ jobs:
     name: Build
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -28,28 +28,28 @@ jobs:
       - name: Build docker image
         run: nix --quiet build .#docker-image -o mts-image
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mts-image
           path: mts-image
       - name: Build appImage artifact
         run: nix --quiet bundle --bundler github:ralismark/nix-appimage .#mts -o mts.AppImage
       - name: Upload appImage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mts-appImage
           path: mts.AppImage
       - name: Build rpm artifact
         run: nix --quiet bundle --bundler github:NixOS/bundlers#toRPM -o mts.rpm
       - name: Upload rpm artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mts-rpm
           path: mts.rpm
       - name: Build deb artifact
         run: nix --quiet bundle --bundler github:NixOS/bundlers#toDEB -o mts.deb
       - name: Upload deb artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: mts-deb
           path: mts.deb
@@ -57,7 +57,7 @@ jobs:
     name: Run unit Tests
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -68,7 +68,7 @@ jobs:
     name: Run Benchmarks
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -81,7 +81,7 @@ jobs:
     name: TypeScript Verifier Tests
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -92,7 +92,7 @@ jobs:
     name: Check code formatting
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -103,7 +103,7 @@ jobs:
     name: Cabal check
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -114,7 +114,7 @@ jobs:
     name: HLint
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: cachix/cachix-action@v15
         with:
           name: paolino
@@ -125,7 +125,7 @@ jobs:
     name: Lean proofs
     runs-on: nixos
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Build Lean proofs
         working-directory: lean
         run: nix --quiet shell nixpkgs#elan -c lake build
