@@ -18,6 +18,8 @@ module CSMT.Hashes
     , addHash
     , Hash (..)
     , renderHash
+    , renderHashIn
+    , Base (..)
     , parseHash
     , insert
     , root
@@ -37,7 +39,12 @@ where
 
 import CSMT.Deletion (deleting)
 import CSMT.Hashes.CBOR (parseProof, renderProof)
-import CSMT.Hashes.Types (Hash (..), renderHash)
+import CSMT.Hashes.Types
+    ( Base (..)
+    , Hash (..)
+    , renderHash
+    , renderHashIn
+    )
 import CSMT.Insertion (inserting)
 import CSMT.Interface
     ( Direction (..)
