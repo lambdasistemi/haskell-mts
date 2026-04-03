@@ -64,5 +64,6 @@ in {
   packages.unit-tests = project.hsPkgs.mts.components.tests.unit-tests;
   packages.csmt-test-vectors =
     project.hsPkgs.mts.components.exes.csmt-test-vectors;
+  packages.csmt-fixtures = project.hsPkgs.mts.components.exes.csmt-fixtures;
   musl64 = project.projectCross.musl64.hsPkgs;
 }
