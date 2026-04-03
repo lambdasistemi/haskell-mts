@@ -39,6 +39,10 @@ export { parseProof };
 import { arraysEqual, computeRootHash, verifyInclusionProof } from "./verify";
 export { arraysEqual, computeRootHash, verifyInclusionProof };
 
+// Exclusion proof verification
+export type { ExclusionProof } from "./exclusion";
+export { verifyExclusionProof } from "./exclusion";
+
 // Hashing utilities (for advanced use)
 export { blake2b256, combineHash, rootHash } from "./hash";
 
