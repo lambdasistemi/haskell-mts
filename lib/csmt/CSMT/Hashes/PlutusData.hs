@@ -220,9 +220,7 @@ parseStep bs = do
     ((), bs2) <- parseListBegin bs1
     (stepConsumed, bs3) <- parseUInt bs2
     (jumpBs, bs4) <- parseDefBytes bs3
-    jump <- case unpackKey jumpBs of
-        Nothing -> Nothing
-        Just k -> Just k
+    jump <- unpackKey jumpBs
     (hashBs, bs5) <- parseDefBytes bs4
     ((), bs6) <- parseBreak bs5
     Just
