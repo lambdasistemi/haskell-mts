@@ -390,6 +390,18 @@ executable csmt-test-vectors
 
   default-language: Haskell2010
 
+executable csmt-fixtures
+  import:           warnings
+  main-is:          app/fixtures/Main.hs
+  build-depends:
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
+    , lens                                     >=5.3  && <5.4
+    , mts:csmt
+    , rocksdb-kv-transactions:kv-transactions
+
+  default-language: Haskell2010
+
 executable space-leak
   import:           warnings
   main-is:          lib/csmt/CSMT/Frontend/CLI/SpaceLeak.hs

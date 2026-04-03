@@ -32,8 +32,8 @@ export type {
 export { L, R } from "./types";
 
 // CBOR parsing
-import { parseProof } from "./cbor";
-export { parseProof };
+import { parseExclusionProof, parseProof } from "./cbor";
+export { parseExclusionProof, parseProof };
 
 // Verification
 import { arraysEqual, computeRootHash, verifyInclusionProof } from "./verify";

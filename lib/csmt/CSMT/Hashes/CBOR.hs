@@ -1,18 +1,21 @@
 -- |
 -- Module      : CSMT.Hashes.CBOR
--- Description : CBOR serialization for inclusion proofs
+-- Description : CBOR serialization for CSMT proofs
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- CBOR encoding and decoding for 'InclusionProof' and related types.
+-- CBOR encoding and decoding for inclusion and exclusion proofs.
 module CSMT.Hashes.CBOR
     ( renderProof
     , parseProof
+    , renderExclusionProof
+    , parseExclusionProof
     )
 where
 
 import CSMT.Hashes.Types (Hash (..), renderHash)
 import CSMT.Interface (Direction (..), Indirect (..), Key)
+import CSMT.Proof.Exclusion (ExclusionProof (..))
 import CSMT.Proof.Insertion (InclusionProof (..), ProofStep (..))
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -124,5 +127,54 @@ renderProof = BL.toStrict . CBOR.toLazyByteString . encodeProof
 parseProof :: ByteString -> Maybe (InclusionProof Hash)
 parseProof bs =
     case CBOR.deserialiseFromBytes decodeProof (BL.fromStrict bs) of
+        Left _ -> Nothing
+        Right (_, pf) -> Just pf
+
+-- -----------------------------------------------------------
+-- Exclusion proof CBOR
+-- -----------------------------------------------------------
+
+-- | Encode an ExclusionProof to CBOR.
+--
+-- Format:
+--
+-- @
+-- ExclusionEmpty  → CBOR array [tag=0]
+-- ExclusionWitness → CBOR array [tag=1, targetKey, inclusionProof]
+-- @
+encodeExclusionProof :: ExclusionProof Hash -> CBOR.Encoding
+encodeExclusionProof ExclusionEmpty =
+    CBOR.encodeListLen 1
+        <> CBOR.encodeWord 0
+encodeExclusionProof
+    ExclusionWitness{epTargetKey, epWitnessProof} =
+        CBOR.encodeListLen 3
+            <> CBOR.encodeWord 1
+            <> encodeKey epTargetKey
+            <> encodeProof epWitnessProof
+
+-- | Decode an ExclusionProof from CBOR.
+decodeExclusionProof :: CBOR.Decoder s (ExclusionProof Hash)
+decodeExclusionProof = do
+    _ <- CBOR.decodeListLen
+    tag <- CBOR.decodeWord
+    case tag of
+        0 -> pure ExclusionEmpty
+        1 -> do
+            epTargetKey <- decodeKey
+            epWitnessProof <- decodeProof
+            pure ExclusionWitness{epTargetKey, epWitnessProof}
+        _ -> fail "Invalid exclusion proof tag"
+
+-- | Render an exclusion proof to CBOR bytes.
+renderExclusionProof :: ExclusionProof Hash -> ByteString
+renderExclusionProof =
+    BL.toStrict . CBOR.toLazyByteString . encodeExclusionProof
+
+-- | Parse CBOR bytes as an exclusion proof.
+parseExclusionProof
+    :: ByteString -> Maybe (ExclusionProof Hash)
+parseExclusionProof bs =
+    case CBOR.deserialiseFromBytes decodeExclusionProof (BL.fromStrict bs) of
         Left _ -> Nothing
         Right (_, pf) -> Just pf
