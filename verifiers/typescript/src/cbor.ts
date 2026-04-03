@@ -1,13 +1,17 @@
 /**
- * CBOR parsing for inclusion proofs
+ * CBOR parsing for inclusion and exclusion proofs
  *
- * Parses CBOR-encoded proofs matching the CDDL specification:
+ * Inclusion proof CDDL:
  * - inclusion_proof = [key, hash, hash, [* proof_step], key]
  * - proof_step = [int, indirect]
  * - indirect = [key, hash]
  * - key = [* direction]
+ *
+ * Exclusion proof CDDL:
+ * - exclusion_proof = [0] / [1, key, inclusion_proof]
  */
 import { decode } from "cbor-x";
+import type { ExclusionProof } from "./exclusion";
 import type {
     Direction,
     Hash,
@@ -105,4 +109,62 @@ export function parseProof(bytes: Uint8Array): InclusionProof {
         proofSteps: rawSteps.map(parseProofStep),
         proofRootJump: parseKey(rawRootJump),
     };
+}
+
+/**
+ * Parse an InclusionProof from a raw CBOR-decoded array
+ * (used internally by parseExclusionProof)
+ */
+function parseInclusionProofFromDecoded(decoded: unknown): InclusionProof {
+    if (!Array.isArray(decoded) || decoded.length !== 5) {
+        throw new Error("InclusionProof must be an array of 5 elements");
+    }
+
+    const [rawKey, rawValue, rawRootHash, rawSteps, rawRootJump] = decoded;
+
+    if (!Array.isArray(rawSteps)) {
+        throw new Error("proofSteps must be an array");
+    }
+
+    return {
+        proofKey: parseKey(rawKey),
+        proofValue: parseHash(rawValue),
+        proofRootHash: parseHash(rawRootHash),
+        proofSteps: rawSteps.map(parseProofStep),
+        proofRootJump: parseKey(rawRootJump),
+    };
+}
+
+/**
+ * Parse an ExclusionProof from CBOR bytes
+ *
+ * Format: [0] for empty, [1, targetKey, inclusionProof] for witness
+ */
+export function parseExclusionProof(bytes: Uint8Array): ExclusionProof {
+    const decoded = decode(bytes);
+
+    if (!Array.isArray(decoded) || decoded.length < 1) {
+        throw new Error("ExclusionProof must be a non-empty array");
+    }
+
+    const tag = decoded[0];
+
+    if (tag === 0) {
+        return { tag: "empty" };
+    }
+
+    if (tag === 1) {
+        if (decoded.length !== 3) {
+            throw new Error(
+                "ExclusionWitness must be [1, targetKey, inclusionProof]"
+            );
+        }
+        return {
+            tag: "witness",
+            targetKey: parseKey(decoded[1]),
+            witnessProof: parseInclusionProofFromDecoded(decoded[2]),
+        };
+    }
+
+    throw new Error(`Invalid exclusion proof tag: ${tag}`);
 }

@@ -6,12 +6,14 @@ import {
     computeRootHash,
     concat,
     L,
+    parseExclusionProof,
     parseProof,
     R,
     rootHash,
     serializeIndirect,
     serializeKey,
     serializeSizedBytes,
+    verifyExclusionProof,
     verifyInclusionProof,
     verifyProofBytes,
 } from "../src";
@@ -371,6 +373,68 @@ describe("computeRootHash", () => {
             const computed = computeRootHash(proof);
             expect(arraysEqual(computed, proof.proofRootHash)).toBe(true);
         }
+    });
+});
+
+describe("parseExclusionProof", () => {
+    it("parses valid exclusion proofs from fixtures", () => {
+        for (const fixture of (fixtures as any).exclusionProofs) {
+            const bytes = hexToBytes(fixture.cbor);
+            const proof = parseExclusionProof(bytes);
+            expect(proof.tag).toBe("witness");
+        }
+    });
+
+    it("throws on invalid CBOR", () => {
+        expect(() => parseExclusionProof(new Uint8Array([0xff, 0xff]))).toThrow();
+    });
+});
+
+describe("verifyExclusionProof", () => {
+    it("verifies valid exclusion proofs from fixtures", () => {
+        for (const fixture of (fixtures as any).exclusionProofs) {
+            const bytes = hexToBytes(fixture.cbor);
+            const proof = parseExclusionProof(bytes);
+            expect(verifyExclusionProof(proof)).toBe(true);
+        }
+    });
+
+    it("verifies empty exclusion proof", () => {
+        expect(verifyExclusionProof({ tag: "empty" })).toBe(true);
+    });
+
+    it("rejects exclusion proof with tampered target key", () => {
+        const fixture = (fixtures as any).exclusionProofs[0];
+        if (!fixture) throw new Error("No exclusion fixture");
+        const bytes = hexToBytes(fixture.cbor);
+        const proof = parseExclusionProof(bytes);
+
+        if (proof.tag !== "witness") throw new Error("Expected witness");
+
+        // Replace target key with the witness key (which exists in the tree)
+        const tampered = {
+            ...proof,
+            targetKey: proof.witnessProof.proofKey,
+        };
+        expect(verifyExclusionProof(tampered)).toBe(false);
+    });
+
+    it("rejects exclusion proof with tampered witness hash", () => {
+        const fixture = (fixtures as any).exclusionProofs[0];
+        if (!fixture) throw new Error("No exclusion fixture");
+        const bytes = hexToBytes(fixture.cbor);
+        const proof = parseExclusionProof(bytes);
+
+        if (proof.tag !== "witness") throw new Error("Expected witness");
+
+        const tampered = {
+            ...proof,
+            witnessProof: {
+                ...proof.witnessProof,
+                proofRootHash: new Uint8Array(32).fill(0),
+            },
+        };
+        expect(verifyExclusionProof(tampered)).toBe(false);
     });
 });
 
