@@ -1,0 +1,24 @@
+; CDDL specification for CSMT Exclusion Proof
+; CBOR encoding used by CSMT.Hashes.CBOR module
+;
+; An exclusion proof demonstrates that a key does NOT exist
+; in the tree. It embeds an inclusion proof for a witness key
+; whose path diverges from the target within a jump.
+
+; Reuses types from inclusion-proof.cddl:
+; direction, key, hash, indirect, proof_step, inclusion_proof
+
+; Exclusion proof: empty tree or witness divergence
+exclusion_proof = exclusion_empty / exclusion_witness
+
+; Empty tree: any key is trivially absent
+; CBOR: array of 1 element, tag = 0
+exclusion_empty = [0]
+
+; Witness: target key diverges from witness within a jump
+; CBOR: array of 3 elements, tag = 1
+exclusion_witness = [
+    1,                              ; tag
+    target_key: key,                ; the key proven absent
+    witness_proof: inclusion_proof  ; proof for the witness key
+]
