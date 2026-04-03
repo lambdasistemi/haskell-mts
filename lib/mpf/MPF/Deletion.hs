@@ -3,6 +3,7 @@
 module MPF.Deletion
     ( deleting
     , deletingTreeOnly
+    , deletingRaw
     , newMPFDeletionPath
     , MPFDeletionPath (..)
     , deletionPathToOps
@@ -89,6 +90,25 @@ deletingTreeOnly prefix FromHexKV{fromHexK, hexTreePrefix} hashing mpfSel key v 
         Nothing -> pure ()
         Just path ->
             mapM_ (applyOp mpfSel) $ deletionPathToOps prefix hashing path
+
+-- | Delete a raw tree key from the MPF tree.
+-- Takes the tree key directly (no 'FromHexKV' conversion).
+-- Used by patchParallel where the tree key is already computed
+-- and the bucket prefix is already stripped.
+deletingRaw
+    :: (Monad m, GCompare d)
+    => HexKey
+    -> MPFHashing a
+    -> Selector d HexKey (HexIndirect a)
+    -> HexKey
+    -> Transaction m cf d ops ()
+deletingRaw prefix hashing mpfSel treeKey = do
+    mpath <- newMPFDeletionPath prefix mpfSel treeKey
+    case mpath of
+        Nothing -> pure ()
+        Just path ->
+            mapM_ (applyOp mpfSel)
+                $ deletionPathToOps prefix hashing path
 
 -- | Apply a single deletion operation
 applyOp

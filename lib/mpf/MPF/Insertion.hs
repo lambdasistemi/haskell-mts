@@ -5,6 +5,7 @@
 module MPF.Insertion
     ( inserting
     , insertingTreeOnly
+    , insertingRaw
     , insertingBatch
     , insertingChunked
     , insertingStream
@@ -80,6 +81,24 @@ insertingTreeOnly
 insertingTreeOnly prefix FromHexKV{fromHexK, fromHexV, hexTreePrefix} hashing mpfCol k v = do
     let treeKey = hexTreePrefix v <> fromHexK k
     c <- mkMPFCompose mpfCol prefix treeKey (fromHexV v)
+    mapM_ (uncurry $ insert mpfCol)
+        $ snd
+        $ scanMPFCompose prefix hashing c
+
+-- | Insert a raw tree key and value hash into the MPF tree.
+-- Takes the tree key directly (no 'FromHexKV' conversion).
+-- Used by patchParallel where the tree key is already computed
+-- and the bucket prefix is already stripped.
+insertingRaw
+    :: (Monad m, GCompare d)
+    => HexKey
+    -> MPFHashing a
+    -> Selector d HexKey (HexIndirect a)
+    -> HexKey
+    -> a
+    -> Transaction m cf d ops ()
+insertingRaw prefix hashing mpfCol treeKey valHash = do
+    c <- mkMPFCompose mpfCol prefix treeKey valHash
     mapM_ (uncurry $ insert mpfCol)
         $ snd
         $ scanMPFCompose prefix hashing c
