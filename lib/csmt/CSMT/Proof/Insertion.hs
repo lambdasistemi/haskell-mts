@@ -16,14 +16,17 @@
 module CSMT.Proof.Insertion
     ( InclusionProof (..)
     , ProofStep (..)
+    , StepView (..)
     , buildInclusionProof
     , verifyInclusionProof
     , computeRootHash
+    , foldProof
     )
 where
 
 import CSMT.Interface
-    ( FromKV (..)
+    ( Direction
+    , FromKV (..)
     , Hashing (..)
     , Indirect (..)
     , Key
@@ -146,33 +149,66 @@ verifyInclusionProof hashing proof =
     proofRootHash proof == computeRootHash hashing proof
 
 -- |
+-- What the callback sees at each proof step during a fold.
+data StepView = StepView
+    { svDirection :: Direction
+    -- ^ The direction taken at this branch (L or R)
+    , svJump :: Key
+    -- ^ The jump path within this step (after the direction bit)
+    }
+    deriving (Show, Eq)
+
+-- |
+-- Fold over an inclusion proof's steps with a callback.
+--
+-- Walks from leaf to root, combining hashes at each level (same
+-- as 'computeRootHash'), but also threads an accumulator through
+-- a callback at each step. The callback receives a 'StepView'
+-- showing the direction and jump path consumed at that level.
+--
+-- Returns the computed root hash and the final accumulator.
+foldProof
+    :: Hashing a
+    -> InclusionProof a
+    -> (acc -> StepView -> acc)
+    -> acc
+    -> (a, acc)
+foldProof
+    hashing
+    InclusionProof{proofKey, proofValue, proofSteps, proofRootJump}
+    step
+    acc0 =
+        let keyAfterRoot = drop (length proofRootJump) proofKey
+            (rootValue, accFinal) =
+                go proofValue acc0 (reverse keyAfterRoot) proofSteps
+        in  (rootHash hashing (Indirect proofRootJump rootValue), accFinal)
+      where
+        go hashAcc acc _ [] = (hashAcc, acc)
+        go hashAcc acc revKey (ProofStep{stepConsumed, stepSibling} : rest) =
+            let (consumedRev, remainingRev) = splitAt stepConsumed revKey
+                consumed = reverse consumedRev
+            in  case consumed of
+                    (direction : stepJump) ->
+                        let sv = StepView{svDirection = direction, svJump = stepJump}
+                            acc' = step acc sv
+                        in  go
+                                ( addWithDirection
+                                    hashing
+                                    direction
+                                    (Indirect stepJump hashAcc)
+                                    stepSibling
+                                )
+                                acc'
+                                remainingRev
+                                rest
+                    [] ->
+                        error "foldProof: invalid proof step with zero consumed bits"
+
+-- |
 -- Compute the root hash from an inclusion proof.
 --
 -- Recomputes the Merkle root by combining the proof value with
 -- sibling hashes along the path.
 computeRootHash :: Hashing a -> InclusionProof a -> a
-computeRootHash hashing InclusionProof{proofKey, proofValue, proofSteps, proofRootJump} =
-    rootHash hashing (Indirect proofRootJump rootValue)
-  where
-    keyAfterRoot = drop (length proofRootJump) proofKey
-    -- Reverse key so we can consume from the leaf end first
-    rootValue = go proofValue (reverse keyAfterRoot) proofSteps
-
-    go acc _ [] = acc
-    go acc revKey (ProofStep{stepConsumed, stepSibling} : rest) =
-        let (consumedRev, remainingRev) = splitAt stepConsumed revKey
-            consumed = reverse consumedRev
-        in  case consumed of
-                (direction : stepJump) ->
-                    go
-                        ( addWithDirection
-                            hashing
-                            direction
-                            (Indirect stepJump acc)
-                            stepSibling
-                        )
-                        remainingRev
-                        rest
-                [] ->
-                    -- Invalid proof: stepConsumed is 0 which shouldn't happen
-                    error "computeRootHash: invalid proof step with zero consumed bits"
+computeRootHash hashing proof =
+    fst $ foldProof hashing proof (\() _ -> ()) ()
