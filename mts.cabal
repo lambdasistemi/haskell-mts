@@ -108,6 +108,7 @@ library csmt
     CSMT.Hashes
     CSMT.Hashes.CBOR
     CSMT.Hashes.Compact
+    CSMT.Hashes.PlutusData
     CSMT.Hashes.Types
     CSMT.Insertion
     CSMT.Interface
@@ -265,6 +266,8 @@ test-suite unit-tests
     CSMT.Backend.RocksDBSpec
     CSMT.DeletionSpec
     CSMT.FifoSpec
+    CSMT.Hashes.CompactSpec
+    CSMT.Hashes.PlutusDataSpec
     CSMT.HashesSpec
     CSMT.InsertionSpec
     CSMT.InterfaceSpec

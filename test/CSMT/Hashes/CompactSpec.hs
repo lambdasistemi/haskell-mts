@@ -17,7 +17,7 @@ import CSMT.Proof.Insertion
     , ProofStep (..)
     , computeRootHash
     )
-import qualified Data.ByteString as BS
+import Data.ByteString qualified as BS
 import Test.Hspec
 import Test.QuickCheck
 
