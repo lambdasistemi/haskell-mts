@@ -30,6 +30,7 @@ import CSMT.Hashes qualified as CSMT
     )
 import CSMT.Hashes.CBOR qualified as CSMTCBOR (renderProof)
 import CSMT.Hashes.Compact (renderCompactProof)
+import CSMT.Hashes.PlutusData (renderPlutusProof)
 import CSMT.Hashes.Types (Hash)
 import CSMT.Proof.Insertion qualified as CSMTProof
     ( buildInclusionProof
@@ -132,6 +133,7 @@ runCSMTBench tmpDir testData = do
 
         proofSizeRef <- newIORef (0 :: Int)
         compactSizeRef <- newIORef (0 :: Int)
+        plutusSizeRef <- newIORef (0 :: Int)
         proofCountRef <- newIORef (0 :: Int)
         proofTime <- timeAction
             $ forM_ hashed
@@ -150,11 +152,13 @@ runCSMTBench tmpDir testData = do
                     Just (_, proof) -> do
                         modifyIORef' proofSizeRef (+ BS.length (CSMTCBOR.renderProof proof))
                         modifyIORef' compactSizeRef (+ BS.length (renderCompactProof proof))
+                        modifyIORef' plutusSizeRef (+ BS.length (renderPlutusProof proof))
                         modifyIORef' proofCountRef (+ 1)
 
         totalProofBytes <- readIORef compactSizeRef
         proofCount <- readIORef proofCountRef
         oldProofBytes <- readIORef proofSizeRef
+        plutusProofBytes <- readIORef plutusSizeRef
 
         dbSize <- dirSize dbPath
 
@@ -165,14 +169,17 @@ runCSMTBench tmpDir testData = do
                 runTransactionUnguarded database
                     $ CSMT.delete CSMT.fromKVHashes StandaloneKVCol StandaloneCSMTCol k
 
-        -- Print old vs compact proof sizes
+        -- Print old vs compact vs Plutus Data proof sizes
         let avgOld = if proofCount > 0 then oldProofBytes `div` proofCount else 0
             avgCompact = if proofCount > 0 then totalProofBytes `div` proofCount else 0
+            avgPlutus = if proofCount > 0 then plutusProofBytes `div` proofCount else 0
         putStrLn
-            $ "    (CSMT old proof: "
+            $ "    (CSMT old: "
                 ++ show avgOld
                 ++ " bytes, compact: "
                 ++ show avgCompact
+                ++ " bytes, Plutus Data: "
+                ++ show avgPlutus
                 ++ " bytes)"
 
         pure
