@@ -115,6 +115,7 @@ library csmt
     CSMT.MTS
     CSMT.Populate
     CSMT.Proof.Completeness
+    CSMT.Proof.Exclusion
     CSMT.Proof.Insertion
 
   build-depends:
@@ -273,6 +274,7 @@ test-suite unit-tests
     CSMT.InterfaceSpec
     CSMT.NamespaceSpec
     CSMT.Proof.CompletenessSpec
+    CSMT.Proof.ExclusionSpec
     CSMT.Proof.InsertionSpec
     CSMT.TreePrefixSpec
     Data.Serialize.ExtraSpec
