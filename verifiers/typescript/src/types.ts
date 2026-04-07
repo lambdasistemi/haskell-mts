@@ -45,8 +45,6 @@ export interface InclusionProof {
     proofKey: Key;
     /** Hash of the value at the key */
     proofValue: Hash;
-    /** Expected root hash */
-    proofRootHash: Hash;
     /** Steps from leaf to root */
     proofSteps: ProofStep[];
     /** Jump path at the root node */

@@ -77,15 +77,15 @@ export function computeRootHash(proof: InclusionProof): Hash {
 }
 
 /**
- * Verify an inclusion proof is internally consistent
+ * Verify an inclusion proof against a trusted root hash.
  *
  * Recomputes the root hash from the proof data and checks it matches
- * the claimed root hash.
- *
- * To verify against a trusted root, compare proofRootHash with
- * your trusted value after this returns true.
+ * the supplied trusted root.
  */
-export function verifyInclusionProof(proof: InclusionProof): boolean {
+export function verifyInclusionProof(
+    trustedRoot: Hash,
+    proof: InclusionProof,
+): boolean {
     const computed = computeRootHash(proof);
-    return arraysEqual(computed, proof.proofRootHash);
+    return arraysEqual(computed, trustedRoot);
 }

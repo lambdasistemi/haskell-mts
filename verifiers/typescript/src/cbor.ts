@@ -2,7 +2,7 @@
  * CBOR parsing for inclusion and exclusion proofs
  *
  * Inclusion proof CDDL:
- * - inclusion_proof = [key, hash, hash, [* proof_step], key]
+ * - inclusion_proof = [key, hash, [* proof_step], key]
  * - proof_step = [int, indirect]
  * - indirect = [key, hash]
  * - key = [* direction]
@@ -87,16 +87,16 @@ function parseProofStep(value: unknown): ProofStep {
 /**
  * Parse an InclusionProof from CBOR bytes
  *
- * Format: [proofKey, proofValue, proofRootHash, proofSteps, proofRootJump]
+ * Format: [proofKey, proofValue, proofSteps, proofRootJump]
  */
 export function parseProof(bytes: Uint8Array): InclusionProof {
     const decoded = decode(bytes);
 
-    if (!Array.isArray(decoded) || decoded.length !== 5) {
-        throw new Error("InclusionProof must be an array of 5 elements");
+    if (!Array.isArray(decoded) || decoded.length !== 4) {
+        throw new Error("InclusionProof must be an array of 4 elements");
     }
 
-    const [rawKey, rawValue, rawRootHash, rawSteps, rawRootJump] = decoded;
+    const [rawKey, rawValue, rawSteps, rawRootJump] = decoded;
 
     if (!Array.isArray(rawSteps)) {
         throw new Error("proofSteps must be an array");
@@ -105,7 +105,6 @@ export function parseProof(bytes: Uint8Array): InclusionProof {
     return {
         proofKey: parseKey(rawKey),
         proofValue: parseHash(rawValue),
-        proofRootHash: parseHash(rawRootHash),
         proofSteps: rawSteps.map(parseProofStep),
         proofRootJump: parseKey(rawRootJump),
     };
@@ -116,11 +115,11 @@ export function parseProof(bytes: Uint8Array): InclusionProof {
  * (used internally by parseExclusionProof)
  */
 function parseInclusionProofFromDecoded(decoded: unknown): InclusionProof {
-    if (!Array.isArray(decoded) || decoded.length !== 5) {
-        throw new Error("InclusionProof must be an array of 5 elements");
+    if (!Array.isArray(decoded) || decoded.length !== 4) {
+        throw new Error("InclusionProof must be an array of 4 elements");
     }
 
-    const [rawKey, rawValue, rawRootHash, rawSteps, rawRootJump] = decoded;
+    const [rawKey, rawValue, rawSteps, rawRootJump] = decoded;
 
     if (!Array.isArray(rawSteps)) {
         throw new Error("proofSteps must be an array");
@@ -129,7 +128,6 @@ function parseInclusionProofFromDecoded(decoded: unknown): InclusionProof {
     return {
         proofKey: parseKey(rawKey),
         proofValue: parseHash(rawValue),
-        proofRootHash: parseHash(rawRootHash),
         proofSteps: rawSteps.map(parseProofStep),
         proofRootJump: parseKey(rawRootJump),
     };
