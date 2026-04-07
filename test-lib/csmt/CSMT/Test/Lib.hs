@@ -249,14 +249,13 @@ proofM
     -> Hashing a
     -> k
     -> Pure (Maybe (v, InclusionProof a))
-proofM codecs fromKV hashing k =
+proofM codecs fromKV _hashing k =
     runTransactionUnguarded (pureDatabase codecs)
         $ buildInclusionProof
             []
             fromKV
             StandaloneKVCol
             StandaloneCSMTCol
-            hashing
             k
 
 verifyM
@@ -269,9 +268,14 @@ verifyM
     -> Pure Bool
 verifyM codecs fromKV hashing k expectedV = do
     mp <- proofM codecs fromKV hashing k
-    pure $ case mp of
-        Nothing -> False
-        Just (v, p) -> v == expectedV && verifyInclusionProof hashing p
+    mr <-
+        runTransactionUnguarded (pureDatabase codecs)
+            $ root hashing StandaloneCSMTCol []
+    pure $ case (mp, mr) of
+        (Just (v, p), Just r) ->
+            v == expectedV
+                && verifyInclusionProof hashing r p
+        _ -> False
 
 verifyMWord64 :: Key -> Word64 -> Pure Bool
 verifyMWord64 = verifyM word64Codecs identityFromKV word64Hashing
@@ -445,13 +449,13 @@ verifyHashMAt prefix k v =
                 identityFromKV
                 StandaloneKVCol
                 StandaloneCSMTCol
-                hashHashing
                 k
-        pure $ case mProof of
-            Nothing -> False
-            Just (val, proof) ->
+        mr <- root hashHashing StandaloneCSMTCol prefix
+        pure $ case (mProof, mr) of
+            (Just (val, proof), Just r) ->
                 val == v
-                    && verifyInclusionProof hashHashing proof
+                    && verifyInclusionProof hashHashing r proof
+            _ -> False
 
 -- | Batch insert multiple key-value pairs into an empty tree.
 insertBatchM

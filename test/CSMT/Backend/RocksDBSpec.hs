@@ -119,14 +119,16 @@ pfM =
         fromKVHashes
         StandaloneKVCol
         StandaloneCSMTCol
-        hashHashing
 
 vpfM :: ByteString -> ByteString -> T Bool
 vpfM k expectedV = do
     mp <- pfM k
-    pure $ case mp of
-        Nothing -> False
-        Just (v, p) -> v == expectedV && verifyInclusionProof hashHashing p
+    mr <- root hashHashing StandaloneCSMTCol []
+    pure $ case (mp, mr) of
+        (Just (v, p), Just r) ->
+            v == expectedV
+                && verifyInclusionProof hashHashing r p
+        _ -> False
 
 testRandomFactsInASparseTree
     :: RunT

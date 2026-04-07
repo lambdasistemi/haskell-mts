@@ -145,7 +145,6 @@ runCSMTBench tmpDir testData = do
                             CSMT.fromKVHashes
                             StandaloneKVCol
                             StandaloneCSMTCol
-                            CSMT.hashHashing
                             k
                 case mp of
                     Nothing -> pure ()

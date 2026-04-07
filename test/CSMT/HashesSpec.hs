@@ -52,7 +52,6 @@ genProofs :: Gen (InclusionProof Hash)
 genProofs = do
     proofKey <- listOf $ elements [L, R]
     proofValue <- mkHash <$> genBS
-    proofRootHash <- mkHash <$> genBS
     proofRootJump <- listOf $ elements [L, R]
     proofSteps <- listOf $ do
         stepConsumed <-
@@ -72,7 +71,6 @@ genProofs = do
         $ InclusionProof
             { proofKey
             , proofValue
-            , proofRootHash
             , proofSteps
             , proofRootJump
             }
@@ -157,12 +155,13 @@ spec = describe "Hashes" $ do
                     === h
 
     describe "verifyInclusionProof" $ do
+        let dummyRoot = B.replicate 32 0
         it "rejects empty input"
-            $ verifyInclusionProof ""
+            $ verifyInclusionProof dummyRoot ""
             `shouldBe` False
 
         it "rejects garbage input"
-            $ verifyInclusionProof "not-a-proof"
+            $ verifyInclusionProof dummyRoot "not-a-proof"
             `shouldBe` False
 
         prop "rejects random bytes"
@@ -171,5 +170,5 @@ spec = describe "Hashes" $ do
                 B.length bs
                     < 100
                     ==> not
-                        (verifyInclusionProof bs)
+                        (verifyInclusionProof dummyRoot bs)
                         `shouldSatisfy` id

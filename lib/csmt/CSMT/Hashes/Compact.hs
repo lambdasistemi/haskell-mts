@@ -119,15 +119,14 @@ renderCompactProof InclusionProof{proofSteps, proofRootJump} =
             <> CBOR.encodeBytes (packKey proofRootJump)
             <> foldMap encodeCompactStep proofSteps
 
--- | Parse a compact proof. The caller supplies key, value, and root
--- hash to reconstruct the full InclusionProof.
+-- | Parse a compact proof. The caller supplies key and value
+-- to reconstruct the full InclusionProof.
 parseCompactProof
     :: Key
     -> Hash
-    -> Hash
     -> ByteString
     -> Maybe (InclusionProof Hash)
-parseCompactProof proofKey proofValue proofRootHash bs =
+parseCompactProof proofKey proofValue bs =
     case CBOR.deserialiseFromBytes decoder' (BL.fromStrict bs) of
         Left _ -> Nothing
         Right (_, proof) -> Just proof
@@ -144,7 +143,6 @@ parseCompactProof proofKey proofValue proofRootHash bs =
                     InclusionProof
                         { proofKey
                         , proofValue
-                        , proofRootHash
                         , proofSteps
                         , proofRootJump
                         }

@@ -32,8 +32,7 @@ import CSMT.Interface
 import CSMT.Proof.Insertion
     ( InclusionProof (..)
     , ProofStep (..)
-    , computeRootHash
-    , foldProof
+    , verifyInclusionProof
     )
 import Data.List (isPrefixOf)
 import Database.KV.Transaction
@@ -65,31 +64,28 @@ data ExclusionProof a
 -- -----------------------------------------------------------
 
 -- |
--- Verify an exclusion proof.
+-- Verify an exclusion proof against a trusted root hash.
 --
 -- For 'ExclusionEmpty': always returns 'True' (empty tree
 -- trivially excludes any key). The caller should check the
 -- root hash is empty separately if needed.
 --
--- For 'ExclusionWitness': computes the root hash via
--- 'foldProof', then checks that the target key diverges
--- from the witness key within a jump region (not at a
--- branch boundary).
+-- For 'ExclusionWitness': verifies the witness inclusion
+-- proof against the trusted root, then checks that the
+-- target key diverges from the witness key within a jump
+-- region (not at a branch boundary).
 verifyExclusionProof
-    :: Eq a => Hashing a -> ExclusionProof a -> Bool
-verifyExclusionProof _ ExclusionEmpty = True
+    :: Eq a => Hashing a -> a -> ExclusionProof a -> Bool
+verifyExclusionProof _ _ ExclusionEmpty = True
 verifyExclusionProof
     hashing
+    trustedRoot
     ExclusionWitness{epTargetKey, epWitnessProof} =
-        let (computedRoot, _) =
-                foldProof
+        let hashValid =
+                verifyInclusionProof
                     hashing
+                    trustedRoot
                     epWitnessProof
-                    (\() _ -> ())
-                    ()
-            hashValid =
-                computedRoot
-                    == proofRootHash epWitnessProof
             divergenceValid =
                 checkKeyDivergence
                     epTargetKey
@@ -112,9 +108,8 @@ checkKeyDivergence
     -> Key
     -- ^ Root jump
     -> [Int]
-    -- ^ stepConsumed values (root-to-leaf order in proofSteps,
-    -- but consumed from leaf end during fold — the ordering
-    -- here is as stored in proofSteps)
+    -- ^ stepConsumed values (leaf-to-root order, as stored
+    -- in proofSteps — reversed here for root-to-leaf scan)
     -> Bool
 checkKeyDivergence targetKey witnessKey rootJump consumedList =
     -- Find first position where keys differ
@@ -125,7 +120,7 @@ checkKeyDivergence targetKey witnessKey rootJump consumedList =
             let branchPositions =
                     scanBranchPositions
                         (length rootJump)
-                        consumedList
+                        (reverse consumedList)
             in  divPos `notElem` branchPositions
                     && divPos < length witnessKey
 
@@ -140,10 +135,8 @@ firstDivergence (a : as') (b : bs)
 
 -- | Compute the branch boundary positions from the proof
 -- structure. Each step's direction bit is at a branch.
---
--- proofSteps is root-to-leaf in list order (after the
--- reverse in buildInclusionProof). The branch positions
--- are at cumulative offsets from the root jump.
+-- Expects consumed values in root-to-leaf order. The branch
+-- positions are at cumulative offsets from the root jump.
 scanBranchPositions :: Int -> [Int] -> [Int]
 scanBranchPositions =
     go
@@ -170,11 +163,10 @@ buildExclusionProof
     -- ^ Prefix (use @[]@ for root)
     -> Selector d Key (Indirect a)
     -- ^ CSMT column
-    -> Hashing a
     -> Key
     -- ^ Target key (tree key, not external key)
     -> Transaction m cf d ops (Maybe (ExclusionProof a))
-buildExclusionProof pfx csmtSel hashing targetKey = do
+buildExclusionProof pfx csmtSel targetKey = do
     mroot <- query csmtSel pfx
     case mroot of
         Nothing -> pure $ Just ExclusionEmpty
@@ -186,7 +178,6 @@ buildExclusionProof pfx csmtSel hashing targetKey = do
                         buildWitnessFromNode
                             pfx
                             csmtSel
-                            hashing
                             rootIndirect
                             []
                     pure $ mkExclusion <$> mproof
@@ -197,7 +188,6 @@ buildExclusionProof pfx csmtSel hashing targetKey = do
                     walkTree
                         pfx
                         csmtSel
-                        hashing
                         targetKey
                         pos
                         remaining
@@ -215,19 +205,17 @@ walkTree
     :: (Monad m, GCompare d)
     => Key
     -> Selector d Key (Indirect a)
-    -> Hashing a
     -> Key
     -> Key
     -> Key
     -> [ProofStep a]
     -> Transaction m cf d ops (Maybe (ExclusionProof a))
-walkTree _ _ _ _ _ [] _ =
+walkTree _ _ _ _ [] _ =
     -- Target key fully consumed in the tree — key exists
     pure Nothing
 walkTree
     pfx
     csmtSel
-    hashing
     targetKey
     pos
     (d : rest)
@@ -257,7 +245,6 @@ walkTree
                             walkTree
                                 pfx
                                 csmtSel
-                                hashing
                                 targetKey
                                 newPos
                                 newRest
@@ -268,7 +255,6 @@ walkTree
                                 buildWitnessFromNode
                                     childPos
                                     csmtSel
-                                    hashing
                                     (Indirect childJump childVal)
                                     stepsAcc'
                             pure
@@ -292,13 +278,12 @@ buildWitnessFromNode
     => Key
     -- ^ Current position in the tree
     -> Selector d Key (Indirect a)
-    -> Hashing a
     -> Indirect a
     -- ^ The node at the current position
     -> [ProofStep a]
     -- ^ Steps accumulated so far (in reverse, leaf-first)
     -> Transaction m cf d ops (Maybe (InclusionProof a))
-buildWitnessFromNode pos csmtSel hashing =
+buildWitnessFromNode pos csmtSel =
     descend pos
   where
     descend currentPos (Indirect jmp val) acc = do
@@ -310,21 +295,15 @@ buildWitnessFromNode pos csmtSel hashing =
                 -- Leaf node: build the inclusion proof
                 let witnessKey = base
                     rj = deriveRootJump witnessKey acc
-                    steps = reverse acc
-                    -- Compute root hash using foldProof
-                    -- (same code path as verification)
-                    tmpProof =
-                        InclusionProof
-                            { proofKey = witnessKey
-                            , proofValue = val
-                            , proofRootHash = val
-                            , proofSteps = steps
-                            , proofRootJump = rj
-                            }
-                    rootH = computeRootHash hashing tmpProof
+                    steps = acc
                 in  pure
                         $ Just
-                            tmpProof{proofRootHash = rootH}
+                            InclusionProof
+                                { proofKey = witnessKey
+                                , proofValue = val
+                                , proofSteps = steps
+                                , proofRootJump = rj
+                                }
             (Just leftChild, Just rightChild) -> do
                 -- Branch: descend left, use right as sibling
                 let step =

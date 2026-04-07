@@ -219,12 +219,16 @@ core isPiped (RunTransaction run) l' = do
                 Just rootHash -> Binary "root" rootHash
                 Nothing -> ErrorMsg TreeEmpty
         Just (V proof) -> do
-            case readHash proof of
-                Just decoded ->
+            mr <- run $ root StandaloneCSMTCol
+            case (mr, readHash proof) of
+                (Just rootHash, Just decoded) ->
                     pure
                         $ ErrorMsg
-                        $ if verifyInclusionProof decoded then Valid else Invalid
-                Nothing -> pure $ ErrorMsg InvalidProofFormat
+                        $ if verifyInclusionProof rootHash decoded
+                            then Valid
+                            else Invalid
+                (Nothing, _) -> pure $ ErrorMsg TreeEmpty
+                (_, Nothing) -> pure $ ErrorMsg InvalidProofFormat
         Just (W k) -> do
             mv <- run $ query StandaloneKVCol k
             pure $ case mv of

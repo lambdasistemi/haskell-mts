@@ -117,7 +117,6 @@ proofBS k =
             fromKVHashes
             StandaloneKVCol
             StandaloneCSMTCol
-            hashHashing
             k
 
 -- | Get the root hash.

@@ -62,18 +62,16 @@ data ProofStep a = ProofStep
     deriving (Show, Eq)
 
 -- |
--- A self-contained inclusion proof for a key-value pair.
+-- An inclusion proof for a key-value pair.
 --
--- Contains all information needed to verify that a key-value pair
--- exists in a tree with a specific root hash. Can be serialized
--- and transmitted independently.
+-- Contains the path data needed to recompute the root hash from a
+-- key-value pair. Verification requires an externally-supplied
+-- trusted root hash.
 data InclusionProof a = InclusionProof
     { proofKey :: Key
     -- ^ The key being proven
     , proofValue :: a
     -- ^ The value at the key
-    , proofRootHash :: a
-    -- ^ The root hash this proof validates against
     , proofSteps :: [ProofStep a]
     -- ^ Steps from leaf to root
     , proofRootJump :: Key
@@ -99,22 +97,20 @@ buildInclusionProof
     -- ^ KV column to look up the value
     -> Selector d Key (Indirect a)
     -- ^ CSMT column for tree traversal
-    -> Hashing a
     -> k
     -> Transaction m cf d ops (Maybe (v, InclusionProof a))
-buildInclusionProof pfx FromKV{isoK, fromV, treePrefix} kvSel csmtSel hashing k =
+buildInclusionProof pfx FromKV{isoK, fromV, treePrefix} kvSel csmtSel k =
     runMaybeT $ do
         v <- MaybeT $ query kvSel k
         let key = treePrefix v <> view isoK k
             value = fromV v
-        rootIndirect@(Indirect rootJump _) <- MaybeT $ query csmtSel pfx
+        Indirect rootJump _ <- MaybeT $ query csmtSel pfx
         guard $ isPrefixOf rootJump key
         steps <- go rootJump $ drop (length rootJump) key
         let proofData =
                 InclusionProof
                     { proofKey = key
                     , proofValue = value
-                    , proofRootHash = rootHash hashing rootIndirect
                     , proofSteps = reverse steps
                     , proofRootJump = rootJump
                     }
@@ -136,17 +132,15 @@ buildInclusionProof pfx FromKV{isoK, fromV, treePrefix} kvSel csmtSel hashing k 
                 (drop (length jump) ks)
 
 -- |
--- Verify an inclusion proof is internally consistent.
+-- Verify an inclusion proof against a trusted root hash.
 --
 -- Recomputes the root hash from the proof data and checks it matches
--- the claimed root hash. This is a pure function that requires no
+-- the supplied trusted root. This is a pure function that requires no
 -- database access.
---
--- To verify against a trusted root, compare 'proofRootHash' with
--- your trusted value after this returns 'True'.
-verifyInclusionProof :: Eq a => Hashing a -> InclusionProof a -> Bool
-verifyInclusionProof hashing proof =
-    proofRootHash proof == computeRootHash hashing proof
+verifyInclusionProof
+    :: Eq a => Hashing a -> a -> InclusionProof a -> Bool
+verifyInclusionProof hashing trustedRoot proof =
+    trustedRoot == computeRootHash hashing proof
 
 -- |
 -- What the callback sees at each proof step during a fold.
