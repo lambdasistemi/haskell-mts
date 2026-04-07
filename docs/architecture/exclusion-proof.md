@@ -100,10 +100,10 @@ For `ExclusionWitness`:
     target key could exist on the other side of the branch).
 
 ```
-verifyExclusionProof(proof):
+verifyExclusionProof(trustedRootHash, proof):
     // Step 1: root hash
     computed = computeRootHash(proof.witnessProof)
-    if computed != proof.witnessProof.proofRootHash:
+    if computed != trustedRootHash:
         return false
 
     // Step 2: find divergence
@@ -170,7 +170,7 @@ exclusion.
 ## Security Considerations
 
 Same as inclusion proofs: the verifier must independently
-trust `proofRootHash`. The exclusion proof only demonstrates
+obtain a trusted root hash. The exclusion proof only demonstrates
 that the target key is absent from the tree authenticated by
 that root hash.
 

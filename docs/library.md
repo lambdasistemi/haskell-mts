@@ -88,11 +88,11 @@ deleting  fromKVHashes hashing StandaloneKVCol StandaloneCSMTCol "key"
 import CSMT.Proof.Insertion (buildInclusionProof, verifyInclusionProof)
 
 -- Generate (in transaction)
-result <- buildInclusionProof fromKVHashes StandaloneKVCol StandaloneCSMTCol hashing "key"
+result <- buildInclusionProof fromKVHashes StandaloneKVCol StandaloneCSMTCol "key"
 -- result :: Maybe (ByteString, InclusionProof Hash)
 
--- Verify (pure)
-verifyInclusionProof hashing proof  -- :: Bool
+-- Verify (pure, requires trusted root hash)
+verifyInclusionProof hashing trustedRootHash proof  -- :: Bool
 ```
 
 ### Completeness Proofs

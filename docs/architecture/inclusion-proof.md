@@ -10,8 +10,8 @@ portable representation.
 
 ## Overview
 
-An inclusion proof is self-contained: it includes all information needed to
-verify membership, including the key, value hash, and expected root hash.
+An inclusion proof contains the key, value hash, and Merkle path needed to
+recompute the root hash. The verifier supplies a trusted root hash separately.
 Verification is pure computation with no database access required.
 
 **Note on tree prefixes**: When `treePrefix` is configured, the tree key used
@@ -25,17 +25,16 @@ graph TD
     subgraph "Inclusion Proof"
         K[proof_key]
         V[proof_value]
-        R[proof_root_hash]
         S[proof_steps]
         J[proof_root_jump]
     end
 
     subgraph "Verification"
+        TR[trusted_root_hash] --> |compare| C
         V --> |start| C[Compute]
         S --> |siblings| C
         K --> |directions| C
         J --> |apply| C
-        C --> |compare| R
     end
 ```
 
@@ -107,7 +106,6 @@ The complete self-contained proof:
 |-------|------|-------------|
 | `proofKey` | `Key` | The key being proven |
 | `proofValue` | `Hash` | Hash of the value at the key |
-| `proofRootHash` | `Hash` | Expected root hash |
 | `proofSteps` | `[ProofStep]` | Steps from leaf to root |
 | `proofRootJump` | `Key` | Jump path at the root node |
 
@@ -115,7 +113,6 @@ The complete self-contained proof:
 data InclusionProof a = InclusionProof
     { proofKey :: Key
     , proofValue :: a
-    , proofRootHash :: a
     , proofSteps :: [ProofStep a]
     , proofRootJump :: Key
     }
@@ -123,12 +120,13 @@ data InclusionProof a = InclusionProof
 
 ## Verification Algorithm
 
-Verification recomputes the root hash and compares it to `proofRootHash`:
+Verification recomputes the root hash and compares it to a trusted root hash
+supplied by the caller:
 
 ```
-verifyInclusionProof(proof):
+verifyInclusionProof(trustedRootHash, proof):
     computed = computeRootHash(proof)
-    return computed == proof.proofRootHash
+    return computed == trustedRootHash
 ```
 
 The `computeRootHash` algorithm:
@@ -168,7 +166,6 @@ The proof would contain:
 InclusionProof {
     proofKey = [L, R, L],
     proofValue = 0xabc...,
-    proofRootHash = 0xdef...,
     proofSteps = [
         ProofStep { stepConsumed = 1, stepSibling = Indirect [] 0x111... },
         ProofStep { stepConsumed = 1, stepSibling = Indirect [] 0x222... }
@@ -182,11 +179,11 @@ Verification:
 2. Step 1: direction=`L`, combine `acc` with sibling `0x222...` → `acc' = hash(...)`
 3. Step 2: direction=`R`, combine `acc'` with sibling `0x111...` → `acc'' = hash(...)`
 4. Apply root jump: `rootHash(Indirect [] acc'')`
-5. Compare with `proofRootHash`
+5. Compare with trusted root hash
 
 ## Security Considerations
 
-The verifier must independently trust `proofRootHash`. Typical trust sources:
+The verifier must independently obtain a trusted root hash. Typical trust sources:
 
 - Blockchain consensus (root hash stored on-chain)
 - Trusted third party attestation
