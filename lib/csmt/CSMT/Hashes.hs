@@ -157,16 +157,20 @@ generateInclusionProof
     -> k
     -> Transaction m cf d ops (Maybe (v, ByteString))
 generateInclusionProof csmt kvSel csmtSel k = do
-    mp <- Proof.buildInclusionProof [] csmt kvSel csmtSel hashHashing k
+    mp <- Proof.buildInclusionProof [] csmt kvSel csmtSel k
     pure $ fmap (second renderProof) mp
 
--- | Verify an inclusion proof from a serialized ByteString.
--- Returns True if the proof is internally consistent.
-verifyInclusionProof :: ByteString -> Bool
-verifyInclusionProof proofBs =
-    case parseProof proofBs of
-        Nothing -> False
-        Just proof -> Proof.verifyInclusionProof hashHashing proof
+-- | Verify an inclusion proof from a serialized ByteString
+-- against a trusted root hash.
+verifyInclusionProof :: ByteString -> ByteString -> Bool
+verifyInclusionProof trustedRootBs proofBs =
+    case (parseHash trustedRootBs, parseProof proofBs) of
+        (Just trustedRoot, Just proof) ->
+            Proof.verifyInclusionProof
+                hashHashing
+                trustedRoot
+                proof
+        _ -> False
 
 -- | Isomorphism between ByteString and Hash.
 isoHash :: Iso' ByteString Hash

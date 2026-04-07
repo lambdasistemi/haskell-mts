@@ -87,14 +87,12 @@ encodeProof
     InclusionProof
         { proofKey
         , proofValue
-        , proofRootHash
         , proofSteps
         , proofRootJump
         } =
-        CBOR.encodeListLen 5
+        CBOR.encodeListLen 4
             <> encodeKey proofKey
             <> CBOR.encodeBytes (renderHash proofValue)
-            <> CBOR.encodeBytes (renderHash proofRootHash)
             <> ( CBOR.encodeListLen (fromIntegral $ length proofSteps)
                     <> foldMap encodeProofStep proofSteps
                )
@@ -106,7 +104,6 @@ decodeProof = do
     _ <- CBOR.decodeListLen
     proofKey <- decodeKey
     proofValue <- Hash <$> CBOR.decodeBytes
-    proofRootHash <- Hash <$> CBOR.decodeBytes
     stepsLen <- CBOR.decodeListLen
     proofSteps <- replicateM stepsLen decodeProofStep
     proofRootJump <- decodeKey
@@ -114,7 +111,6 @@ decodeProof = do
         InclusionProof
             { proofKey
             , proofValue
-            , proofRootHash
             , proofSteps
             , proofRootJump
             }

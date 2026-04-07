@@ -494,7 +494,6 @@ csmtMerkleTreeStoreT prefix fromKV hashing =
                         fromKV
                         StandaloneKVCol
                         StandaloneCSMTCol
-                        hashing
                         k
                 case mp of
                     Nothing -> pure Nothing
@@ -504,10 +503,17 @@ csmtMerkleTreeStoreT prefix fromKV hashing =
                         pure $ case mr of
                             Nothing -> Nothing
                             Just r -> Just (r, proof)
-            , mtsVerifyProof = \v proof ->
+            , mtsVerifyProof = \v proof -> do
+                mr <- root hashing StandaloneCSMTCol prefix
                 pure
-                    $ proofValue proof == fromV fromKV v
-                        && verifyInclusionProof hashing proof
+                    $ case mr of
+                        Nothing -> False
+                        Just r ->
+                            proofValue proof == fromV fromKV v
+                                && verifyInclusionProof
+                                    hashing
+                                    r
+                                    proof
             , mtsFoldProof =
                 computeRootHash hashing
             , mtsBatchInsert = \kvs -> do

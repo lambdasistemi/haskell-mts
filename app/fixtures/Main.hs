@@ -82,7 +82,6 @@ getInclusionProof k =
             fromKVHashes
             StandaloneKVCol
             StandaloneCSMTCol
-            hashHashing
             k
 
 getExclusionProof
@@ -93,7 +92,6 @@ getExclusionProof k =
         $ buildExclusionProof
             []
             StandaloneCSMTCol
-            hashHashing
             (byteStringToKey k)
 
 getRootHash :: PureM (Maybe Hash)

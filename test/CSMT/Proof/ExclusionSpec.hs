@@ -11,6 +11,7 @@ import CSMT.Backend.Pure
 import CSMT.Backend.Standalone
     ( Standalone (StandaloneCSMTCol)
     )
+import CSMT.Interface (root)
 import CSMT.Proof.Exclusion
     ( ExclusionProof (..)
     , buildExclusionProof
@@ -44,11 +45,11 @@ import Test.QuickCheck
     , (===)
     )
 
--- | Generate an exclusion proof in the pure backend.
+-- | Generate an exclusion proof and root hash in the pure backend.
 exclusionProofFor
     :: [(Key, Word64)]
     -> Key
-    -> Maybe (ExclusionProof Word64)
+    -> (Maybe (ExclusionProof Word64), Maybe Word64)
 exclusionProofFor inserts targetKey =
     fst
         $ runPure emptyInMemoryDB
@@ -56,11 +57,14 @@ exclusionProofFor inserts targetKey =
             mapM_ (uncurry insertMWord64) inserts
             runTransactionUnguarded
                 (pureDatabase word64Codecs)
-                $ buildExclusionProof
-                    []
-                    StandaloneCSMTCol
-                    word64Hashing
-                    targetKey
+                $ do
+                    ep <-
+                        buildExclusionProof
+                            []
+                            StandaloneCSMTCol
+                            targetKey
+                    mr <- root word64Hashing StandaloneCSMTCol []
+                    pure (ep, mr)
 
 isWitness :: Maybe (ExclusionProof a) -> Bool
 isWitness (Just ExclusionWitness{}) = True
@@ -90,29 +94,32 @@ spec :: Spec
 spec = describe "CSMT.Proof.Exclusion" $ do
     describe "empty tree" $ do
         it "generates ExclusionEmpty"
-            $ exclusionProofFor [] [L, R, L]
+            $ fst (exclusionProofFor [] [L, R, L])
             `shouldBe` Just ExclusionEmpty
 
         it "ExclusionEmpty verifies"
             $ verifyExclusionProof
                 word64Hashing
+                0
                 ExclusionEmpty
             `shouldBe` True
 
     describe "single-element tree" $ do
         it "excludes absent key"
-            $ let result = exclusionProofFor [([L], 1)] [R]
-              in  case result of
-                    Just proof ->
+            $ let (result, mr) =
+                    exclusionProofFor [([L], 1)] [R]
+              in  case (result, mr) of
+                    (Just proof, Just r) ->
                         verifyExclusionProof
                             word64Hashing
+                            r
                             proof
                             `shouldBe` True
-                    Nothing ->
+                    _ ->
                         result `shouldSatisfy` isWitness
 
         it "returns Nothing for present key"
-            $ exclusionProofFor [([L], 1)] [L]
+            $ fst (exclusionProofFor [([L], 1)] [L])
             `shouldBe` Nothing
 
     describe "multi-element tree" $ do
@@ -122,15 +129,16 @@ spec = describe "CSMT.Proof.Exclusion" $ do
                     , ([L, L, R], 2)
                     , ([R, R, R], 3)
                     ]
-                  result =
+                  (result, mr) =
                     exclusionProofFor inserts [L, R, L]
-              in  case result of
-                    Just proof ->
+              in  case (result, mr) of
+                    (Just proof, Just r) ->
                         verifyExclusionProof
                             word64Hashing
+                            r
                             proof
                             `shouldBe` True
-                    Nothing ->
+                    _ ->
                         result `shouldSatisfy` isWitness
 
         it "excludes deeply absent key"
@@ -140,15 +148,16 @@ spec = describe "CSMT.Proof.Exclusion" $ do
                     , ([L, L, R, L], 3)
                     , ([R, R, R, R], 4)
                     ]
-                  result =
+                  (result, mr) =
                     exclusionProofFor inserts [L, L, R, R]
-              in  case result of
-                    Just proof ->
+              in  case (result, mr) of
+                    (Just proof, Just r) ->
                         verifyExclusionProof
                             word64Hashing
+                            r
                             proof
                             `shouldBe` True
-                    Nothing ->
+                    _ ->
                         result `shouldSatisfy` isWitness
 
         it "returns Nothing for present key"
@@ -157,7 +166,7 @@ spec = describe "CSMT.Proof.Exclusion" $ do
                     , ([L, R], 2)
                     , ([R, L], 3)
                     ]
-              in  exclusionProofFor inserts [L, R]
+              in  fst (exclusionProofFor inserts [L, R])
                     `shouldBe` Nothing
 
     describe "property tests" $ do
@@ -174,7 +183,7 @@ propAbsentKeyProves :: Property
 propAbsentKeyProves =
     forAll genTreeAndAbsentKey $ \(keys, absent) ->
         forAll (genInserts keys) $ \inserts ->
-            let result =
+            let (result, mr) =
                     exclusionProofFor inserts absent
             in  counterexample
                     ( "keys="
@@ -185,23 +194,25 @@ propAbsentKeyProves =
                         ++ show
                             (isWitness result)
                     )
-                    $ case result of
-                        Just (ExclusionWitness _ wp) ->
+                    $ case (result, mr) of
+                        (Just (ExclusionWitness _ wp), Just r) ->
                             counterexample
                                 ( "inclusionValid="
                                     ++ show
                                         ( verifyInclusionProof
                                             word64Hashing
+                                            r
                                             wp
                                         )
                                 )
                                 $ verifyExclusionProof
                                     word64Hashing
+                                    r
                                     (ExclusionWitness absent wp)
                                     === True
-                        Just ExclusionEmpty ->
+                        (Just ExclusionEmpty, _) ->
                             property True
-                        Nothing ->
+                        _ ->
                             property False
 
 propPresentKeyFails :: Property
@@ -209,7 +220,7 @@ propPresentKeyFails =
     forAll genTreeAndAbsentKey $ \(keys, _) ->
         forAll (genInserts keys) $ \inserts ->
             forAll (elements keys) $ \present ->
-                exclusionProofFor inserts present
+                fst (exclusionProofFor inserts present)
                     === Nothing
 
 propTamperedTargetFails :: Property
@@ -217,14 +228,16 @@ propTamperedTargetFails =
     forAll genTreeAndAbsentKey $ \(keys, absent) ->
         forAll (genInserts keys) $ \inserts ->
             forAll (elements keys) $ \present ->
-                let result =
+                let (result, mr) =
                         exclusionProofFor inserts absent
-                in  case result of
-                        Just
-                            ( ExclusionWitness
-                                    { epWitnessProof = wp
-                                    }
-                                ) ->
+                in  case (result, mr) of
+                        ( Just
+                                ( ExclusionWitness
+                                        { epWitnessProof = wp
+                                        }
+                                    )
+                            , Just r
+                            ) ->
                                 -- Swap target with a key that EXISTS
                                 let tampered =
                                         ExclusionWitness
@@ -237,6 +250,7 @@ propTamperedTargetFails =
                                         )
                                         $ verifyExclusionProof
                                             word64Hashing
+                                            r
                                             tampered
                                             === False
                         _ -> property True

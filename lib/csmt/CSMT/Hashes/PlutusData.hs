@@ -232,15 +232,14 @@ parseStep bs = do
         , bs6
         )
 
--- | Parse a Plutus Data CSMT proof. The caller supplies key,
--- value, and root hash to reconstruct the full proof.
+-- | Parse a Plutus Data CSMT proof. The caller supplies key
+-- and value to reconstruct the full proof.
 parsePlutusProof
     :: Key
     -> Hash
-    -> Hash
     -> ByteString
     -> Maybe (InclusionProof Hash)
-parsePlutusProof proofKey proofValue proofRootHash bs = do
+parsePlutusProof proofKey proofValue bs = do
     ((), bs1) <- parseConstr0 bs
     ((), bs2) <- parseListBegin bs1
     (rootJumpBs, bs3) <- parseDefBytes bs2
@@ -253,7 +252,6 @@ parsePlutusProof proofKey proofValue proofRootHash bs = do
                 InclusionProof
                     { proofKey
                     , proofValue
-                    , proofRootHash
                     , proofSteps
                     , proofRootJump
                     }

@@ -90,7 +90,6 @@ hasProof k = do
                 fromKVHashes
                 StandaloneKVCol
                 StandaloneCSMTCol
-                hashHashing
                 k
     pure $ case mp of
         Nothing -> False

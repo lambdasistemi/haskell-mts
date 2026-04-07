@@ -25,7 +25,6 @@ spec = describe "CSMT.Hashes.PlutusData" $ do
                 parsePlutusProof
                     (proofKey proof)
                     (proofValue proof)
-                    (proofRootHash proof)
                     plutus
         case parsed of
             Nothing -> expectationFailure "parse failed"
@@ -42,7 +41,6 @@ spec = describe "CSMT.Hashes.PlutusData" $ do
                 parsePlutusProof
                     (proofKey proof)
                     (proofValue proof)
-                    (proofRootHash proof)
                     plutus
         case parsed of
             Nothing -> expectationFailure "parse failed"
@@ -94,7 +92,6 @@ singleElementProof =
     in  InclusionProof
             { proofKey = key
             , proofValue = val
-            , proofRootHash = val
             , proofSteps = []
             , proofRootJump = key
             }
@@ -125,7 +122,6 @@ multiStepProof =
     in  InclusionProof
             { proofKey = key
             , proofValue = val
-            , proofRootHash = mkHash "root"
             , proofSteps = [step1, step2]
             , proofRootJump = [L, R]
             }

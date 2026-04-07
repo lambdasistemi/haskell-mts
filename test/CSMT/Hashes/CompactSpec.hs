@@ -85,7 +85,6 @@ spec = describe "CSMT.Hashes.Compact" $ do
                     parseCompactProof
                         (proofKey proof)
                         (proofValue proof)
-                        (proofRootHash proof)
                         compact
             case parsed of
                 Nothing -> expectationFailure "parse failed"
@@ -100,7 +99,6 @@ spec = describe "CSMT.Hashes.Compact" $ do
                     parseCompactProof
                         (proofKey proof)
                         (proofValue proof)
-                        (proofRootHash proof)
                         compact
             case parsed of
                 Nothing -> expectationFailure "parse failed"
@@ -120,7 +118,6 @@ singleElementProof =
     in  InclusionProof
             { proofKey = key
             , proofValue = val
-            , proofRootHash = val -- will be recomputed by verifier
             , proofSteps = []
             , proofRootJump = key
             }
@@ -151,7 +148,6 @@ multiStepProof =
     in  InclusionProof
             { proofKey = key
             , proofValue = val
-            , proofRootHash = mkHash "root" -- synthetic
             , proofSteps = [step1, step2]
             , proofRootJump = [L, R]
             }
