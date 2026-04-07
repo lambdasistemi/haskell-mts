@@ -10,13 +10,8 @@
  * // Parse CBOR-encoded proof
  * const proof = parseProof(proofBytes);
  *
- * // Verify the proof is internally consistent
- * const isValid = verifyInclusionProof(proof);
- *
- * // Also verify against trusted root
- * if (isValid && arraysEqual(proof.proofRootHash, trustedRootHash)) {
- *   console.log('Proof is valid!');
- * }
+ * // Verify the proof against a trusted root
+ * const isValid = verifyInclusionProof(trustedRootHash, proof);
  * ```
  */
 
@@ -30,6 +25,8 @@ export type {
     ProofStep,
 } from "./types";
 export { L, R } from "./types";
+
+import type { Hash } from "./types";
 
 // CBOR parsing
 import { parseExclusionProof, parseProof } from "./cbor";
@@ -57,11 +54,15 @@ export {
 /**
  * Parse and verify a proof in one call
  *
+ * @param trustedRoot - The trusted root hash to verify against
  * @param bytes - CBOR-encoded inclusion proof
- * @returns true if the proof is internally consistent, false otherwise
+ * @returns true if the proof verifies against the trusted root
  * @throws Error if the bytes cannot be parsed as a valid proof
  */
-export function verifyProofBytes(bytes: Uint8Array): boolean {
+export function verifyProofBytes(
+    trustedRoot: Hash,
+    bytes: Uint8Array,
+): boolean {
     const proof = parseProof(bytes);
-    return verifyInclusionProof(proof);
+    return verifyInclusionProof(trustedRoot, proof);
 }

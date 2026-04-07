@@ -228,7 +228,6 @@ describe("parseProof", () => {
 
         expect(proof.proofKey.length).toBeGreaterThan(0);
         expect(proof.proofValue.length).toBe(32);
-        expect(proof.proofRootHash.length).toBe(32);
         expect(proof.proofRootJump).toBeDefined();
     });
 
@@ -239,27 +238,24 @@ describe("parseProof", () => {
 
 describe("verifyInclusionProof", () => {
     it("verifies valid proofs from fixtures", () => {
+        const trustedRoot = hexToBytes(fixtures.rootHash);
         for (const fixture of fixtures.proofs) {
             const bytes = hexToBytes(fixture.cbor);
             const proof = parseProof(bytes);
-            expect(verifyInclusionProof(proof)).toBe(true);
+            expect(verifyInclusionProof(trustedRoot, proof)).toBe(true);
         }
     });
 
-    it("rejects proof with tampered root hash", () => {
+    it("rejects proof with wrong trusted root", () => {
         const fixture = fixtures.proofs[0];
         if (!fixture) {
             throw new Error("No fixture found");
         }
         const bytes = hexToBytes(fixture.cbor);
         const proof = parseProof(bytes);
+        const wrongRoot = new Uint8Array(32).fill(0);
 
-        const tampered: InclusionProof = {
-            ...proof,
-            proofRootHash: new Uint8Array(32).fill(0),
-        };
-
-        expect(verifyInclusionProof(tampered)).toBe(false);
+        expect(verifyInclusionProof(wrongRoot, proof)).toBe(false);
     });
 
     it("rejects proof with tampered value", () => {
@@ -269,13 +265,14 @@ describe("verifyInclusionProof", () => {
         }
         const bytes = hexToBytes(fixture.cbor);
         const proof = parseProof(bytes);
+        const trustedRoot = hexToBytes(fixtures.rootHash);
 
         const tampered: InclusionProof = {
             ...proof,
             proofValue: new Uint8Array(32).fill(0),
         };
 
-        expect(verifyInclusionProof(tampered)).toBe(false);
+        expect(verifyInclusionProof(trustedRoot, tampered)).toBe(false);
     });
 
     it("rejects proof with tampered key (after rootJump)", () => {
@@ -285,8 +282,8 @@ describe("verifyInclusionProof", () => {
         }
         const bytes = hexToBytes(fixture.cbor);
         const proof = parseProof(bytes);
+        const trustedRoot = hexToBytes(fixtures.rootHash);
 
-        // Flip a bit after rootJump (which is used in verification)
         const tamperedKey = [...proof.proofKey];
         const idx = proof.proofRootJump.length;
         if (tamperedKey[idx] !== undefined) {
@@ -298,7 +295,7 @@ describe("verifyInclusionProof", () => {
             proofKey: tamperedKey,
         };
 
-        expect(verifyInclusionProof(tampered)).toBe(false);
+        expect(verifyInclusionProof(trustedRoot, tampered)).toBe(false);
     });
 
     it("rejects proof with tampered sibling", () => {
@@ -308,9 +305,10 @@ describe("verifyInclusionProof", () => {
         }
         const bytes = hexToBytes(fixture.cbor);
         const proof = parseProof(bytes);
+        const trustedRoot = hexToBytes(fixtures.rootHash);
 
         if (proof.proofSteps.length === 0) {
-            return; // Skip if no steps
+            return;
         }
 
         const tamperedSteps = proof.proofSteps.map((step, i) =>
@@ -330,7 +328,7 @@ describe("verifyInclusionProof", () => {
             proofSteps: tamperedSteps,
         };
 
-        expect(verifyInclusionProof(tampered)).toBe(false);
+        expect(verifyInclusionProof(trustedRoot, tampered)).toBe(false);
     });
 
     it("rejects proof with tampered rootJump", () => {
@@ -340,13 +338,14 @@ describe("verifyInclusionProof", () => {
         }
         const bytes = hexToBytes(fixture.cbor);
         const proof = parseProof(bytes);
+        const trustedRoot = hexToBytes(fixtures.rootHash);
 
         const tampered: InclusionProof = {
             ...proof,
-            proofRootJump: [R, R, R], // Different jump
+            proofRootJump: [R, R, R],
         };
 
-        expect(verifyInclusionProof(tampered)).toBe(false);
+        expect(verifyInclusionProof(trustedRoot, tampered)).toBe(false);
     });
 });
 
@@ -357,21 +356,24 @@ describe("verifyProofBytes", () => {
             throw new Error("No fixture found");
         }
         const bytes = hexToBytes(fixture.cbor);
-        expect(verifyProofBytes(bytes)).toBe(true);
+        const trustedRoot = hexToBytes(fixtures.rootHash);
+        expect(verifyProofBytes(trustedRoot, bytes)).toBe(true);
     });
 
     it("throws on invalid bytes", () => {
-        expect(() => verifyProofBytes(new Uint8Array([0xff]))).toThrow();
+        const trustedRoot = new Uint8Array(32);
+        expect(() => verifyProofBytes(trustedRoot, new Uint8Array([0xff]))).toThrow();
     });
 });
 
 describe("computeRootHash", () => {
     it("computes expected root hash for fixtures", () => {
+        const trustedRoot = hexToBytes(fixtures.rootHash);
         for (const fixture of fixtures.proofs) {
             const bytes = hexToBytes(fixture.cbor);
             const proof = parseProof(bytes);
             const computed = computeRootHash(proof);
-            expect(arraysEqual(computed, proof.proofRootHash)).toBe(true);
+            expect(arraysEqual(computed, trustedRoot)).toBe(true);
         }
     });
 });
@@ -392,15 +394,17 @@ describe("parseExclusionProof", () => {
 
 describe("verifyExclusionProof", () => {
     it("verifies valid exclusion proofs from fixtures", () => {
+        const trustedRoot = hexToBytes(fixtures.rootHash);
         for (const fixture of (fixtures as any).exclusionProofs) {
             const bytes = hexToBytes(fixture.cbor);
             const proof = parseExclusionProof(bytes);
-            expect(verifyExclusionProof(proof)).toBe(true);
+            expect(verifyExclusionProof(trustedRoot, proof)).toBe(true);
         }
     });
 
     it("verifies empty exclusion proof", () => {
-        expect(verifyExclusionProof({ tag: "empty" })).toBe(true);
+        const trustedRoot = new Uint8Array(32);
+        expect(verifyExclusionProof(trustedRoot, { tag: "empty" })).toBe(true);
     });
 
     it("rejects exclusion proof with tampered target key", () => {
@@ -408,33 +412,25 @@ describe("verifyExclusionProof", () => {
         if (!fixture) throw new Error("No exclusion fixture");
         const bytes = hexToBytes(fixture.cbor);
         const proof = parseExclusionProof(bytes);
+        const trustedRoot = hexToBytes(fixtures.rootHash);
 
         if (proof.tag !== "witness") throw new Error("Expected witness");
 
-        // Replace target key with the witness key (which exists in the tree)
         const tampered = {
             ...proof,
             targetKey: proof.witnessProof.proofKey,
         };
-        expect(verifyExclusionProof(tampered)).toBe(false);
+        expect(verifyExclusionProof(trustedRoot, tampered)).toBe(false);
     });
 
-    it("rejects exclusion proof with tampered witness hash", () => {
+    it("rejects exclusion proof with wrong trusted root", () => {
         const fixture = (fixtures as any).exclusionProofs[0];
         if (!fixture) throw new Error("No exclusion fixture");
         const bytes = hexToBytes(fixture.cbor);
         const proof = parseExclusionProof(bytes);
+        const wrongRoot = new Uint8Array(32).fill(0);
 
-        if (proof.tag !== "witness") throw new Error("Expected witness");
-
-        const tampered = {
-            ...proof,
-            witnessProof: {
-                ...proof.witnessProof,
-                proofRootHash: new Uint8Array(32).fill(0),
-            },
-        };
-        expect(verifyExclusionProof(tampered)).toBe(false);
+        expect(verifyExclusionProof(wrongRoot, proof)).toBe(false);
     });
 });
 
