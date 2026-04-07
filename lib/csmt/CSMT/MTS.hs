@@ -1145,6 +1145,12 @@ mkKVOnlyOps
                         insert journalCol k $ case tag of
                             JInsert -> encodeJournalInsert encoded
                             _ -> encodeJournalUpdate encoded
+                        -- New journal entry → journalSize +1
+                        when (isNothing mj)
+                            $ adjustCounter
+                                metricsCol
+                                journalSizeKey
+                                1
                     , opsDelete = \k -> do
                         mv <- query kvCol k
                         case mv of
@@ -1153,8 +1159,23 @@ mkKVOnlyOps
                                 delete kvCol k
                                 mj <- query journalCol k
                                 case fmap (fst . parseJournalEntry) mj of
-                                    Just JInsert ->
+                                    Just JInsert -> do
                                         delete journalCol k
+                                        adjustCounter
+                                            metricsCol
+                                            journalSizeKey
+                                            (-1)
+                                    Nothing -> do
+                                        insert
+                                            journalCol
+                                            k
+                                            ( encodeJournalDelete
+                                                (view journalIso v)
+                                            )
+                                        adjustCounter
+                                            metricsCol
+                                            journalSizeKey
+                                            1
                                     _ ->
                                         insert
                                             journalCol
@@ -1180,6 +1201,11 @@ mkKVOnlyOps
                         csmtCol
                     readCounter metricsCol journalSizeKey
                 replayLoop journalSize
+                -- Reset journal counter (entries were
+                -- deleted by patchParallel without
+                -- decrementing)
+                runTx
+                    $ insert metricsCol journalSizeKey 0
                 -- Merge + delete sentinel atomically
                 runTx $ do
                     mergeSubtreeRoots

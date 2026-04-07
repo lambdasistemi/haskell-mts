@@ -884,6 +884,54 @@ spec = do
                         Nothing -> pure ()
                         Just _ ->
                             fail "toKVOnly should fail with non-empty journal"
+        it "toFull replay trace monotonic to zero"
+            $ property
+            $ forAll genBSPairs
+            $ \kvs -> do
+                ref <- newIORef emptyInMemoryDB
+                eventsRef <- newIORef ([] :: [ReplayEvent])
+                let run :: forall b. Pure b -> IO b
+                    run action = do
+                        s <- readIORef ref
+                        let (a, s') = runPure s action
+                        writeIORef ref s'
+                        pure a
+                    db = pureDatabase csmtCodecs
+                    rtx = run . runTransactionUnguarded db
+                    traceEvt evt =
+                        modifyIORef' eventsRef (evt :)
+                let kvOps =
+                        mkKVOnlyOps
+                            []
+                            2
+                            100
+                            StandaloneKVCol
+                            StandaloneCSMTCol
+                            StandaloneJournalCol
+                            StandaloneMetricsCol
+                            (iso id id)
+                            fromKVHashes
+                            hashHashing
+                            rtx
+                            rtx
+                            traceEvt
+                mapM_
+                    ( \(k, v) ->
+                        rtx (opsInsert (kvCommon kvOps) k v)
+                    )
+                    kvs
+                _ <- toFull kvOps
+                events <- reverse <$> readIORef eventsRef
+                let starts =
+                        [ rsEntriesRemaining
+                        | ReplayStart{rsEntriesRemaining} <-
+                            events
+                        ]
+                    monotonic xs =
+                        and $ zipWith (>=) xs (drop 1 xs)
+                not (null starts) `shouldBe` True
+                monotonic starts `shouldBe` True
+                last starts `shouldBe` 0
         -- ======================================================
         -- QC1: Genesis invariant — journal keys = KV keys,
         -- all entries are JInsert
