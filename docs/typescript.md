@@ -23,19 +23,14 @@ yarn add @paolino/csmt-verify
 ## Quick Start
 
 ```typescript
-import { parseProof, verifyInclusionProof, arraysEqual } from '@paolino/csmt-verify';
+import { parseProof, verifyInclusionProof } from '@paolino/csmt-verify';
 
 // Parse CBOR-encoded proof bytes
 const proof = parseProof(proofBytes);
 
-// Verify the proof is internally consistent
-if (verifyInclusionProof(proof)) {
-    console.log('Proof structure is valid');
-
-    // Compare against your trusted root hash
-    if (arraysEqual(proof.proofRootHash, trustedRootHash)) {
-        console.log('Proof verified against trusted root!');
-    }
+// Verify the proof against a trusted root hash
+if (verifyInclusionProof(trustedRootHash, proof)) {
+    console.log('Proof verified against trusted root!');
 }
 ```
 
@@ -61,7 +56,6 @@ interface ProofStep {
 interface InclusionProof {
     proofKey: Key;
     proofValue: Hash;
-    proofRootHash: Hash;
     proofSteps: ProofStep[];
     proofRootJump: Key;
 }
@@ -81,20 +75,16 @@ console.log('Steps:', proof.proofSteps.length);
 
 Throws an error if the bytes are not valid CBOR or don't match the expected format.
 
-#### `verifyInclusionProof(proof: InclusionProof): boolean`
+#### `verifyInclusionProof(trustedRoot: Hash, proof: InclusionProof): boolean`
 
-Verify that a proof is internally consistent by recomputing the root hash
-and comparing it to the claimed `proofRootHash`.
+Verify a proof by recomputing the root hash and comparing it to the
+supplied trusted root hash.
 
 ```typescript
-const isValid = verifyInclusionProof(proof);
+const isValid = verifyInclusionProof(trustedRoot, proof);
 ```
 
-Returns `true` if the computed root matches the claimed root.
-
-!!! warning "Trust Model"
-    This only verifies internal consistency. You must separately verify
-    that `proofRootHash` matches your trusted root hash.
+Returns `true` if the computed root matches the trusted root.
 
 #### `computeRootHash(proof: InclusionProof): Hash`
 
@@ -105,22 +95,12 @@ the computed hash for comparison with multiple trusted roots.
 const computed = computeRootHash(proof);
 ```
 
-#### `verifyProofBytes(bytes: Uint8Array): boolean`
+#### `verifyProofBytes(trustedRoot: Hash, bytes: Uint8Array): boolean`
 
-Convenience function that parses and verifies in one call.
-
-```typescript
-const isValid = verifyProofBytes(cborBytes);
-```
-
-#### `arraysEqual(a: Uint8Array, b: Uint8Array): boolean`
-
-Compare two byte arrays for equality. Useful for comparing hashes.
+Convenience function that parses and verifies against a trusted root in one call.
 
 ```typescript
-if (arraysEqual(proof.proofRootHash, trustedRoot)) {
-    // Root matches
-}
+const isValid = verifyProofBytes(trustedRoot, cborBytes);
 ```
 
 ### Advanced Functions
@@ -142,21 +122,14 @@ import {
 ### Verify Against Trusted Root
 
 ```typescript
-import { parseProof, verifyInclusionProof, arraysEqual } from '@paolino/csmt-verify';
+import { parseProof, verifyInclusionProof } from '@paolino/csmt-verify';
 
 async function verifyMembership(
     proofBytes: Uint8Array,
     trustedRoot: Uint8Array
 ): Promise<boolean> {
     const proof = parseProof(proofBytes);
-
-    // Check internal consistency
-    if (!verifyInclusionProof(proof)) {
-        return false;
-    }
-
-    // Check against trusted root
-    return arraysEqual(proof.proofRootHash, trustedRoot);
+    return verifyInclusionProof(trustedRoot, proof);
 }
 ```
 
@@ -173,7 +146,7 @@ const response = await fetch('/api/proof/mykey');
 const proofBytes = new Uint8Array(await response.arrayBuffer());
 
 const proof = parseProof(proofBytes);
-const isValid = verifyInclusionProof(proof);
+const isValid = verifyInclusionProof(trustedRoot, proof);
 
 document.getElementById('result').textContent =
     isValid ? 'Valid' : 'Invalid';
@@ -192,13 +165,11 @@ const keyHex = proof.proofKey
     .map(d => d === L ? '0' : '1')
     .join('');
 
-// Get value and root hashes as hex
+// Get value hash as hex
 const valueHex = Buffer.from(proof.proofValue).toString('hex');
-const rootHex = Buffer.from(proof.proofRootHash).toString('hex');
 
 console.log(`Key: ${keyHex}`);
 console.log(`Value hash: ${valueHex}`);
-console.log(`Root hash: ${rootHex}`);
 console.log(`Proof steps: ${proof.proofSteps.length}`);
 ```
 
@@ -219,12 +190,11 @@ sequenceDiagram
     Server->>Client: CBOR proof bytes
 
     Client->>Client: parseProof(bytes)
-    Client->>Client: verifyInclusionProof(proof)
 
     Client->>Chain: Get trusted root
     Chain->>Client: root hash
 
-    Client->>Client: arraysEqual(proof.rootHash, trusted)
+    Client->>Client: verifyInclusionProof(trusted, proof)
 ```
 
 ### Generating Proofs (Server)
@@ -247,8 +217,8 @@ const response = await fetch(`/proof/${key}`);
 const proofBytes = new Uint8Array(await response.arrayBuffer());
 
 const proof = parseProof(proofBytes);
-if (verifyInclusionProof(proof)) {
-    // Proof is valid, check against your trusted root
+if (verifyInclusionProof(trustedRoot, proof)) {
+    // Proof is valid against trusted root
 }
 ```
 

@@ -15,26 +15,26 @@ import { parseProof, verifyInclusionProof, verifyProofBytes } from '@paolino/csm
 
 // Verify from raw CBOR bytes
 const proofBytes = new Uint8Array([...]); // CBOR-encoded proof
-const isValid = verifyProofBytes(proofBytes);
+const isValid = verifyProofBytes(trustedRoot, proofBytes);
 
 // Or parse and verify separately
 const proof = parseProof(proofBytes);
-const isValid = verifyInclusionProof(proof);
+const isValid = verifyInclusionProof(trustedRoot, proof);
 ```
 
 ## API
 
-### `verifyProofBytes(bytes: Uint8Array): boolean`
+### `verifyProofBytes(trustedRoot: Hash, bytes: Uint8Array): boolean`
 
-Parse and verify a CBOR-encoded inclusion proof in one call.
+Parse and verify a CBOR-encoded inclusion proof against a trusted root in one call.
 
 ### `parseProof(bytes: Uint8Array): InclusionProof`
 
 Parse a CBOR-encoded proof into a structured object.
 
-### `verifyInclusionProof(proof: InclusionProof): boolean`
+### `verifyInclusionProof(trustedRoot: Hash, proof: InclusionProof): boolean`
 
-Verify that a parsed proof is valid.
+Verify a parsed proof against a trusted root hash.
 
 ### `computeRootHash(proof: InclusionProof): Hash`
 
@@ -60,7 +60,6 @@ interface ProofStep {
 interface InclusionProof {
   proofKey: Key;
   proofValue: Hash;
-  proofRootHash: Hash;
   proofSteps: ProofStep[];
   proofRootJump: Key;
 }
