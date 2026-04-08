@@ -8,11 +8,13 @@
 module CSMT.Hashes.Types
     ( Hash (..)
     , renderHash
+    , renderHashIn
+    , Base (..)
     )
 where
 
 import Data.ByteArray (ByteArray, ByteArrayAccess)
-import Data.ByteArray.Encoding (Base (Base64), convertToBase)
+import Data.ByteArray.Encoding (Base (Base16, Base64), convertToBase)
 import Data.ByteString (ByteString)
 import Data.ByteString.Char8 qualified as BC
 
@@ -27,3 +29,7 @@ instance Show Hash where
 -- | Extract the raw ByteString from a Hash.
 renderHash :: Hash -> ByteString
 renderHash (Hash h) = h
+
+-- | Render a Hash in the given base encoding.
+renderHashIn :: Base -> Hash -> ByteString
+renderHashIn base (Hash h) = convertToBase base h
