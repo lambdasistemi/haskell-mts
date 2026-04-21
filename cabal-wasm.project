@@ -1,0 +1,38 @@
+-- WASM build configuration for the csmt-verify sublibrary.
+-- Usage:
+--   wasm32-wasi-cabal --project-file=cabal-wasm.project build csmt-verify-wasm
+--
+-- This project compiles ONLY the csmt-verify sublibrary (+ a tiny
+-- stdio entry point). It is deliberately disjoint from cabal.project
+-- which pulls in rocksdb and other C deps that do not cross-compile
+-- to WASM.
+
+allow-newer: *:template-haskell, *:base, *:deepseq, *:ghc-prim, *:time, *:text
+
+-- Set 1 day before the truncate-index boundary in nix/wasm.nix so
+-- every entry intended by that boundary is included. Hackage's
+-- 0.2.10.0 cborg tarball has the GHC.IntWord64 issue, so we pin
+-- cborg to a git revision with the fix (see source-repository-package
+-- below).
+index-state:
+  , hackage.haskell.org 2026-01-11T00:00:00Z
+
+packages:
+  mts.cabal
+
+-- cborg 0.2.10.0 on Hackage is broken on GHC 9.12 WASM (undefined
+-- GHC.IntWord64 operations). Git HEAD has the MIN_VERSION_base guard.
+source-repository-package
+  type: git
+  location: https://github.com/well-typed/cborg.git
+  tag: 72a0e736e24c864b5a9b95d90adb37a9e8e6d761
+  subdir: cborg
+
+-- Build only the WASM executable (which pulls in csmt-verify). The
+-- native library, tests, benchmarks, and other sublibraries have C
+-- deps (rocksdb, crypton) that are not in scope for this project.
+package mts
+  flags: +wasm
+
+tests: False
+benchmarks: False
