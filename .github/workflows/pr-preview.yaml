@@ -1,0 +1,61 @@
+name: PR preview (WASM demo on Surge)
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: nixos
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/cachix-action@v15
+        with:
+          name: paolino
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      - name: Build WASM demo
+        run: nix --quiet build .#csmt-verify-wasm-demo -o result-demo
+
+      - name: Deploy to Surge
+        run: |
+          mkdir -p surge-site
+          cp -L result-demo/* surge-site/
+          chmod -R u+w surge-site
+          nix --quiet shell nixpkgs#nodePackages.surge -c surge \
+            surge-site \
+            ${{ github.repository_owner }}-${{ github.event.repository.name }}-pr-${{ github.event.number }}.surge.sh \
+            --token ${{ secrets.SURGE_TOKEN }}
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = `https://${context.repo.owner}-${context.repo.repo}-pr-${context.issue.number}.surge.sh`;
+            const marker = '<!-- surge-preview-url -->';
+            const body = `${marker}\nWASM demo preview: ${url}`;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }

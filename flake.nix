@@ -88,9 +88,17 @@
 
           wasmPackages =
             if wasmBuild != null then
+              let
+                demo = import ./nix/wasm-demo.nix {
+                  inherit pkgs;
+                  wasm = wasmBuild.wasm;
+                  fixtures = ./verifiers/typescript/test/fixtures.json;
+                };
+              in
               {
                 csmt-verify-wasm = wasmBuild.wasm;
                 csmt-verify-wasm-deps = wasmBuild.deps;
+                csmt-verify-wasm-demo = demo;
               }
             else
               { };

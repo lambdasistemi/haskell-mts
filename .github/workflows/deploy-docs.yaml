@@ -18,4 +18,10 @@ jobs:
         with:
           name: paolino
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      - name: Stage WASM demo into docs/
+        run: |
+          nix --quiet build .#csmt-verify-wasm-demo -o result-demo
+          mkdir -p docs/demo
+          cp -L result-demo/* docs/demo/
+          chmod -R u+w docs/demo
       - run: nix --quiet develop github:paolino/dev-assets?dir=mkdocs -c mkdocs-deploy --force
