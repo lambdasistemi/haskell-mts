@@ -3,6 +3,8 @@ dist-newstyle
 tmp
 secrets
 result
+result-*
+docs/demo
 .cabal-fmt*
 testdb
 **/*.bak
