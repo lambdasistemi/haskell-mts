@@ -25,6 +25,15 @@ source-repository head
   type:     git
   location: https://github.com/lambdasistemi/haskell-mts
 
+-- When set, build ONLY the csmt-verify sublibrary and its WASM
+-- entry point. Skips the native CLI, tests, benchmarks, and other
+-- components whose deps (rocksdb, crypton) do not cross-compile to
+-- the GHC WASM backend. See cabal-wasm.project.
+flag wasm
+  description: Build only csmt-verify + csmt-verify-wasm executable.
+  manual:      True
+  default:     False
+
 common warnings
   ghc-options:
     -Wall -Wunused-imports -Wunused-packages -Wmissing-export-lists
@@ -74,6 +83,9 @@ library
   hs-source-dirs:   lib/mts/
   default-language: Haskell2010
 
+  if flag(wasm)
+    buildable: False
+
 -- Generic rollback library (swap-partition model)
 library rollbacks
   import:           warnings
@@ -92,6 +104,9 @@ library rollbacks
 
   hs-source-dirs:   lib/rollbacks/
   default-language: Haskell2010
+
+  if flag(wasm)
+    buildable: False
 
 -- CSMT (binary trie) implementation
 library csmt
@@ -142,6 +157,9 @@ library csmt
   other-modules:    Paths_mts
   hs-source-dirs:   lib/csmt/
   default-language: Haskell2010
+
+  if flag(wasm)
+    buildable: False
 
 -- Database-free CSMT proof verification. Pure Haskell — no C FFI,
 -- no system libs — so it cross-compiles to GHC's WASM backend
@@ -211,6 +229,9 @@ library mpf
   hs-source-dirs:   lib/mpf/
   default-language: Haskell2010
 
+  if flag(wasm)
+    buildable: False
+
 -- CSMT test utility library
 library csmt-test-lib
   import:           warnings
@@ -230,6 +251,9 @@ library csmt-test-lib
   hs-source-dirs:   test-lib/csmt
   default-language: Haskell2010
 
+  if flag(wasm)
+    buildable: False
+
 -- MPF test utility library
 library mpf-test-lib
   import:           warnings
@@ -246,6 +270,9 @@ library mpf-test-lib
   hs-source-dirs:   test-lib/mpf
   default-language: Haskell2010
 
+  if flag(wasm)
+    buildable: False
+
 executable mts
   import:           warnings
   ghc-options:      -threaded -rtsopts -with-rtsopts=-N
@@ -255,6 +282,27 @@ executable mts
     , mts:csmt
 
   default-language: Haskell2010
+
+  if flag(wasm)
+    buildable: False
+
+-- Minimal stdio verifier that compiles to a single .wasm via the
+-- GHC WASM backend. Only built when the `wasm` flag is set, because
+-- outside of a wasm32-wasi cross-compile the executable is
+-- redundant with the native test suite.
+executable csmt-verify-wasm
+  import:           warnings
+  main-is:          Main.hs
+  hs-source-dirs:   app/csmt-verify-wasm
+  build-depends:
+    , base             >=4.19 && <5
+    , bytestring       >=0.12 && <0.13
+    , mts:csmt-verify
+
+  default-language: Haskell2010
+
+  if !flag(wasm)
+    buildable: False
 
 test-suite unit-tests
   import:             warnings
@@ -322,6 +370,9 @@ test-suite unit-tests
     MTS.Rollbacks.TypesSpec
     MTS.RollbacksSpec
 
+  if flag(wasm)
+    buildable: False
+
 benchmark bench
   import:           warnings
   ghc-options:      -O2
@@ -338,6 +389,9 @@ benchmark bench
     , mts:csmt
     , rocksdb-kv-transactions:kv-transactions
     , temporary                                >=1.3  && <1.4
+
+  if flag(wasm)
+    buildable: False
 
 benchmark populate-bench
   import:           warnings
@@ -356,6 +410,9 @@ benchmark populate-bench
     , rocksdb-kv-transactions:kv-transactions
     , temporary                                >=1.3  && <1.4
     , time                                     >=1.12 && <1.14
+
+  if flag(wasm)
+    buildable: False
 
 benchmark unified
   import:           warnings
@@ -377,6 +434,9 @@ benchmark unified
     , temporary                                >=1.3  && <1.4
     , time                                     >=1.12 && <1.14
 
+  if flag(wasm)
+    buildable: False
+
 benchmark mpf-bench
   import:           warnings
   ghc-options:      -O2
@@ -390,6 +450,9 @@ benchmark mpf-bench
     , mts:mpf
     , mts:mpf-test-lib
     , time              >=1.12 && <1.14
+
+  if flag(wasm)
+    buildable: False
 
 benchmark mpf-bench-rocksdb
   import:           warnings
@@ -407,6 +470,9 @@ benchmark mpf-bench-rocksdb
     , rocksdb-kv-transactions:kv-transactions
     , time                                     >=1.12 && <1.14
 
+  if flag(wasm)
+    buildable: False
+
 executable csmt-test-vectors
   import:           warnings
   main-is:          app/test-vectors/Main.hs
@@ -420,6 +486,9 @@ executable csmt-test-vectors
 
   default-language: Haskell2010
 
+  if flag(wasm)
+    buildable: False
+
 executable csmt-fixtures
   import:           warnings
   main-is:          app/fixtures/Main.hs
@@ -432,6 +501,9 @@ executable csmt-fixtures
 
   default-language: Haskell2010
 
+  if flag(wasm)
+    buildable: False
+
 executable space-leak
   import:           warnings
   main-is:          lib/csmt/CSMT/Frontend/CLI/SpaceLeak.hs
@@ -442,3 +514,6 @@ executable space-leak
     , rocksdb-kv-transactions:kv-transactions
 
   default-language: Haskell2010
+
+  if flag(wasm)
+    buildable: False
