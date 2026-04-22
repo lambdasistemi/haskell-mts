@@ -2,15 +2,16 @@
 
 -- |
 -- Module      : CSMT.Hashes
--- Description : Blake2b-256 (crypton-backed) wiring for CSMT
+-- Description : Blake2b-256 wiring for CSMT (pure Haskell)
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- Wires the @crypton@ C-FFI Blake2b-256 into the backend-agnostic
--- CSMT algebra in @csmt-core@. The WASM-safe verifier in
--- @csmt-verify@ uses the same 'Hashing' shape but routes through
--- a pure-Haskell Blake2b-256 instead. Both sides produce
--- byte-identical hashes (validated by @CSMT.VerifySpec@).
+-- Wires the pure-Haskell Blake2b-256 from "CSMT.Verify.Blake2b"
+-- into the backend-agnostic CSMT algebra in @csmt-core@. The write
+-- path and the verifier now share a single hash implementation,
+-- so they cannot diverge. Using the pure implementation here also
+-- removes the @crypton@ / @memory@ C-FFI dependency from the
+-- write path, which lets it cross-compile to GHC's WASM backend.
 module CSMT.Hashes
     ( mkHash
     , addHash
@@ -34,9 +35,7 @@ module CSMT.Hashes
 where
 
 import Control.Lens (Iso', iso)
-import Crypto.Hash (Blake2b_256, hash)
 import Data.Bifunctor (second)
-import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
 import Database.KV.Transaction (GCompare, Selector, Transaction)
 
@@ -61,16 +60,16 @@ import CSMT.Interface
     )
 import CSMT.Interface qualified as Interface
 import CSMT.Proof.Insertion qualified as ProofInsertion
+import CSMT.Verify.Blake2b (blake2b256)
 
--- | Compute a Blake2b-256 hash of a 'ByteString' using @crypton@'s
--- C implementation.
+-- | Compute a Blake2b-256 hash of a 'ByteString' using the
+-- pure-Haskell implementation in "CSMT.Verify.Blake2b".
 mkHash :: ByteString -> Hash
-mkHash bs = Hash (convert (hash @ByteString @Blake2b_256 bs))
+mkHash = Hash . blake2b256
 
--- | 'Hashing' record wired to 'mkHash'. Matches
--- @CSMT.Verify.hashHashing@ byte-for-byte — both route through
--- 'CSMT.Core.Hash.hashingWith' on top of the same Blake2b-256
--- output.
+-- | 'Hashing' record wired to 'mkHash'. Shares its implementation
+-- with @CSMT.Verify.hashHashing@, so write and verify sides are
+-- guaranteed identical by construction.
 hashHashing :: Hashing Hash
 hashHashing = hashingWith mkHash
 
