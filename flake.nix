@@ -94,11 +94,16 @@
                   wasm = wasmBuild.wasm;
                   fixtures = ./verifiers/typescript/test/fixtures.json;
                 };
+                writeDemo = import ./nix/wasm-write-demo.nix {
+                  inherit pkgs;
+                  wasm = wasmBuild.wasm;
+                };
               in
               {
                 csmt-verify-wasm = wasmBuild.wasm;
                 csmt-verify-wasm-deps = wasmBuild.deps;
                 csmt-verify-wasm-demo = demo;
+                csmt-wasm-write-demo = writeDemo;
               }
             else
               { };

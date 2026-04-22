@@ -18,13 +18,18 @@ jobs:
           name: paolino
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
-      - name: Build WASM demo
+      - name: Build WASM verify demo
         run: nix --quiet build .#csmt-verify-wasm-demo -o result-demo
+
+      - name: Build WASM write demo
+        run: nix --quiet build .#csmt-wasm-write-demo -o result-write-demo
 
       - name: Deploy to Surge
         run: |
           mkdir -p surge-site
           cp -L result-demo/* surge-site/
+          mkdir -p surge-site/write
+          cp -L result-write-demo/* surge-site/write/
           chmod -R u+w surge-site
           nix --quiet shell nixpkgs#nodePackages.surge -c surge \
             surge-site \
@@ -37,7 +42,11 @@ jobs:
           script: |
             const url = `https://${context.repo.owner}-${context.repo.repo}-pr-${context.issue.number}.surge.sh`;
             const marker = '<!-- surge-preview-url -->';
-            const body = `${marker}\nWASM demo preview: ${url}`;
+            const body = [
+              marker,
+              `Verify demo (read side): ${url}`,
+              `Build + prove + verify demo (write side): ${url}/write/`,
+            ].join('\n');
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
