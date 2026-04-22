@@ -100,6 +100,16 @@ let
     hash = "sha256-SDzMk6gWXelE3OH6gCC6XSn+h5VbrKpaisyza9bCtVM=";
   };
 
+  # Pulled in so that the pure @kv-transactions@ sublibrary is
+  # available to csmt-write on WASM. The rocksdb-bound main library
+  # of this package is not built under flag(wasm) — see the
+  # @mts:csmt@ stanza in mts.cabal.
+  rocksdb-kv-transactions-src = pkgs.fetchgit {
+    url = "https://github.com/paolino/rocksdb-kv-transactions";
+    rev = "0888387a5de81711273ea9b1e9d160decc33c231";
+    hash = "sha256-lVR1GWanLCKhjwzzIzR3QfVNaTLWOFAuQmZqQs4lkXs=";
+  };
+
   # Cabal metadata slice used to plan the dep graph without pulling
   # in the native sources (tests, benches, rocksdb stuff).
   srcMetadata = pkgs.lib.cleanSourceWith {
@@ -179,6 +189,7 @@ let
       packages:
         mts.cabal
         ${cborg-src}/cborg/cborg.cabal
+        ${rocksdb-kv-transactions-src}/rocksdb-kv-transactions.cabal
       EOF
     '';
 

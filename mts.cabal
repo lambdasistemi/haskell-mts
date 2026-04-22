@@ -65,7 +65,8 @@ common warnings
     TypeFamilies
     TypeOperators
 
--- Shared interface: type families + MerkleTreeStore record + properties
+-- Shared interface: type families + MerkleTreeStore record + properties.
+-- Pure Haskell; cross-compiles to wasm32-wasi.
 library
   import:           warnings
   exposed-modules:
@@ -82,9 +83,6 @@ library
 
   hs-source-dirs:   lib/mts/
   default-language: Haskell2010
-
-  if flag(wasm)
-    buildable: False
 
 -- Generic rollback library (swap-partition model)
 library rollbacks
@@ -363,6 +361,28 @@ executable csmt-verify-wasm
     , base             >=4.19 && <5
     , bytestring       >=0.12 && <0.13
     , mts:csmt-verify
+
+  default-language: Haskell2010
+
+  if !flag(wasm)
+    buildable: False
+
+-- Companion to csmt-verify-wasm for the write side: insert
+-- key/value pairs into a pure in-memory CSMT, emit the post-insert
+-- root hash and a CBOR-encoded inclusion proof. Lets a browser
+-- host run the full build-then-verify loop against a single
+-- .wasm pair with no server component.
+executable csmt-write-wasm
+  import:           warnings
+  main-is:          Main.hs
+  hs-source-dirs:   app/csmt-write-wasm
+  build-depends:
+    , base             >=4.19 && <5
+    , bytestring       >=0.12 && <0.13
+    , cereal           >=0.5  && <0.6
+    , lens             >=5.3  && <5.4
+    , mts:csmt-core
+    , mts:csmt-write
 
   default-language: Haskell2010
 
