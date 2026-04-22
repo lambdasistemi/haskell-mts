@@ -132,17 +132,20 @@ library csmt-core
   default-language: Haskell2010
 
 -- CSMT (binary trie) implementation
-library csmt
+-- Pure-Haskell subset of the CSMT library: algebra, pure in-memory
+-- backend, proof generation/verification, and standalone column
+-- layout. Contains every piece downstream needs *except* the C-FFI
+-- RocksDB backend and the haskeline/opt-env-conf CLI. Builds on
+-- the WASM backend so the same write path runs in the browser.
+library csmt-write
   import:           warnings
   visibility:       public
   exposed-modules:
     CSMT
     CSMT.Backend.Pure
-    CSMT.Backend.RocksDB
     CSMT.Backend.Standalone
     CSMT.Deletion
     CSMT.Fifo
-    CSMT.Frontend.CLI.App
     CSMT.Hashes
     CSMT.Hashes.CBOR
     CSMT.Hashes.Compact
@@ -164,12 +167,56 @@ library csmt
     , cereal                                   >=0.5  && <0.6
     , containers                               >=0.6  && <0.7
     , exceptions                               >=0.10 && <0.11
+    , lens                                     >=5.3  && <5.4
+    , mts
+    , mts:csmt-core
+    , mts:csmt-verify
+    , rocksdb-kv-transactions:kv-transactions  >=0.1  && <0.2
+    , transformers                             >=0.6  && <0.7
+
+  hs-source-dirs:   lib/csmt-write/
+  default-language: Haskell2010
+
+-- Native-only additions to csmt-write: the persistent RocksDB
+-- backend and the haskeline + opt-env-conf command-line
+-- frontend. Re-exports the full csmt-write surface so downstream
+-- consumers (MPFS off-chain, cardano-utxo-csmt) keep a single
+-- `mts:csmt` build-dep.
+library csmt
+  import:           warnings
+  visibility:       public
+  exposed-modules:
+    CSMT.Backend.RocksDB
+    CSMT.Frontend.CLI.App
+
+  reexported-modules:
+    , CSMT
+    , CSMT.Backend.Pure
+    , CSMT.Backend.Standalone
+    , CSMT.Deletion
+    , CSMT.Fifo
+    , CSMT.Hashes
+    , CSMT.Hashes.CBOR
+    , CSMT.Hashes.Compact
+    , CSMT.Hashes.PlutusData
+    , CSMT.Hashes.Types
+    , CSMT.Insertion
+    , CSMT.Interface
+    , CSMT.MTS
+    , CSMT.Populate
+    , CSMT.Proof.Completeness
+    , CSMT.Proof.Exclusion
+    , CSMT.Proof.Insertion
+
+  build-depends:
+    , async                                    >=2.2  && <2.3
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
     , haskeline                                >=0.8  && <0.9
     , lens                                     >=5.3  && <5.4
     , memory                                   >=0.18 && <0.19
     , mts
-    , mts:csmt-core
-    , mts:csmt-verify
+    , mts:csmt-write
     , opt-env-conf                             >=0.11 && <0.14
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
     , rocksdb-kv-transactions                  >=0.1  && <0.2
