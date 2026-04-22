@@ -1,15 +1,16 @@
 {-# LANGUAGE StrictData #-}
 
 -- |
--- Module      : CSMT.Verify.Proof
--- Description : Pure Merkle inclusion-proof verification
+-- Module      : CSMT.Core.Proof
+-- Description : Pure Merkle inclusion-proof types and verification
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- Inclusion-proof verification for CSMT. The proof structure and
--- root-hash recomputation mirror @CSMT.Proof.Insertion@ verbatim
--- — we drop only the database-bound @buildInclusionProof@.
-module CSMT.Verify.Proof
+-- Inclusion-proof types and backend-agnostic verification logic
+-- shared by both the @csmt@ (database-backed) library and the
+-- @csmt-verify@ (WASM-safe) sublibrary. Neither of them owns the
+-- definition; both re-export from here.
+module CSMT.Core.Proof
     ( -- * Types
       InclusionProof (..)
     , ProofStep (..)
@@ -21,7 +22,7 @@ module CSMT.Verify.Proof
     , foldProof
     ) where
 
-import CSMT.Verify.Core
+import CSMT.Core.Types
     ( Direction
     , Hashing (..)
     , Indirect (..)

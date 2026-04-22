@@ -1,27 +1,27 @@
 {-# LANGUAGE StrictData #-}
 
 -- |
--- Module      : CSMT.Verify.Exclusion
--- Description : Pure Merkle exclusion-proof verification
+-- Module      : CSMT.Core.Exclusion
+-- Description : Pure Merkle exclusion-proof type and verification
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- Exclusion-proof verification for CSMT. The proof structure and
--- verification path mirror @CSMT.Proof.Exclusion@ — only the
--- database-bound builder is dropped.
-module CSMT.Verify.Exclusion
+-- Exclusion-proof type and backend-agnostic verification logic,
+-- shared by the @csmt@ (database-backed) library and the
+-- @csmt-verify@ (WASM-safe) sublibrary.
+module CSMT.Core.Exclusion
     ( ExclusionProof (..)
     , verifyExclusionProof
     ) where
 
-import CSMT.Verify.Core
-    ( Hashing
-    , Key
-    )
-import CSMT.Verify.Proof
+import CSMT.Core.Proof
     ( InclusionProof (..)
     , ProofStep (..)
     , verifyInclusionProof
+    )
+import CSMT.Core.Types
+    ( Hashing
+    , Key
     )
 
 -- | An exclusion proof for a key in a CSMT.

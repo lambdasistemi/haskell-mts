@@ -108,6 +108,29 @@ library rollbacks
   if flag(wasm)
     buildable: False
 
+-- Backend-agnostic core: shared types, proof algebra, wire format,
+-- and pure verification logic. Depended on by both @csmt@ (full
+-- library, crypton-backed) and @csmt-verify@ (WASM-safe, pure
+-- Blake2b). Has no C FFI so it cross-compiles to WASM.
+library csmt-core
+  import:           warnings
+  visibility:       public
+  exposed-modules:
+    CSMT.Core.CBOR
+    CSMT.Core.Exclusion
+    CSMT.Core.Hash
+    CSMT.Core.Proof
+    CSMT.Core.Types
+
+  build-depends:
+    , base        >=4.19 && <5
+    , bytestring  >=0.12 && <0.13
+    , cborg       >=0.2  && <0.3
+    , cereal      >=0.5  && <0.6
+
+  hs-source-dirs:   lib/csmt-core/
+  default-language: Haskell2010
+
 -- CSMT (binary trie) implementation
 library csmt
   import:           warnings
@@ -146,6 +169,7 @@ library csmt
     , lens                                     >=5.3  && <5.4
     , memory                                   >=0.18 && <0.19
     , mts
+    , mts:csmt-core
     , opt-env-conf                             >=0.11 && <0.14
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
     , rocksdb-kv-transactions                  >=0.1  && <0.2
@@ -170,18 +194,12 @@ library csmt-verify
   exposed-modules:
     CSMT.Verify
     CSMT.Verify.Blake2b
-    CSMT.Verify.CBOR
-    CSMT.Verify.Core
-    CSMT.Verify.Exclusion
-    CSMT.Verify.Hash
-    CSMT.Verify.Proof
 
   build-depends:
-    , array       >=0.5  && <0.6
-    , base        >=4.19 && <5
-    , bytestring  >=0.12 && <0.13
-    , cborg       >=0.2  && <0.3
-    , cereal      >=0.5  && <0.6
+    , array          >=0.5  && <0.6
+    , base           >=4.19 && <5
+    , bytestring     >=0.12 && <0.13
+    , mts:csmt-core
 
   hs-source-dirs:   lib/csmt-verify/
   default-language: Haskell2010

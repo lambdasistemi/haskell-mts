@@ -53,7 +53,7 @@ spec = do
                             _ -> True
                 _ -> error "vectorOf produced wrong number of keys"
     describe "encoding bytestrings" $ do
-        let put = putSizedByteString @ByteString
+        let put = putSizedByteString
         it "handles empty bytestrings" $ do
             hexEval (put "") `shouldBe` "00 00"
         it "handles short bytestrings" $ do

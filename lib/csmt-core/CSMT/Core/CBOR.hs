@@ -1,14 +1,14 @@
 -- |
--- Module      : CSMT.Verify.CBOR
+-- Module      : CSMT.Core.CBOR
 -- Description : CBOR encoding/decoding for CSMT proofs
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
 -- CBOR parsers and encoders for inclusion and exclusion proofs.
--- Mirrors @CSMT.Hashes.CBOR@ on the write side so bytes produced
--- by the server deserialize to 'InclusionProof' / 'ExclusionProof'
--- values the verifier can check.
-module CSMT.Verify.CBOR
+-- Shared wire format — the @csmt@ write side and the @csmt-verify@
+-- verifier both round-trip through these codecs, so bytes produced
+-- by the server are exactly the bytes the verifier consumes.
+module CSMT.Core.CBOR
     ( renderProof
     , parseProof
     , renderExclusionProof
@@ -23,21 +23,21 @@ import Control.Monad (replicateM)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as BL
 
-import CSMT.Verify.Core
-    ( Direction (..)
-    , Indirect (..)
-    , Key
-    )
-import CSMT.Verify.Exclusion
+import CSMT.Core.Exclusion
     ( ExclusionProof (..)
     )
-import CSMT.Verify.Hash
+import CSMT.Core.Hash
     ( Hash (..)
     , renderHash
     )
-import CSMT.Verify.Proof
+import CSMT.Core.Proof
     ( InclusionProof (..)
     , ProofStep (..)
+    )
+import CSMT.Core.Types
+    ( Direction (..)
+    , Indirect (..)
+    , Key
     )
 
 encodeDirection :: Direction -> CBOR.Encoding

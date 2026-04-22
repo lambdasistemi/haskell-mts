@@ -1,83 +1,53 @@
-{-# LANGUAGE StrictData #-}
-
 -- |
 -- Module      : CSMT.Proof.Insertion
--- Description : Merkle inclusion proof generation and verification
+-- Description : Merkle inclusion proof generation (write side)
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- This module provides functionality for generating and verifying Merkle
--- inclusion proofs. An inclusion proof demonstrates that a specific value
--- exists in the tree and contributes to the root hash.
---
--- A proof consists of a sequence of sibling hashes along the path from
--- the target value to the root, allowing verification without access to
--- the full tree.
+-- Inclusion-proof generation against a database-backed CSMT. The
+-- proof types and pure verification logic live in
+-- 'CSMT.Core.Proof'; this module adds only the transactional
+-- walker that reads siblings from the KV store.
 module CSMT.Proof.Insertion
-    ( InclusionProof (..)
+    ( -- * Types (re-exported from 'CSMT.Core.Proof')
+      InclusionProof (..)
     , ProofStep (..)
     , StepView (..)
-    , buildInclusionProof
+
+      -- * Verification (re-exported from 'CSMT.Core.Proof')
     , verifyInclusionProof
     , computeRootHash
     , foldProof
+
+      -- * Generation
+    , buildInclusionProof
     )
 where
 
+import CSMT.Core.Proof
+    ( InclusionProof (..)
+    , ProofStep (..)
+    , StepView (..)
+    , computeRootHash
+    , foldProof
+    , verifyInclusionProof
+    )
 import CSMT.Interface
-    ( Direction
-    , FromKV (..)
-    , Hashing (..)
+    ( FromKV (..)
     , Indirect (..)
     , Key
-    , addWithDirection
     , oppositeDirection
     )
 import Control.Lens (view)
+import Control.Monad (guard)
 import Control.Monad.Trans.Maybe (MaybeT (MaybeT, runMaybeT))
 import Data.List (isPrefixOf)
-
-import Control.Monad (guard)
 import Database.KV.Transaction
     ( GCompare
     , Selector
     , Transaction
     , query
     )
-
--- |
--- A single step in an inclusion proof.
---
--- Each step records:
--- * The number of key bits consumed at this step (direction + jump length)
--- * The sibling's indirect value (needed to recompute parent hash)
---
--- The direction and jump path are derived from the key during verification.
-data ProofStep a = ProofStep
-    { stepConsumed :: Int
-    -- ^ Number of key bits consumed (1 for direction + jump length)
-    , stepSibling :: Indirect a
-    -- ^ Sibling indirect value
-    }
-    deriving (Show, Eq)
-
--- |
--- An inclusion proof for a key-value pair.
---
--- Contains the path data needed to recompute the root hash from a
--- key-value pair. Verification requires an externally-supplied
--- trusted root hash.
-data InclusionProof a = InclusionProof
-    { proofKey :: Key
-    -- ^ The key being proven
-    , proofValue :: a
-    -- ^ The value at the key
-    , proofSteps :: [ProofStep a]
-    -- ^ Steps from leaf to root
-    , proofRootJump :: Key
-    -- ^ Jump path at the root node
-    }
-    deriving (Show, Eq)
 
 -- |
 -- Generate an inclusion proof for a key in the CSMT.
@@ -130,79 +100,3 @@ buildInclusionProof pfx FromKV{isoK, fromV, treePrefix} kvSel csmtSel k =
             <$> go
                 (u <> (x : jump))
                 (drop (length jump) ks)
-
--- |
--- Verify an inclusion proof against a trusted root hash.
---
--- Recomputes the root hash from the proof data and checks it matches
--- the supplied trusted root. This is a pure function that requires no
--- database access.
-verifyInclusionProof
-    :: Eq a => Hashing a -> a -> InclusionProof a -> Bool
-verifyInclusionProof hashing trustedRoot proof =
-    trustedRoot == computeRootHash hashing proof
-
--- |
--- What the callback sees at each proof step during a fold.
-data StepView = StepView
-    { svDirection :: Direction
-    -- ^ The direction taken at this branch (L or R)
-    , svJump :: Key
-    -- ^ The jump path within this step (after the direction bit)
-    }
-    deriving (Show, Eq)
-
--- |
--- Fold over an inclusion proof's steps with a callback.
---
--- Walks from leaf to root, combining hashes at each level (same
--- as 'computeRootHash'), but also threads an accumulator through
--- a callback at each step. The callback receives a 'StepView'
--- showing the direction and jump path consumed at that level.
---
--- Returns the computed root hash and the final accumulator.
-foldProof
-    :: Hashing a
-    -> InclusionProof a
-    -> (acc -> StepView -> acc)
-    -> acc
-    -> (a, acc)
-foldProof
-    hashing
-    InclusionProof{proofKey, proofValue, proofSteps, proofRootJump}
-    step
-    acc0 =
-        let keyAfterRoot = drop (length proofRootJump) proofKey
-            (rootValue, accFinal) =
-                go proofValue acc0 (reverse keyAfterRoot) proofSteps
-        in  (rootHash hashing (Indirect proofRootJump rootValue), accFinal)
-      where
-        go hashAcc acc _ [] = (hashAcc, acc)
-        go hashAcc acc revKey (ProofStep{stepConsumed, stepSibling} : rest) =
-            let (consumedRev, remainingRev) = splitAt stepConsumed revKey
-                consumed = reverse consumedRev
-            in  case consumed of
-                    (direction : stepJump) ->
-                        let sv = StepView{svDirection = direction, svJump = stepJump}
-                            acc' = step acc sv
-                        in  go
-                                ( addWithDirection
-                                    hashing
-                                    direction
-                                    (Indirect stepJump hashAcc)
-                                    stepSibling
-                                )
-                                acc'
-                                remainingRev
-                                rest
-                    [] ->
-                        error "foldProof: invalid proof step with zero consumed bits"
-
--- |
--- Compute the root hash from an inclusion proof.
---
--- Recomputes the Merkle root by combining the proof value with
--- sibling hashes along the path.
-computeRootHash :: Hashing a -> InclusionProof a -> a
-computeRootHash hashing proof =
-    fst $ foldProof hashing proof (\() _ -> ()) ()

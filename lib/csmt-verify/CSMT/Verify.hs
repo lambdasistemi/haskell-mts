@@ -7,9 +7,10 @@
 -- Top-level entry point for the @csmt-verify@ sublibrary: a
 -- database-free, WASM-friendly subset of the CSMT machinery that is
 -- just enough to verify an inclusion or exclusion proof carried on
--- the wire. Callers that already hold raw proof and root bytes can
--- use 'verifyInclusionProof' / 'verifyExclusionProof'; callers that
--- need the structured types can import the submodules directly.
+-- the wire. Wires the pure-Haskell Blake2b-256 from
+-- 'CSMT.Verify.Blake2b' into the backend-agnostic 'Hashing' record
+-- from @csmt-core@, and feeds raw bytes through the shared
+-- verification logic.
 module CSMT.Verify
     ( verifyInclusionProof
     , verifyExclusionProof
@@ -17,10 +18,20 @@ module CSMT.Verify
 
 import Data.ByteString (ByteString)
 
-import CSMT.Verify.CBOR (parseExclusionProof, parseProof)
-import CSMT.Verify.Exclusion qualified as Exclusion
-import CSMT.Verify.Hash (hashHashing, parseHash)
-import CSMT.Verify.Proof qualified as Proof
+import CSMT.Core.CBOR (parseExclusionProof, parseProof)
+import CSMT.Core.Exclusion qualified as Exclusion
+import CSMT.Core.Hash (Hash (..), hashingWith, parseHash)
+import CSMT.Core.Proof qualified as Proof
+import CSMT.Core.Types (Hashing)
+import CSMT.Verify.Blake2b (blake2b256)
+
+-- | 'Hashing' record backed by the pure-Haskell Blake2b-256 in
+-- 'CSMT.Verify.Blake2b'. Mirrors @CSMT.Hashes.hashHashing@ on the
+-- write side byte-for-byte — both route through the same
+-- 'CSMT.Core.Hash.hashingWith' combinator on top of the same
+-- Blake2b-256 output.
+hashHashing :: Hashing Hash
+hashHashing = hashingWith (Hash . blake2b256)
 
 -- | Verify an inclusion proof from a serialized 'ByteString' against
 -- a trusted root hash. Mirrors @CSMT.Hashes.verifyInclusionProof@ on

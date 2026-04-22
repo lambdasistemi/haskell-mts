@@ -1,36 +1,39 @@
 {-# LANGUAGE StrictData #-}
 
 -- |
--- Module      : CSMT.Verify.Hash
--- Description : Blake2b-256 hash type for CSMT proof verification
+-- Module      : CSMT.Core.Hash
+-- Description : Backend-agnostic 32-byte hash wrapper and Hashing helpers
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- The concrete 32-byte 'Hash' type plus the 'Hashing' record used by
--- CSMT proof verification. Mirrors @CSMT.Hashes@ on the write side,
--- but reaches the same byte-for-byte hash outputs through the
--- pure-Haskell Blake2b-256 implementation in 'CSMT.Verify.Blake2b'.
--- The sublibrary therefore has no C FFI, which is what lets it
--- cross-compile to WASM without the crypton/memory recipe.
-module CSMT.Verify.Hash
-    ( Hash (..)
+-- The pure, backend-free parts of the CSMT hash layer: the concrete
+-- 32-byte 'Hash' newtype, its serialization, and a 'hashingWith'
+-- constructor that wires any @ByteString -> Hash@ function into a
+-- 'Hashing' 'Hash' record. Concrete backends (pure Blake2b in
+-- @csmt-verify@, @crypton@-backed Blake2b in @csmt@) supply their
+-- own @mkHash@ and delegate to 'hashingWith'.
+module CSMT.Core.Hash
+    ( -- * Hash value
+      Hash (..)
     , renderHash
-    , mkHash
     , parseHash
-    , hashHashing
-    , keyToHash
+
+      -- * Backend-agnostic Hashing construction
+    , hashingWith
+    , keyToHashWith
+
+      -- * Key / byte-string conversions
     , byteStringToKey
     , keyToByteString
     ) where
 
-import Data.Bits (Bits (..))
+import Data.Bits (Bits (..), shiftR, (.&.))
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Serialize (PutM, runPutM)
 import Data.Word (Word8)
 
-import CSMT.Verify.Blake2b (blake2b256)
-import CSMT.Verify.Core
+import CSMT.Core.Types
     ( Direction (..)
     , Hashing (..)
     , Key
@@ -38,7 +41,9 @@ import CSMT.Verify.Core
     , putKey
     )
 
--- | A 32-byte Blake2b-256 hash value.
+-- | A 32-byte hash value. The hashing algorithm is whatever the
+-- caller's backend uses when it builds the 'Hashing' record — for
+-- Cardano-aligned CSMTs this is Blake2b-256.
 newtype Hash = Hash ByteString
     deriving (Eq, Ord)
 
@@ -56,19 +61,18 @@ parseHash bs
     | B.length bs == 32 = Just (Hash bs)
     | otherwise = Nothing
 
--- | Compute a Blake2b-256 hash of a 'ByteString'.
-mkHash :: ByteString -> Hash
-mkHash = Hash . blake2b256
-
 runPut :: PutM a -> ByteString
 runPut p = snd (runPutM p)
 
--- | Hashing functions for verifying a CSMT proof with Blake2b-256.
--- 'rootHash' hashes a single serialized indirect value; 'combineHash'
--- concatenates two serialized children and rehashes. Matches
--- @CSMT.Hashes.hashHashing@ on the write side.
-hashHashing :: Hashing Hash
-hashHashing =
+-- | Build a 'Hashing' 'Hash' record from a caller-supplied
+-- @ByteString -> Hash@ function. 'rootHash' hashes a single
+-- serialized 'Indirect' value; 'combineHash' concatenates two
+-- serialized children and rehashes. Both sides of the codebase —
+-- the @csmt@ write side and the @csmt-verify@ WASM-safe verifier —
+-- agree bit-for-bit on the resulting hashes as long as they supply
+-- the same underlying hash function.
+hashingWith :: (ByteString -> Hash) -> Hashing Hash
+hashingWith mkHash =
     Hashing
         { rootHash = mkHash . runPut . putIndirect . fmap renderHash
         , combineHash = \left right -> mkHash . runPut $ do
@@ -76,12 +80,12 @@ hashHashing =
             putIndirect (fmap renderHash right)
         }
 
--- | Convert a 'Key' to its hash representation.
-keyToHash :: Key -> Hash
-keyToHash = mkHash . runPut . putKey
+-- | Hash a serialized key under the caller-supplied hash function.
+keyToHashWith :: (ByteString -> Hash) -> Key -> Hash
+keyToHashWith mkHash = mkHash . runPut . putKey
 
 -- | Expand a 'ByteString' to a 'Key' (one 'Direction' per bit, MSB
--- first). Matches @CSMT.Hashes.byteStringToKey@.
+-- first).
 byteStringToKey :: ByteString -> Key
 byteStringToKey bs = concatMap byteToDirections (B.unpack bs)
   where

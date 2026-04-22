@@ -2,17 +2,15 @@
 
 -- |
 -- Module      : CSMT.Hashes
--- Description : Blake2b-256 based hashing for CSMT
+-- Description : Blake2b-256 (crypton-backed) wiring for CSMT
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- This module provides a concrete hash implementation for CSMTs using
--- Blake2b-256. It includes:
---
--- * 'Hash' - A 32-byte hash value
--- * 'hashHashing' - Hashing functions for tree operations
--- * Serialization functions for proofs and hashes
--- * High-level API for insert, delete, and proof operations
+-- Wires the @crypton@ C-FFI Blake2b-256 into the backend-agnostic
+-- CSMT algebra in @csmt-core@. The WASM-safe verifier in
+-- @csmt-verify@ uses the same 'Hashing' shape but routes through
+-- a pure-Haskell Blake2b-256 instead. Both sides produce
+-- byte-identical hashes (validated by @CSMT.VerifySpec@).
 module CSMT.Hashes
     ( mkHash
     , addHash
@@ -35,59 +33,54 @@ module CSMT.Hashes
     )
 where
 
-import CSMT.Deletion (deleting)
-import CSMT.Hashes.CBOR (parseProof, renderProof)
-import CSMT.Hashes.Types (Hash (..), renderHash)
-import CSMT.Insertion (inserting)
-import CSMT.Interface
-    ( Direction (..)
-    , FromKV (..)
-    , Hashing (..)
-    , Indirect (..)
-    , Key
-    , putIndirect
-    , putKey
-    )
-import CSMT.Interface qualified as Interface
-import CSMT.Proof.Insertion qualified as Proof
 import Control.Lens (Iso', iso)
 import Crypto.Hash (Blake2b_256, hash)
 import Data.Bifunctor (second)
-import Data.Bits (Bits (..))
 import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
-import Data.ByteString qualified as B
-import Data.Serialize.Extra (evalPutM)
-import Data.Word (Word8)
 import Database.KV.Transaction (GCompare, Selector, Transaction)
 
--- | Compute a Blake2b-256 hash of a ByteString.
-mkHash :: ByteString -> Hash
-mkHash = convert . hash @ByteString @Blake2b_256
+import CSMT.Core.CBOR (parseProof, renderProof)
+import CSMT.Core.Hash
+    ( Hash (..)
+    , byteStringToKey
+    , hashingWith
+    , keyToByteString
+    , keyToHashWith
+    , parseHash
+    , renderHash
+    )
+import CSMT.Core.Proof qualified as Proof
+import CSMT.Deletion (deleting)
+import CSMT.Insertion (inserting)
+import CSMT.Interface
+    ( FromKV (..)
+    , Hashing
+    , Indirect
+    , Key
+    )
+import CSMT.Interface qualified as Interface
+import CSMT.Proof.Insertion qualified as ProofInsertion
 
--- | Hashing functions for building CSMT with Blake2b-256.
+-- | Compute a Blake2b-256 hash of a 'ByteString' using @crypton@'s
+-- C implementation.
+mkHash :: ByteString -> Hash
+mkHash bs = Hash (convert (hash @ByteString @Blake2b_256 bs))
+
+-- | 'Hashing' record wired to 'mkHash'. Matches
+-- @CSMT.Verify.hashHashing@ byte-for-byte — both route through
+-- 'CSMT.Core.Hash.hashingWith' on top of the same Blake2b-256
+-- output.
 hashHashing :: Hashing Hash
-hashHashing =
-    Hashing
-        { rootHash = mkHash . evalPutM . putIndirect
-        , combineHash = \left right -> mkHash . evalPutM $ do
-            putIndirect left
-            putIndirect right
-        }
+hashHashing = hashingWith mkHash
 
 -- | Combine two hashes by concatenating and rehashing.
 addHash :: Hash -> Hash -> Hash
 addHash (Hash h1) (Hash h2) = mkHash (h1 <> h2)
 
--- | Parse a 32-byte ByteString as a Hash. Returns Nothing if length is wrong.
-parseHash :: ByteString -> Maybe Hash
-parseHash bs
-    | B.length bs == 32 = Just (Hash bs)
-    | otherwise = Nothing
-
--- | Convert a Key to its hash representation.
+-- | Convert a 'Key' to its hash representation.
 keyToHash :: Key -> Hash
-keyToHash = mkHash . evalPutM . putKey
+keyToHash = keyToHashWith mkHash
 
 -- | Insert a key-value pair using Blake2b-256 hashing.
 insert
@@ -109,29 +102,6 @@ delete
     -> k
     -> Transaction m cf d ops ()
 delete csmt = deleting [] csmt hashHashing
-
--- | Convert a ByteString to a Key by expanding each byte to 8 directions.
-byteStringToKey :: ByteString -> Key
-byteStringToKey bs = concatMap byteToDirections (B.unpack bs)
-
--- | Convert a byte to 8 directions (one per bit, MSB first).
-byteToDirections :: Word8 -> Key
-byteToDirections byte = [if testBit byte i then R else L | i <- [7, 6 .. 0]]
-
--- | Convert a Key back to a ByteString (inverse of 'byteStringToKey').
--- Groups every 8 directions into a byte (MSB first).
-keyToByteString :: Key -> ByteString
-keyToByteString = B.pack . go
-  where
-    go [] = []
-    go ds =
-        let (byte, rest) = splitAt 8 ds
-            toByte =
-                foldl
-                    (\acc (i, d) -> case d of R -> setBit acc i; L -> acc)
-                    (0 :: Word8)
-                    (zip [7, 6 .. 0] byte)
-        in  toByte : go rest
 
 -- | Get the root hash of the tree, if it exists.
 root
@@ -157,7 +127,7 @@ generateInclusionProof
     -> k
     -> Transaction m cf d ops (Maybe (v, ByteString))
 generateInclusionProof csmt kvSel csmtSel k = do
-    mp <- Proof.buildInclusionProof [] csmt kvSel csmtSel k
+    mp <- ProofInsertion.buildInclusionProof [] csmt kvSel csmtSel k
     pure $ fmap (second renderProof) mp
 
 -- | Verify an inclusion proof from a serialized ByteString

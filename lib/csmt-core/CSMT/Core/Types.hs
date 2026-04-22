@@ -2,18 +2,17 @@
 {-# LANGUAGE StrictData #-}
 
 -- |
--- Module      : CSMT.Verify.Core
--- Description : Pure CSMT types and serialization for proof verification
+-- Module      : CSMT.Core.Types
+-- Description : Pure CSMT path, indirect value, and byte serializers
 -- Copyright   : (c) Paolo Veronelli, 2024
 -- License     : Apache-2.0
 --
--- Pure subset of the CSMT type algebra that a verifier needs: the
--- path 'Direction', the 'Key' / 'Indirect' carriers, the 'Hashing'
--- record that combines sibling hashes, and cereal-based byte
--- serializers for them. No database effects, no C FFI. This is the
--- dependency-light core of the @csmt-verify@ sublibrary — only
--- @base@, @bytestring@, and @cereal@ are needed to build it.
-module CSMT.Verify.Core
+-- The shared type algebra used by both the full @csmt@ library
+-- (read/write, database-backed) and the @csmt-verify@ WASM-safe
+-- verifier. Only @base@, @bytestring@, and @cereal@ are needed to
+-- build this module, so it can sit under the WASM toolchain without
+-- pulling C-FFI deps.
+module CSMT.Core.Types
     ( -- * Keys
       Direction (..)
     , Key
