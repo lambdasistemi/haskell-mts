@@ -163,13 +163,13 @@ library csmt
     , cborg                                    >=0.2  && <0.3
     , cereal                                   >=0.5  && <0.6
     , containers                               >=0.6  && <0.7
-    , crypton                                  >=1.0  && <1.1
     , exceptions                               >=0.10 && <0.11
     , haskeline                                >=0.8  && <0.9
     , lens                                     >=5.3  && <5.4
     , memory                                   >=0.18 && <0.19
     , mts
     , mts:csmt-core
+    , mts:csmt-verify
     , opt-env-conf                             >=0.11 && <0.14
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
     , rocksdb-kv-transactions                  >=0.1  && <0.2
