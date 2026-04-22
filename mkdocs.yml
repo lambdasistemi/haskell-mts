@@ -57,3 +57,4 @@ nav:
     - Library API: library.md
     - TypeScript Verifier: typescript.md
     - WASM Browser Demo: wasm-demo.md
+    - WASM Write Demo: wasm-write-demo.md
