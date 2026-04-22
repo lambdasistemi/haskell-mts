@@ -81,7 +81,7 @@
                 # Bump whenever the WASM dep set changes. First-run
                 # Nix reports the real hash via a fixed-output hash
                 # mismatch — replace this literal.
-                dependenciesHash = "sha256-kIYIc/5iM8VmCRMSDoLDtYB1s8wQ6e3yGaGmTqwkNAg=";
+                dependenciesHash = "sha256-wjsKzZxunTciN3YkY+0f9v3OA2e0qF9W1VdxNCFDHWQ=";
               }
             else
               null;
