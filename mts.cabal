@@ -380,6 +380,7 @@ executable csmt-write-wasm
     , base             >=4.19 && <5
     , bytestring       >=0.12 && <0.13
     , cereal           >=0.5  && <0.6
+    , containers       >=0.6  && <0.7
     , lens             >=5.3  && <5.4
     , mts:csmt-core
     , mts:csmt-write
