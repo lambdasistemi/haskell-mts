@@ -98,12 +98,20 @@
                   inherit pkgs;
                   wasm = wasmBuild.wasm;
                 };
+                composedDocs = import ./nix/docs.nix {
+                  inherit pkgs;
+                  src = ./.;
+                  mkdocsAssets = mkdocs.outPath;
+                  verifyDemo = demo;
+                  writeDemo = writeDemo;
+                };
               in
               {
                 csmt-verify-wasm = wasmBuild.wasm;
                 csmt-verify-wasm-deps = wasmBuild.deps;
                 csmt-verify-wasm-demo = demo;
                 csmt-wasm-write-demo = writeDemo;
+                docs = composedDocs;
               }
             else
               { };
