@@ -158,7 +158,6 @@ library csmt-write
     CSMT.Proof.Insertion
 
   build-depends:
-    , async                                    >=2.2  && <2.3
     , base                                     >=4.19 && <5
     , bytestring                               >=0.12 && <0.13
     , cborg                                    >=0.2  && <0.3
@@ -250,13 +249,16 @@ library csmt-verify
   default-language: Haskell2010
 
 -- MPF (16-ary trie) implementation
-library mpf
+-- Pure-Haskell subset of the MPF library: trie algebra, pure
+-- in-memory backend, proof generation, and standalone column
+-- layout. Contains every piece needed for the browser/WASM write
+-- path except the RocksDB backend.
+library mpf-write
   import:           warnings
   visibility:       public
   exposed-modules:
     MPF
     MPF.Backend.Pure
-    MPF.Backend.RocksDB
     MPF.Backend.Standalone
     MPF.Deletion
     MPF.Hashes
@@ -278,19 +280,54 @@ library mpf
     , cborg                                    >=0.2  && <0.3
     , cereal                                   >=0.5  && <0.6
     , containers                               >=0.6  && <0.7
-    , crypton                                  >=1.0  && <1.1
     , exceptions                               >=0.10 && <0.11
     , lens                                     >=5.3  && <5.4
     , memory                                   >=0.18 && <0.19
     , mts
+    , mts:csmt-verify
+    , rocksdb-kv-transactions:kv-transactions
+    , transformers                             >=0.6  && <0.7
+
+  hs-source-dirs:   lib/mpf-write/
+  default-language: Haskell2010
+
+-- Native-only additions to mpf-write: the persistent RocksDB
+-- backend. Re-exports the full mpf-write surface so downstream
+-- consumers keep a single `mts:mpf` build-dep.
+library mpf
+  import:             warnings
+  visibility:         public
+  exposed-modules:    MPF.Backend.RocksDB
+  reexported-modules:
+    , MPF
+    , MPF.Backend.Pure
+    , MPF.Backend.Standalone
+    , MPF.Deletion
+    , MPF.Hashes
+    , MPF.Hashes.Aiken
+    , MPF.Hashes.CBOR
+    , MPF.Hashes.Types
+    , MPF.Insertion
+    , MPF.Insertion.Direct
+    , MPF.Insertion.Faithful
+    , MPF.Interface
+    , MPF.MTS
+    , MPF.Proof.Completeness
+    , MPF.Proof.Insertion
+
+  build-depends:
+    , async                                    >=2.2  && <2.3
+    , base                                     >=4.19 && <5
+    , lens                                     >=5.3  && <5.4
+    , mts
+    , mts:mpf-write
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
-    , rocksdb-kv-transactions                  >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
     , transformers                             >=0.6  && <0.7
     , unliftio                                 >=0.2  && <0.3
 
-  hs-source-dirs:   lib/mpf/
-  default-language: Haskell2010
+  hs-source-dirs:     lib/mpf/
+  default-language:   Haskell2010
 
   if flag(wasm)
     buildable: False
@@ -443,6 +480,7 @@ test-suite unit-tests
     CSMT.VerifySpec
     Data.Serialize.ExtraSpec
     MPF.Backend.RocksDBSpec
+    MPF.Blake2bSpec
     MPF.Hashes.AikenSpec
     MPF.Hashes.CBORSpec
     MPF.HashesSpec
@@ -450,6 +488,7 @@ test-suite unit-tests
     MPF.InterfaceSpec
     MPF.NamespaceSpec
     MPF.Proof.InsertionSpec
+    MPF.ProofCompatSpec
     MPF.PropertySpec
     MTS.PropertySpec
     MTS.Rollbacks.StoreSpec

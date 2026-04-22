@@ -31,9 +31,8 @@ module MPF.Hashes
     )
 where
 
+import CSMT.Verify.Blake2b (blake2b256)
 import Control.Lens (Iso', iso)
-import Crypto.Hash (Blake2b_256, hash)
-import Data.ByteArray (convert)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Maybe (fromMaybe)
@@ -55,7 +54,7 @@ import MPF.Interface
 
 -- | Create a hash from arbitrary data using Blake2b-256
 mkMPFHash :: ByteString -> MPFHash
-mkMPFHash = MPFHash . convert . hash @ByteString @Blake2b_256
+mkMPFHash = MPFHash . blake2b256
 
 -- | Parse a hash from raw bytes (must be exactly 32 bytes)
 parseMPFHash :: ByteString -> Maybe MPFHash
