@@ -1,9 +1,10 @@
-# Build csmt-verify to WASM using GHC's WASM backend.
+# Build the CSMT WASM artefacts (csmt-verify + csmt-write)
+# using GHC's WASM backend.
 #
 # Two-phase strategy, adapted from cardano-addresses's WASM recipe
-# but stripped of the crypton / ram / WASI-mmap bits — csmt-verify
-# has no C dependencies, so only the pure Haskell graph needs to
-# reach the WASI target:
+# but stripped of the crypton / ram / WASI-mmap bits — both
+# executables link only against pure-Haskell sublibraries, so
+# only the pure Haskell graph needs to reach the WASI target:
 #
 #   1. Fetch + truncate Hackage at a pinned index-state
 #      (deterministic, via haskell.nix's nix-tools).
@@ -146,7 +147,7 @@ let
       chmod -R u+w $CABAL_DIR
 
       wasm32-wasi-cabal --project-file=${projectFile} build \
-        --only-download csmt-verify-wasm
+        --only-download csmt-verify-wasm csmt-write-wasm
     '';
 
     installPhase = ''
@@ -195,13 +196,16 @@ let
 
     buildPhase = ''
       export CABAL_DIR=$NIX_BUILD_TOP/cabal
-      wasm32-wasi-cabal --project-file=${projectFile} build csmt-verify-wasm
+      wasm32-wasi-cabal --project-file=${projectFile} build \
+        csmt-verify-wasm csmt-write-wasm
     '';
 
     installPhase = ''
       mkdir -p $out
       find dist-newstyle -name "csmt-verify-wasm.wasm" -type f \
         -exec cp {} $out/csmt-verify.wasm \;
+      find dist-newstyle -name "csmt-write-wasm.wasm" -type f \
+        -exec cp {} $out/csmt-write.wasm \;
     '';
   };
 
