@@ -37,8 +37,11 @@ module MPF.Test.Lib
 
       -- * Proof Utilities
     , proofMPFM
+    , proofExcludeMPFM
     , verifyMPFM
+    , verifyExcludeMPFM
     , MPFProof
+    , MPFExclusionProof
     , MPFProofStep (..)
     , foldMPFProof
 
@@ -92,6 +95,11 @@ import MPF.Interface
     , HexKey
     , byteStringToHexKey
     , hexKeyPrism
+    )
+import MPF.Proof.Exclusion
+    ( MPFExclusionProof
+    , mkMPFExclusionProof
+    , verifyMPFExclusionProof
     )
 import MPF.Proof.Insertion
     ( MPFProof
@@ -284,6 +292,17 @@ proofMPFMAt prefix k =
             MPFStandaloneMPFCol
             k
 
+-- | Generate an exclusion proof for a key in the Pure monad
+proofExcludeMPFM
+    :: HexKey -> MPFPure (Maybe (MPFExclusionProof MPFHash))
+proofExcludeMPFM =
+    runTransactionUnguarded (mpfPureDatabase mpfHashCodecs)
+        . mkMPFExclusionProof
+            []
+            fromHexKVIdentity
+            mpfHashing
+            MPFStandaloneMPFCol
+
 -- | Verify a membership proof for a key-value pair in the Pure monad
 verifyMPFM :: HexKey -> MPFHash -> MPFPure Bool
 verifyMPFM = verifyMPFMAt []
@@ -309,6 +328,19 @@ verifyMPFMAt prefix k v =
                     mpfHashing
                     v
                     proof
+
+-- | Verify an exclusion proof for a key in the Pure monad.
+verifyExcludeMPFM :: HexKey -> MPFPure Bool
+verifyExcludeMPFM k = do
+    mProof <- proofExcludeMPFM k
+    trustedRoot <- getRootHashM
+    pure $ case mProof of
+        Nothing -> False
+        Just proof ->
+            verifyMPFExclusionProof
+                mpfHashing
+                trustedRoot
+                proof
 
 -- | Get the root hash from the MPF trie
 getRootHashM :: MPFPure (Maybe MPFHash)

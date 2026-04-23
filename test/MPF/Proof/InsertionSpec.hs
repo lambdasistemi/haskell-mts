@@ -2,10 +2,11 @@
 
 module MPF.Proof.InsertionSpec (spec) where
 
-import Control.Monad (forM_)
+import Control.Monad (forM, forM_)
 import Data.ByteString qualified as B
+import Data.List (nub)
 import MPF.Hashes (mkMPFHash, mpfHashing, renderMPFHash)
-import MPF.Interface (HexDigit (..), byteStringToHexKey)
+import MPF.Interface (HexDigit (..), HexKey, byteStringToHexKey)
 import MPF.Test.Lib
     ( deleteMPFM
     , foldMPFProof
@@ -17,6 +18,100 @@ import MPF.Test.Lib
     , verifyMPFM
     )
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
+import Test.QuickCheck
+    ( Gen
+    , Property
+    , choose
+    , elements
+    , forAll
+    , listOf
+    , vectorOf
+    )
+
+genHexDigit :: Gen HexDigit
+genHexDigit =
+    HexDigit . fromIntegral <$> choose (0, 15 :: Int)
+
+genFixedHexKey :: Int -> Gen HexKey
+genFixedHexKey n = vectorOf n genHexDigit
+
+fullTreeKeys :: Int -> [HexKey]
+fullTreeKeys depth =
+    sequence
+        ( replicate
+            depth
+            [HexDigit (fromIntegral n) | n <- [0 .. 15 :: Int]]
+        )
+
+genSparseKeys :: Int -> Gen [HexKey]
+genSparseKeys n = do
+    keys <- nub <$> vectorOf n (genFixedHexKey 16)
+    if length keys < max 8 (n `div` 2)
+        then genSparseKeys n
+        else pure keys
+
+valueFor :: Int -> B.ByteString
+valueFor n =
+    B.pack
+        [ fromIntegral (n `div` 256)
+        , fromIntegral (n `mod` 256)
+        ]
+
+testRandomFactsInAFullTree :: Property
+testRandomFactsInAFullTree =
+    forAll (elements [1, 2]) $ \depth ->
+        let kvs =
+                [ (key, mkMPFHash (valueFor ix))
+                | (ix, key) <- zip [1 ..] (fullTreeKeys depth)
+                ]
+        in  forAll
+                (listOf $ elements [0 .. length kvs - 1])
+                $ \indices ->
+                    let (results, _) = runMPFPure' $ do
+                            forM_ kvs $ uncurry insertMPFM
+                            forM indices $ \ix -> do
+                                let (testKey, testValue) = kvs !! ix
+                                verifyMPFM testKey testValue
+                    in  all id results
+
+testRandomFactsInASparseTree :: Property
+testRandomFactsInASparseTree =
+    forAll (choose (16, 96 :: Int)) $ \n ->
+        forAll (genSparseKeys n) $ \keys ->
+            let kvs =
+                    [ (key, mkMPFHash (valueFor ix))
+                    | (ix, key) <- zip [1 ..] keys
+                    ]
+            in  forAll
+                    (listOf $ elements [0 .. length kvs - 1])
+                    $ \indices ->
+                        let (results, _) = runMPFPure' $ do
+                                forM_ kvs $ uncurry insertMPFM
+                                forM indices $ \ix -> do
+                                    let (testKey, testValue) = kvs !! ix
+                                    verifyMPFM testKey testValue
+                        in  all id results
+
+testRandomDeletedFactsInASparseTree :: Property
+testRandomDeletedFactsInASparseTree =
+    forAll (choose (32, 128 :: Int)) $ \n ->
+        forAll (genSparseKeys n) $ \keys ->
+            let kvs =
+                    [ (key, mkMPFHash (valueFor ix))
+                    | (ix, key) <- zip [1 ..] keys
+                    ]
+            in  forAll
+                    (listOf $ elements [0 .. length kvs - 1])
+                    $ \indices ->
+                        let results =
+                                [ fst $ runMPFPure' $ do
+                                    forM_ kvs $ uncurry insertMPFM
+                                    let (testKey, testValue) = kvs !! ix
+                                    deleteMPFM testKey
+                                    verifyMPFM testKey testValue
+                                | ix <- indices
+                                ]
+                        in  all not results
 
 spec :: Spec
 spec = do
@@ -192,3 +287,16 @@ spec = do
                             wrongValue = mkMPFHash "not-apple"
                         verifyMPFM appleKey wrongValue
                 verified `shouldBe` False
+
+        describe "property tests" $ do
+            it
+                "verifies random facts in a full tree"
+                testRandomFactsInAFullTree
+
+            it
+                "verifies random facts in a sparse tree"
+                testRandomFactsInASparseTree
+
+            it
+                "rejects random deleted facts in a sparse tree"
+                testRandomDeletedFactsInASparseTree
