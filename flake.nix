@@ -78,35 +78,24 @@
             null;
 
           wasmPackages = if wasmBuild != null then
-            let
-              demo = import ./nix/wasm-demo.nix {
-                inherit pkgs;
-                wasm = wasmBuild.wasm;
-                fixtures = ./verifiers/typescript/test/fixtures.json;
-              };
-              writeDemo = import ./nix/wasm-write-demo.nix {
-                inherit pkgs;
-                wasm = wasmBuild.wasm;
-              };
-              mpfWriteDemo = import ./nix/mpf-wasm-write-demo.nix {
-                inherit pkgs;
-                wasm = wasmBuild.wasm;
-              };
-              composedDocs = import ./nix/docs.nix {
-                inherit pkgs;
-                src = ./.;
-                mkdocsAssets = mkdocs.outPath;
-                verifyDemo = demo;
-                writeDemo = writeDemo;
-                mpfWriteDemo = mpfWriteDemo;
-              };
-            in {
-              csmt-verify-wasm = wasmBuild.wasm;
-              csmt-verify-wasm-deps = wasmBuild.deps;
-              csmt-verify-wasm-demo = demo;
-              csmt-wasm-write-demo = writeDemo;
-              mpf-wasm-write-demo = mpfWriteDemo;
-              docs = composedDocs;
+            import ./nix/wasm-packages.nix {
+              inherit pkgs wasmBuild;
+              src = ./.;
+              mkdocsAssets = mkdocs.outPath;
+              fixtures = ./verifiers/typescript/test/fixtures.json;
+            }
+          else
+            { };
+
+          wasmApps = if wasmBuild != null then
+            import ./nix/apps.nix {
+              inherit pkgs;
+              demos = lib.getAttrs [
+                "docs"
+                "csmt-verify-wasm-demo"
+                "csmt-wasm-write-demo"
+                "mpf-wasm-write-demo"
+              ] wasmPackages;
             }
           else
             { };
@@ -122,6 +111,7 @@
 
         in {
           packages = fullPackages // { default = fullPackages.mts; };
+          apps = wasmApps;
           inherit (project) devShells;
         };
 

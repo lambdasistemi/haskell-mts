@@ -27,6 +27,15 @@ That matches the merged Aiken-parity exclusion-proof work: the browser
 transport reuses the canonical proof-step format instead of introducing
 a second exclusion-proof encoding.
 
+## What the demo ships
+
+- `mpf-write.wasm` - the write entry point exported via
+  `nix build .#mpf-write-wasm`
+- `mpf-verify.wasm` - the pure Aiken-compatible verifier exported via
+  `nix build .#mpf-verify-wasm`
+- `index.html` + `write.js` - the static page that runs both modules
+  under `@bjorn3/browser_wasi_shim`
+
 ## Workflow
 
 1. Insert or delete key/value pairs and watch the MPF root update.
@@ -73,7 +82,10 @@ do not carry the query context:
 ## Build it yourself
 
 ```bash
+nix build .#mpf-write-wasm
+nix build .#mpf-verify-wasm
 nix build .#mpf-wasm-write-demo
+PORT=8002 nix run .#mpf-wasm-write-demo
 ```
 
 The result is a static directory containing `index.html`, `write.js`,

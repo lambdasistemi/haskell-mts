@@ -13,12 +13,13 @@ them against the root - happens inside sandboxed WASM.
 ## What the demo ships
 
 - `csmt-write.wasm` - the write entry point produced by
-  `wasm32-wasi-cabal` via `nix build .#csmt-wasm-write-demo`. It takes
+  `wasm32-wasi-cabal` via `nix build .#csmt-write-wasm`. It takes
   a prior `InMemoryDB` blob, a batch of inserts/deletes, and a query
   key; it returns the updated blob, the post-mutation root, and either
   an inclusion proof or an exclusion proof.
 - `csmt-verify.wasm` - the existing verifier, reused by the page to
-  independently re-check each proof it produces.
+  independently re-check each proof it produces, exported via
+  `nix build .#csmt-verify-wasm`.
 - `index.html` + `write.js` - the static page that drives both modules
   under `@bjorn3/browser_wasi_shim`.
 
@@ -63,7 +64,10 @@ no host-side translation is needed.
 ## Build it yourself
 
 ```bash
+nix build .#csmt-write-wasm
+nix build .#csmt-verify-wasm
 nix build .#csmt-wasm-write-demo
+PORT=8001 nix run .#csmt-wasm-write-demo
 ```
 
 The output is a plain tree of static files suitable for any static

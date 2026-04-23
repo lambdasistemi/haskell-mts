@@ -114,6 +114,27 @@ Requires a working Haskell environment and RocksDB development files:
 cabal install
 ```
 
+## WASM Outputs With Nix
+
+The flake exports both the combined WASM bundle and the individual modules:
+
+```bash
+nix build .#wasm-artifacts
+nix build .#csmt-verify-wasm
+nix build .#csmt-write-wasm
+nix build .#mpf-verify-wasm
+nix build .#mpf-write-wasm
+```
+
+It also exports runnable local preview commands for the static demo bundles:
+
+```bash
+PORT=8000 nix run .#csmt-verify-wasm-demo
+PORT=8001 nix run .#csmt-wasm-write-demo
+PORT=8002 nix run .#mpf-wasm-write-demo
+PORT=8003 nix run .#docs
+```
+
 ## CLI Tool
 
 The `mts` executable provides an interactive CLI for CSMT operations:
