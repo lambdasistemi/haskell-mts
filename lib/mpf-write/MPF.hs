@@ -19,6 +19,7 @@ module MPF
 
       -- * Re-exports from Proof
     , module MPF.Proof.Insertion
+    , module MPF.Proof.Exclusion
 
       -- * Re-exports from Backend
     , module MPF.Backend.Standalone
@@ -32,4 +33,5 @@ import MPF.Hashes.Aiken
 import MPF.Hashes.CBOR
 import MPF.Insertion
 import MPF.Interface
+import MPF.Proof.Exclusion
 import MPF.Proof.Insertion

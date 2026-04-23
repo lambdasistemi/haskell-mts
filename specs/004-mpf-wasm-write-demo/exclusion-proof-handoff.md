@@ -7,32 +7,47 @@ This handoff is for the missing MPF exclusion-proof path needed by
 
 Dedicated blocker issue:
 
-- [#148](https://github.com/lambdasistemi/haskell-mts/issues/148) -
-  `Add MPF exclusion proof generation and verification`
+- [#149](https://github.com/lambdasistemi/haskell-mts/issues/149) -
+  `Add MPF exclusion proofs with Aiken proof-format parity`
+
+This note previously pointed at `#148`. Use `#149` as the canonical
+parallel handoff issue because it captures the upstream Aiken / JS parity
+constraints in detail.
 
 Current status on this branch:
 
 - Phase 1 is done: MPF hashes were rerouted through the pure Blake2b path.
 - Phase 2 is done: `mpf-write` was split out as the pure sublibrary.
+- `#149` core proof work is now in progress on this worktree:
+  - first-class `MPFExclusionProof`
+  - generator for absent keys
+  - pure verifier
+  - shared proof-step projection for Aiken / JS transport
+  - proof-spec parity with CSMT for both inclusion and exclusion
+    including QuickCheck-style property coverage
+  - pinned upstream JS exclusion parity vector (`melon`)
 - PR checkpoint: [#147](https://github.com/lambdasistemi/haskell-mts/pull/147)
 - Verified checkpoint commit: `f4d3201`
 
-The remaining browser/WASM mirror work from `#146` is blocked on a real
-MPF exclusion-proof API. The CSMT write demo protocol already expects the
-response envelope to carry `ptype = 0 / 1 / 0xff`, where `1` is exclusion.
+The remaining browser/WASM mirror work from `#146` is no longer blocked
+on the pure MPF proof design. The remaining gap is routing that proof
+through the shared MTS/browser interface. The CSMT write demo protocol
+already expects the response envelope to carry `ptype = 0 / 1 / 0xff`,
+where `1` is exclusion.
 
 ## What Already Exists
 
 ### MPF inclusion proofs
 
-- Generator: [lib/mpf-write/MPF/Proof/Insertion.hs](/code/haskell-mts-issue-146/lib/mpf-write/MPF/Proof/Insertion.hs:115)
-- Verifier: [lib/mpf-write/MPF/Proof/Insertion.hs](/code/haskell-mts-issue-146/lib/mpf-write/MPF/Proof/Insertion.hs:468)
-- MTS wiring: [lib/mpf-write/MPF/MTS.hs](/code/haskell-mts-issue-146/lib/mpf-write/MPF/MTS.hs:271)
+- Generator: [lib/mpf-write/MPF/Proof/Insertion.hs](/code/haskell-mts-issue-149/lib/mpf-write/MPF/Proof/Insertion.hs:115)
+- Verifier: [lib/mpf-write/MPF/Proof/Insertion.hs](/code/haskell-mts-issue-149/lib/mpf-write/MPF/Proof/Insertion.hs:468)
+- MTS wiring: [lib/mpf-write/MPF/MTS.hs](/code/haskell-mts-issue-149/lib/mpf-write/MPF/MTS.hs:271)
 
 Important current behavior:
 
 - `mkMPFInclusionProof` is membership-only.
-- Missing keys do not produce a first-class witness proof.
+- Missing keys do not produce a first-class witness proof through the
+  old inclusion API.
 - `verifyMPFInclusionProof` requires a value and checks membership only.
 
 ### Aiken inclusion-proof parity
@@ -42,7 +57,7 @@ is intended to match the Aiken / off-chain reference bytes.
 
 Primary codec:
 
-- [lib/mpf-write/MPF/Hashes/Aiken.hs](/code/haskell-mts-issue-146/lib/mpf-write/MPF/Hashes/Aiken.hs:1)
+- [lib/mpf-write/MPF/Hashes/Aiken.hs](/code/haskell-mts-issue-149/lib/mpf-write/MPF/Hashes/Aiken.hs:1)
 
 Concrete format constraints already encoded there:
 
@@ -56,12 +71,13 @@ Concrete format constraints already encoded there:
 
 Existing parity tests:
 
-- [test/MPF/Hashes/AikenSpec.hs](/code/haskell-mts-issue-146/test/MPF/Hashes/AikenSpec.hs:36)
-- [test/MPF/ProofCompatSpec.hs](/code/haskell-mts-issue-146/test/MPF/ProofCompatSpec.hs:1)
+- [test/MPF/Hashes/AikenSpec.hs](/code/haskell-mts-issue-149/test/MPF/Hashes/AikenSpec.hs:36)
+- [test/MPF/ProofCompatSpec.hs](/code/haskell-mts-issue-149/test/MPF/ProofCompatSpec.hs:1)
 
 What those tests already guarantee:
 
-- Exact byte parity for known upstream JS vectors (`mango`, `kumquat`).
+- Exact byte parity for known upstream JS vectors (`mango`,
+  `kumquat`, `melon` exclusion).
 - Round-trip parse/render for all 30 fruit proofs.
 - Constructor-shape preservation through parse/render.
 
@@ -70,30 +86,30 @@ What those tests already guarantee:
 CSMT already has the full exclusion-proof stack:
 
 - Proof type and CBOR codec:
-  [lib/csmt-core/CSMT/Core/CBOR.hs](/code/haskell-mts-issue-146/lib/csmt-core/CSMT/Core/CBOR.hs:118)
+  [lib/csmt-core/CSMT/Core/CBOR.hs](/code/haskell-mts-issue-149/lib/csmt-core/CSMT/Core/CBOR.hs:118)
 - Write-side generator:
-  [lib/csmt-write/CSMT/Proof/Exclusion.hs](/code/haskell-mts-issue-146/lib/csmt-write/CSMT/Proof/Exclusion.hs:1)
+  [lib/csmt-write/CSMT/Proof/Exclusion.hs](/code/haskell-mts-issue-149/lib/csmt-write/CSMT/Proof/Exclusion.hs:1)
 - Browser write protocol using `ptype = 0 / 1`:
-  [app/csmt-write-wasm/Main.hs](/code/haskell-mts-issue-146/app/csmt-write-wasm/Main.hs:290)
-  and [verifiers/browser-write/write.js](/code/haskell-mts-issue-146/verifiers/browser-write/write.js:256)
+  [app/csmt-write-wasm/Main.hs](/code/haskell-mts-issue-149/app/csmt-write-wasm/Main.hs:290)
+  and [verifiers/browser-write/write.js](/code/haskell-mts-issue-149/verifiers/browser-write/write.js:256)
 
 There is also an earlier product spec for CSMT exclusion proofs:
 
-- [specs/002-exclusion-proof/spec.md](/code/haskell-mts-issue-146/specs/002-exclusion-proof/spec.md:1)
+- [specs/002-exclusion-proof/spec.md](/code/haskell-mts-issue-149/specs/002-exclusion-proof/spec.md:1)
 
 ## What Is Missing
 
-There is no MPF equivalent yet for:
+There is still no MPF equivalent yet for:
 
-- a first-class exclusion-proof type
-- an exclusion-proof generator for absent keys
-- a pure verifier for non-membership
-- a stable serialized wire format for exclusion proofs
 - MTS-level routing that can distinguish inclusion from exclusion
+- browser write-path plumbing that emits `ptype = 1`
+- transport-level handling of the explicit empty-tree witness in the
+  higher-level protocol
 
-Right now, absent keys effectively collapse to "no proof":
+The pure proof API is now present, but absent keys still collapse to
+"no proof" at the MTS layer:
 
-- [test/MPF/Proof/InsertionSpec.hs](/code/haskell-mts-issue-146/test/MPF/Proof/InsertionSpec.hs:45)
+- [test/MPF/Proof/InsertionSpec.hs](/code/haskell-mts-issue-149/test/MPF/Proof/InsertionSpec.hs:45)
 
 ## Research Constraint: Aiken Proof Format Parity
 
@@ -140,6 +156,9 @@ Implication for the Haskell work:
   verifiable in exclusion mode.
 - The browser/WASM protocol can still carry `ptype = 1`; that tag can stay
   outside the proof bytes, matching the current demo envelope design.
+- On this branch, the pure API now exposes the shared step-list view via
+  `mpfExclusionProofSteps`; empty-tree exclusion maps to `[]`, so the
+  existing `renderAikenProof` transport can still be used.
 
 ## Likely Witness Material Already Present
 
@@ -152,14 +171,14 @@ shape to make non-membership plausible:
 
 Relevant code:
 
-- [lib/mpf-write/MPF/Proof/Insertion.hs](/code/haskell-mts-issue-146/lib/mpf-write/MPF/Proof/Insertion.hs:47)
+- [lib/mpf-write/MPF/Proof/Insertion.hs](/code/haskell-mts-issue-149/lib/mpf-write/MPF/Proof/Insertion.hs:47)
 
 That does not mean an exclusion proof already exists. It only means there
 is likely reusable witness structure for designing one.
 
 ## Expected Deliverables
 
-1. Track implementation in [#148](https://github.com/lambdasistemi/haskell-mts/issues/148).
+1. Track implementation in [#149](https://github.com/lambdasistemi/haskell-mts/issues/149).
 2. Define an MPF exclusion-proof type with at least:
    - empty-tree case
    - populated-tree witness case
