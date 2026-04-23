@@ -158,6 +158,7 @@ library csmt-write
     CSMT.Proof.Insertion
 
   build-depends:
+    , async                                    >=2.2  && <2.3
     , base                                     >=4.19 && <5
     , bytestring                               >=0.12 && <0.13
     , cborg                                    >=0.2  && <0.3
@@ -271,6 +272,7 @@ library mpf-write
     MPF.Interface
     MPF.MTS
     MPF.Proof.Completeness
+    MPF.Proof.Exclusion
     MPF.Proof.Insertion
 
   build-depends:
@@ -313,6 +315,7 @@ library mpf
     , MPF.Interface
     , MPF.MTS
     , MPF.Proof.Completeness
+    , MPF.Proof.Exclusion
     , MPF.Proof.Insertion
 
   build-depends:
@@ -322,6 +325,7 @@ library mpf
     , mts
     , mts:mpf-write
     , rocksdb-haskell-jprupp                   >=2.1  && <2.2
+    , rocksdb-kv-transactions                  >=0.1  && <0.2
     , rocksdb-kv-transactions:kv-transactions
     , transformers                             >=0.6  && <0.7
     , unliftio                                 >=0.2  && <0.3
@@ -487,6 +491,7 @@ test-suite unit-tests
     MPF.InsertionSpec
     MPF.InterfaceSpec
     MPF.NamespaceSpec
+    MPF.Proof.ExclusionSpec
     MPF.Proof.InsertionSpec
     MPF.ProofCompatSpec
     MPF.PropertySpec
