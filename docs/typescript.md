@@ -2,7 +2,9 @@
 
 !!! note
     The TypeScript verifier supports **CSMT** proofs only. MPF proof
-    verification is not yet available in TypeScript.
+    verification is not yet available in TypeScript. For MPF in the
+    browser today, use the pure-Haskell WASM flow documented in
+    [MPF WASM Write Demo](wasm-mpf-demo.md).
 
 A TypeScript library for verifying CSMT inclusion proofs client-side.
 This enables browser and Node.js applications to verify proofs without

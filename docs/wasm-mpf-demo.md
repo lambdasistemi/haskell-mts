@@ -8,13 +8,16 @@ against the reported root.
 <div id="demo-frame"></div>
 
 !!! tip "Try it"
-    [Open the standalone demo](demo-write-mpf/index.html){:target="_blank"}
+    <a href="../demo-write-mpf/index.html" target="_blank">Open the standalone demo</a>
 
 ## What is different from CSMT
 
 - MPF proof bytes are the Aiken proof-step list only. The verifier also
   needs the query key and, for inclusion mode, the value as separate
   inputs.
+- Raw browser keys are routed through the same `blake2b_256(key)` path used
+  by Aiken, via `fromHexKVAikenHashes` / `aikenKeyPath`, so the write and
+  verify sides agree on the trie path.
 - Presence and absence share the same CBOR proof-step encoding. The
   write side distinguishes them with `ptype = 0` for inclusion and
   `ptype = 1` for exclusion.

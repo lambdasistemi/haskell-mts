@@ -2,9 +2,16 @@
 
 !!! note
     The `mts` CLI operates on a **CSMT** instance. MPF does not currently
-    have a dedicated CLI.
+    have a dedicated CLI. The current hands-on MPF tutorial is the
+    [MPF WASM write demo](wasm-mpf-demo.md).
 
 ## Demos
+
+For the browser-based tutorials, see:
+
+- [CSMT WASM Verifier Demo](wasm-demo.md)
+- [CSMT WASM Write Demo](wasm-write-demo.md)
+- [MPF WASM Write Demo](wasm-mpf-demo.md)
 
 ### Basic Operations
 

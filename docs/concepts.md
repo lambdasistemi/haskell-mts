@@ -146,8 +146,14 @@ sibling hashes along the path, and jump paths at each level. See
 [Inclusion Proof Format](architecture/inclusion-proof.md) for the wire
 format specification.
 
-**MPF proofs** contain the key, value, a sequence of proof steps (each with
-a node type tag, sibling hash, and SMT proof hashes), and the root hash.
+**MPF proofs** use an Aiken-compatible proof-step model. The internal proof
+contains step information, while the Aiken wire format carries the proof-step
+list only. Browser/WASM verification therefore supplies the query key and,
+for inclusion mode, the value alongside the proof bytes.
+
+Both implementations also expose implementation-specific exclusion-proof APIs.
+The browser write demos exercise those explicit exclusion witnesses for both
+CSMT and MPF.
 
 ### Completeness Proofs
 
