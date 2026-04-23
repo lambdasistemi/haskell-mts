@@ -31,8 +31,8 @@ jobs:
         run: |
           mkdir -p surge-site
           cp -L result-demo/* surge-site/
-          mkdir -p surge-site/write
-          cp -L result-write-demo/* surge-site/write/
+          mkdir -p surge-site/write-csmt
+          cp -L result-write-demo/* surge-site/write-csmt/
           mkdir -p surge-site/write-mpf
           cp -L result-mpf-write-demo/* surge-site/write-mpf/
           chmod -R u+w surge-site
@@ -50,7 +50,7 @@ jobs:
             const body = [
               marker,
               `Verify demo (read side): ${url}`,
-              `Build + prove + verify demo (write side): ${url}/write/`,
+              `Build + prove + verify demo (CSMT write side): ${url}/write-csmt/`,
               `Build + prove + verify demo (MPF write side): ${url}/write-mpf/`,
             ].join('\n');
             const { data: comments } = await github.rest.issues.listComments({
