@@ -125,7 +125,8 @@ encodeBranch branchJump (HexDigit pos) siblingHashes =
 -- | Encode a Fork step.
 --
 -- @skip@ = length of the fork's branch jump prefix.
--- Inner Neighbor: nibble (int), prefix (packed nibbles), root (32 bytes).
+-- Inner Neighbor: nibble (int), prefix (one byte per nibble),
+-- root (32 bytes).
 encodeFork
     :: HexKey -> HexDigit -> HexKey -> MPFHash -> Builder.Builder
 encodeFork branchJump (HexDigit nibble) neighborPrefix neighborRoot =
@@ -135,10 +136,19 @@ encodeFork branchJump (HexDigit nibble) neighborPrefix neighborRoot =
         <> cborTag 121
         <> listBegin
         <> cborUInt (fromIntegral nibble)
-        <> cborBytes (packHexKey neighborPrefix)
+        <> cborBytes (encodeNibblePrefix neighborPrefix)
         <> cborBytes (renderMPFHash neighborRoot)
         <> cborBreak
         <> cborBreak
+
+-- | Encode a fork prefix as one byte per nibble.
+--
+-- This matches the upstream JS/Aiken codec, where a prefix
+-- like @[1,2]@ becomes bytes @01 02@ rather than a single
+-- packed byte @12@.
+encodeNibblePrefix :: HexKey -> ByteString
+encodeNibblePrefix =
+    B.pack . map (\(HexDigit d) -> d)
 
 -- | Encode a Leaf step.
 --
@@ -305,9 +315,15 @@ unpackFullKeyPath = concatMap byteToNibbles . B.unpack
         , HexDigit (b `mod` 16)
         ]
 
--- | Unpack nibble-packed prefix to HexKey
-unpackNibblePrefix :: ByteString -> HexKey
-unpackNibblePrefix = unpackFullKeyPath
+-- | Unpack a fork prefix encoded as one byte per nibble.
+unpackNibblePrefix :: ByteString -> Maybe HexKey
+unpackNibblePrefix =
+    mapM toNibble . B.unpack
+  where
+    toNibble :: Word8 -> Maybe HexDigit
+    toNibble w
+        | w < 16 = Just (HexDigit w)
+        | otherwise = Nothing
 
 -- | Parse a Branch step (after tag 121 and list begin)
 parseBranchStep :: Parser (MPFProofStep MPFHash)
@@ -357,12 +373,13 @@ parseForkStep bs = do
     (rootBS, bs6) <- parseCBORBytes bs5
     ((), bs7) <- parseBreak bs6
     ((), bs8) <- parseBreak bs7
+    neighborPrefix <- unpackNibblePrefix prefixBS
     let branchJump = replicate skip (HexDigit 0)
     Just
         ( ProofStepFork
             { psfBranchJump = branchJump
             , psfOurPosition = HexDigit 0
-            , psfNeighborPrefix = unpackNibblePrefix prefixBS
+            , psfNeighborPrefix = neighborPrefix
             , psfNeighborIndex = HexDigit (fromIntegral nibble)
             , psfMerkleRoot = MPFHash rootBS
             }

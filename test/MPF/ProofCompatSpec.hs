@@ -45,6 +45,10 @@ melonExclusionExpectedHex :: ByteString
 melonExclusionExpectedHex =
     "9fd8799f005f5840c7bfa4472f3a98ebe0421e8f3f03adf0f7c4340dec65b4b92b1c9f0bed209eb47238ba5d16031b6bace4aee22156f5028b0ca56dc24f7247d6435292e82c039c58403490a825d2e8deddf8679ce2f95f7e3a59d9c3e1af4a49b410266d21c9344d6d08434fd717aea47d156185d589f44a59fc2e0158eab7ff035083a2a66cd3e15bffffd8799f005f5840922f17e88cc74f89e0a135af20ae55ed0cac3c74f2b948bb9bc249bda9a759dd985c311e6afc57389e6f1e94796c920f142b867df4dd9304b3b6bbcfe5972c2958400eb923b0cbd24df54401d998531feead35a47a99f4deed205de4af81120f97610000000000000000000000000000000000000000000000000000000000000000ffffff"
 
+peachExpectedHex :: ByteString
+peachExpectedHex =
+    "9fd8799f005f58404be28f4839135e1f8f5372a90b54bb7bfaf997a5d13711bb4d7d93f9d4e04fbefa63eb4576001d8658219f928172eccb5448b4d7d62cd6d95228e13ebcbd53505840be527bcfc7febe3c560057d97f4190bd24b537a322315f84daafab3ada562b50da0bdb30bf45c76153418a634f1bcecba8c601ca985fbca14b57582920d82acbffffd87a9f00d8799f0f42010258202f6b320212dd98c38a7cd074886d942d9577cdad5ef1c72d32a01df1a63ed88fffffff"
+
 spec :: Spec
 spec = describe "Proof CBOR compatibility" $ do
     describe "all 30 fruit proofs render and round-trip via Aiken CBOR"
@@ -80,6 +84,15 @@ spec = describe "Proof CBOR compatibility" $ do
                 Just proof ->
                     encodeHex (renderAikenProof (mpfProofSteps proof))
                         `shouldBe` "9fd8799f005f5840c7bfa4472f3a98ebe0421e8f3f03adf0f7c4340dec65b4b92b1c9f0bed209eb47238ba5d16031b6bace4aee22156f5028b0ca56dc24f7247d6435292e82c039c58403490a825d2e8deddf8679ce2f95f7e3a59d9c3e1af4a49b410266d21c9344d6d08434fd717aea47d156185d589f44a59fc2e0158eab7ff035083a2a66cd3e15bffffd87a9f00d8799f0041075820a1ffbc0e72342b41129e2d01d289809079b002e54b123860077d2d66added281ffffff"
+
+        -- Generated from the canonical upstream off-chain implementation.
+        -- This catches fork-prefix encoding regressions that mango/kumquat miss.
+        it "peach proof matches upstream CBOR" $ do
+            case fruitProof "peach[uid: 0]" of
+                Nothing -> expectationFailure "No peach proof"
+                Just proof ->
+                    encodeHex (renderAikenProof (mpfProofSteps proof))
+                        `shouldBe` peachExpectedHex
 
         it "melon exclusion proof matches JS CBOR" $ do
             case fruitExclusionProof "melon" of
