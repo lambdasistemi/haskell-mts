@@ -24,12 +24,17 @@ jobs:
       - name: Build WASM write demo
         run: nix --quiet build .#csmt-wasm-write-demo -o result-write-demo
 
+      - name: Build WASM MPF write demo
+        run: nix --quiet build .#mpf-wasm-write-demo -o result-mpf-write-demo
+
       - name: Deploy to Surge
         run: |
           mkdir -p surge-site
           cp -L result-demo/* surge-site/
           mkdir -p surge-site/write
           cp -L result-write-demo/* surge-site/write/
+          mkdir -p surge-site/write-mpf
+          cp -L result-mpf-write-demo/* surge-site/write-mpf/
           chmod -R u+w surge-site
           nix --quiet shell nixpkgs#nodePackages.surge -c surge \
             surge-site \
@@ -46,6 +51,7 @@ jobs:
               marker,
               `Verify demo (read side): ${url}`,
               `Build + prove + verify demo (write side): ${url}/write/`,
+              `Build + prove + verify demo (MPF write side): ${url}/write-mpf/`,
             ].join('\n');
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
