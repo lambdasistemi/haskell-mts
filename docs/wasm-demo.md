@@ -42,7 +42,9 @@ exit code `1` means it does not (or the input was malformed).
 ## Build it yourself
 
 ```bash
+nix build .#csmt-verify-wasm
 nix build .#csmt-verify-wasm-demo
+PORT=8000 nix run .#csmt-verify-wasm-demo
 ```
 
 The output is a plain tree of static files suitable for copying

@@ -55,6 +55,28 @@ Or via cabal provided you have a working Haskell environment and rocksdb develop
 cabal install
 ```
 
+## WASM Outputs And Preview Commands
+
+The flake exports the combined browser-WASM bundle plus one package per
+module:
+
+```bash
+nix build .#wasm-artifacts
+nix build .#csmt-verify-wasm
+nix build .#csmt-write-wasm
+nix build .#mpf-verify-wasm
+nix build .#mpf-write-wasm
+```
+
+It also exports local preview commands for each static bundle:
+
+```bash
+PORT=8000 nix run .#csmt-verify-wasm-demo
+PORT=8001 nix run .#csmt-wasm-write-demo
+PORT=8002 nix run .#mpf-wasm-write-demo
+PORT=8003 nix run .#docs
+```
+
 ## Start With The Tutorials
 
 Once the project builds, the fastest way to understand the current
