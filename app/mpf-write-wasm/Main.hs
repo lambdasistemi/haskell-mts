@@ -43,7 +43,7 @@ import MPF.Backend.Standalone
 import MPF.Deletion (deleting)
 import MPF.Hashes
     ( MPFHash
-    , fromHexKVHashes
+    , fromHexKVAikenHashes
     , mpfHashing
     , parseMPFHash
     , renderMPFHash
@@ -187,7 +187,7 @@ execute db0 ops qk =
     let runOp (OpInsert k v) =
             inserting
                 []
-                fromHexKVHashes
+                fromHexKVAikenHashes
                 mpfHashing
                 MPFStandaloneKVCol
                 MPFStandaloneMPFCol
@@ -196,7 +196,7 @@ execute db0 ops qk =
         runOp (OpDelete k) =
             deleting
                 []
-                fromHexKVHashes
+                fromHexKVAikenHashes
                 mpfHashing
                 MPFStandaloneKVCol
                 MPFStandaloneMPFCol
@@ -208,7 +208,7 @@ execute db0 ops qk =
             pIncl <-
                 mkMPFInclusionProof
                     []
-                    fromHexKVHashes
+                    fromHexKVAikenHashes
                     mpfHashing
                     MPFStandaloneMPFCol
                     qk
@@ -217,7 +217,7 @@ execute db0 ops qk =
                 Nothing ->
                     mkMPFExclusionProof
                         []
-                        fromHexKVHashes
+                        fromHexKVAikenHashes
                         mpfHashing
                         MPFStandaloneMPFCol
                         qk

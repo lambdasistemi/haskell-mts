@@ -16,7 +16,9 @@ module MPF.Hashes
       -- * Hash Operations
     , computeLeafHash
     , computeMerkleRoot
+    , aikenKeyPath
     , fromHexKVHashes
+    , fromHexKVAikenHashes
     , byteStringToHexKey'
 
       -- * Key Encoding
@@ -147,6 +149,26 @@ fromHexKVHashes :: FromHexKV ByteString ByteString MPFHash
 fromHexKVHashes =
     FromHexKV
         { fromHexK = byteStringToHexKey
+        , fromHexV = mkMPFHash
+        , hexTreePrefix = const []
+        }
+
+-- | Derive the Aiken-compatible trie path for a raw key.
+--
+-- Upstream Aiken routes keys by @blake2b_256(key)@ rendered as 64 hex
+-- nibbles, not by the raw UTF-8 bytes directly.
+aikenKeyPath :: ByteString -> HexKey
+aikenKeyPath = byteStringToHexKey . renderMPFHash . mkMPFHash
+
+-- | Aiken-compatible FromHexKV for raw ByteString keys and values.
+--
+-- The key remains unmodified in the KV column, but the MPF tree path is
+-- derived from 'aikenKeyPath' so generated proofs verify against the
+-- Aiken proof format.
+fromHexKVAikenHashes :: FromHexKV ByteString ByteString MPFHash
+fromHexKVAikenHashes =
+    FromHexKV
+        { fromHexK = aikenKeyPath
         , fromHexV = mkMPFHash
         , hexTreePrefix = const []
         }
