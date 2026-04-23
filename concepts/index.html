@@ -1,0 +1,1586 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://lambdasistemi.github.io/haskell-mts/concepts/">
+      
+      
+        <link rel="prev" href="../installation/">
+      
+      
+        <link rel="next" href="../interface/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.0">
+    
+    
+      
+        <title>Concepts - MTS Documentation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.618322db.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../css/terminal-player.css">
+    
+      <link rel="stylesheet" href="../css/asciinema-player.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#concepts" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="MTS Documentation" class="md-header__button md-logo" aria-label="MTS Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MTS Documentation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Concepts
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/lambdasistemi/haskell-mts" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="MTS Documentation" class="md-nav__button md-logo" aria-label="MTS Documentation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    MTS Documentation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/lambdasistemi/haskell-mts" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#merkle-trees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Merkle Trees
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mts-the-shared-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MTS: The Shared Interface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sparse-merkle-trees" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sparse Merkle Trees
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#csmt-compact-sparse-merkle-tree" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CSMT: Compact Sparse Merkle Tree
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CSMT: Compact Sparse Merkle Tree">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#path-compression-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Compression Example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#csmt-key-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CSMT Key Components
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mpf-merkle-patricia-forest" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MPF: Merkle Patricia Forest
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MPF: Merkle Patricia Forest">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hex-nibble-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hex Nibble Keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#16-ary-branching" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        16-ary Branching
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mpf-hashing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MPF Hashing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#proofs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proofs
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Proofs">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inclusion-proofs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inclusion Proofs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#completeness-proofs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Completeness Proofs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#storage-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Storage Model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#operational-modes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Operational Modes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lifecycle-and-transition" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle and Transition
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#crash-safety" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Crash Safety
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rollbacks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollbacks
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../interface/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MTS Interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Implementations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../csmt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CSMT (Binary Trie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mpf/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MPF (16-ary Trie)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/system/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/inclusion-proof/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inclusion Proof
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/exclusion-proof/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Exclusion Proof
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/example/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Example
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Usage
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../manual/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CLI Manual
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../library/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Library API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../typescript/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TypeScript Verifier
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wasm-demo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CSMT WASM Verifier Demo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wasm-write-demo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CSMT WASM Write Demo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wasm-mpf-demo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MPF WASM Write Demo
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href=".." class="md-path__link">
+        
+  <span class="md-ellipsis">
+    Home
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      <li class="md-path__item">
+        <a href="../installation/" class="md-path__link">
+          
+  <span class="md-ellipsis">
+    Getting Started
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="concepts">Concepts</h1>
+<p>This page explains the key concepts behind MTS and its two trie implementations.</p>
+<h2 id="merkle-trees">Merkle Trees</h2>
+<p>A Merkle tree is a tree where:</p>
+<ul>
+<li>Each leaf node contains the hash of a data block</li>
+<li>Each internal node contains the hash of its children</li>
+</ul>
+<pre class="mermaid"><code>graph TD
+    Root[Root Hash] --&gt; L[Hash AB]
+    Root --&gt; R[Hash CD]
+    L --&gt; A[Hash A]
+    L --&gt; B[Hash B]
+    R --&gt; C[Hash C]
+    R --&gt; D[Hash D]</code></pre>
+<p>This structure enables <strong>Merkle proofs</strong> - compact proofs that a specific piece of data is part of the tree. To prove inclusion of data A, you only need:</p>
+<ol>
+<li>Hash of A</li>
+<li>Hash B (sibling)</li>
+<li>Hash CD (uncle)</li>
+</ol>
+<p>With these three hashes, anyone can recompute the root and verify the proof.</p>
+<h2 id="mts-the-shared-interface">MTS: The Shared Interface</h2>
+<p>MTS defines a common <code>MerkleTreeStore</code> record that abstracts over the trie
+implementation. Type families determine the concrete key, value, hash, proof,
+leaf, and completeness proof types for each backend:</p>
+<table>
+<thead>
+<tr>
+<th>Operation</th>
+<th>Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mtsInsert</code></td>
+<td><code>MtsKey imp -&gt; MtsValue imp -&gt; m ()</code></td>
+</tr>
+<tr>
+<td><code>mtsDelete</code></td>
+<td><code>MtsKey imp -&gt; m ()</code></td>
+</tr>
+<tr>
+<td><code>mtsRootHash</code></td>
+<td><code>m (Maybe (MtsHash imp))</code></td>
+</tr>
+<tr>
+<td><code>mtsMkProof</code></td>
+<td><code>MtsKey imp -&gt; m (Maybe (MtsProof imp))</code></td>
+</tr>
+<tr>
+<td><code>mtsVerifyProof</code></td>
+<td><code>MtsValue imp -&gt; MtsProof imp -&gt; m Bool</code></td>
+</tr>
+<tr>
+<td><code>mtsBatchInsert</code></td>
+<td><code>[(MtsKey imp, MtsValue imp)] -&gt; m ()</code></td>
+</tr>
+</tbody>
+</table>
+<p>Application code written against <code>MerkleTreeStore imp m</code> works with either
+CSMT or MPF. See <a href="../interface/">MTS Interface</a> for the full API.</p>
+<h2 id="sparse-merkle-trees">Sparse Merkle Trees</h2>
+<p>A Sparse Merkle Tree (SMT) is a Merkle tree where:</p>
+<ul>
+<li>Keys determine the path through the tree (each bit = left or right)</li>
+<li>Most leaves are empty (hence "sparse")</li>
+<li>The tree depth equals the key length in bits</li>
+</ul>
+<p>For a 256-bit key, a naive SMT would have 2^256 possible leaves - far too large to store explicitly.</p>
+<h2 id="csmt-compact-sparse-merkle-tree">CSMT: Compact Sparse Merkle Tree</h2>
+<p>The CSMT is a <strong>binary trie</strong> that optimizes storage through path compression:</p>
+<ol>
+<li><strong>Path compression</strong>: Empty subtrees are not stored</li>
+<li><strong>Jump paths</strong>: Instead of storing each node on the path, we store a "jump" directly to where the data diverges</li>
+</ol>
+<h3 id="path-compression-example">Path Compression Example</h3>
+<p>Consider inserting keys <code>LLRR</code> and <code>LRRL</code>:</p>
+<p><strong>Without compression</strong> (naive SMT):
+<div class="highlight"><pre><span></span><code>Root -&gt; L -&gt; L -&gt; R -&gt; R -&gt; value1
+     -&gt; R -&gt; R -&gt; L -&gt; value2
+</code></pre></div></p>
+<p><strong>With compression</strong> (CSMT):
+<div class="highlight"><pre><span></span><code>Root -&gt; L (jump to divergence point)
+       +-- L,RR -&gt; value1  (jump = RR)
+       +-- R,RL -&gt; value2  (jump = RL)
+</code></pre></div></p>
+<p>The CSMT stores only the nodes where paths actually diverge, plus "jump" metadata indicating how many levels to skip.</p>
+<h3 id="csmt-key-components">CSMT Key Components</h3>
+<p><strong>Keys</strong>: Sequences of directions (<code>L</code> = left = 0, <code>R</code> = right = 1). A 256-bit hash becomes a 256-element path.</p>
+<p><strong>Indirect references</strong>: Each node stores an <code>Indirect</code> value containing a <code>jump</code> (path prefix to skip) and a <code>value</code> (hash).</p>
+<p><strong>Hashing</strong>: Blake2b-256. Internal node hashes are computed by hashing the serialized left and right children.</p>
+<p>For CSMT-specific details, see <a href="../csmt/">CSMT (Binary Trie)</a>.</p>
+<h2 id="mpf-merkle-patricia-forest">MPF: Merkle Patricia Forest</h2>
+<p>The MPF is a <strong>16-ary trie</strong> where each node branches on a hex nibble (4 bits)
+rather than a single bit. This gives a much shallower tree for the same key
+length: a 32-byte key produces a trie of depth 64 (nibbles) rather than 256
+(bits).</p>
+<h3 id="hex-nibble-keys">Hex Nibble Keys</h3>
+<p>Keys are represented as sequences of <code>HexDigit</code> values (0-15). A
+<code>ByteString</code> key is converted to a <code>HexKey</code> by splitting each byte into its
+high and low nibbles:</p>
+<div class="highlight"><pre><span></span><code>byte 0xa3 -&gt; [HexDigit 0xa, HexDigit 0x3]
+</code></pre></div>
+<h3 id="16-ary-branching">16-ary Branching</h3>
+<p>Each branch node holds a sparse 16-element array of children (one per
+nibble). Path compression works similarly to CSMT: a <code>hexJump</code> field on
+each <code>HexIndirect</code> node records the key suffix to skip.</p>
+<p>Nodes are tagged as <strong>leaf</strong> (<code>hexIsLeaf = True</code>) or <strong>branch</strong>
+(<code>hexIsLeaf = False</code>), which determines the hashing scheme.</p>
+<h3 id="mpf-hashing">MPF Hashing</h3>
+<p>MPF uses a different hash construction from CSMT to achieve Aiken
+compatibility:</p>
+<ul>
+<li><strong>Leaf hash</strong>: <code>blake2b(hashHead || hashTail || valueDigest)</code> where
+  <code>hashHead</code>/<code>hashTail</code> encode the suffix nibbles with even/odd length
+  handling</li>
+<li><strong>Branch hash</strong>: <code>blake2b(nibbleBytes(prefix) || merkleRoot(children))</code>
+  where <code>merkleRoot</code> reduces the 16-slot sparse array via pairwise hashing</li>
+<li><strong>Merkle root</strong>: Pairwise reduction of 16 child hashes (missing children
+  use a null hash of 32 zero bytes)</li>
+</ul>
+<p>For MPF-specific details, see <a href="../mpf/">MPF (16-ary Trie)</a>.</p>
+<h2 id="proofs">Proofs</h2>
+<h3 id="inclusion-proofs">Inclusion Proofs</h3>
+<p>An inclusion proof demonstrates that a key-value pair exists in the tree.
+Both CSMT and MPF support inclusion proofs through the shared
+<code>mtsMkProof</code>/<code>mtsVerifyProof</code> interface, though the internal proof
+format differs.</p>
+<p><strong>CSMT proofs</strong> are CBOR-encoded and contain the key, value hash, root hash,
+sibling hashes along the path, and jump paths at each level. See
+<a href="../architecture/inclusion-proof/">Inclusion Proof Format</a> for the wire
+format specification.</p>
+<p><strong>MPF proofs</strong> use an Aiken-compatible proof-step model. The internal proof
+contains step information, while the Aiken wire format carries the proof-step
+list only. Browser/WASM verification therefore supplies the query key and,
+for inclusion mode, the value alongside the proof bytes.</p>
+<p>Both implementations also expose implementation-specific exclusion-proof APIs.
+The browser write demos exercise those explicit exclusion witnesses for both
+CSMT and MPF.</p>
+<h3 id="completeness-proofs">Completeness Proofs</h3>
+<p>A completeness proof demonstrates that a set of values comprises the
+entire contents of a subtree. When <code>treePrefix</code> groups entries by a
+common prefix (e.g. address bytes), a completeness proof can show that
+a given set of entries is <strong>all</strong> entries under that prefix. It consists of:</p>
+<ol>
+<li>All leaf values under the prefix</li>
+<li>A sequence of merge operations to reconstruct the subtree</li>
+<li>Sibling hashes at the boundary to connect back to the root</li>
+</ol>
+<p>Completeness proofs are currently implemented for CSMT only. MPF
+completeness proofs are planned.</p>
+<h2 id="storage-model">Storage Model</h2>
+<p>Both implementations use a three-column storage model:</p>
+<table>
+<thead>
+<tr>
+<th>Column</th>
+<th>Key</th>
+<th>Value</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>KV</td>
+<td>User key</td>
+<td>User value</td>
+<td>Original key-value pairs</td>
+</tr>
+<tr>
+<td>Trie</td>
+<td>Derived tree key</td>
+<td>Node (jump + hash)</td>
+<td>Merkle tree structure</td>
+</tr>
+<tr>
+<td>Journal</td>
+<td>User key</td>
+<td>Tagged value</td>
+<td>KVOnly replay log</td>
+</tr>
+</tbody>
+</table>
+<p>The tree key is derived from the user key (and optionally a prefix from
+the value) using the <code>FromKV</code>/<code>FromHexKV</code> conversion records. The Journal
+column records mutations made in KVOnly mode for later replay against the
+tree.</p>
+<p>See <a href="../architecture/storage/">Storage Layer</a> for implementation-specific
+details.</p>
+<h2 id="operational-modes">Operational Modes</h2>
+<p>MTS operates in one of two modes, enforced at the type level by the
+<code>Mode</code> kind and the <code>Ops</code> GADT:</p>
+<ul>
+<li><strong>KVOnly</strong> — mutations write to the KV and Journal columns only.
+  No tree operations are available (no root hash, no proofs). This is
+  the fast-ingest mode.</li>
+<li><strong>Full</strong> — mutations write to KV and update the CSMT/MPF tree.
+  Root hash, inclusion proofs, and completeness proofs are available.</li>
+</ul>
+<p>The mode is not observable from the database alone; it is tracked by
+the <code>Ops</code> GADT in memory.</p>
+<h2 id="lifecycle-and-transition">Lifecycle and Transition</h2>
+<p>The <code>Ops</code> GADT provides bidirectional transitions:</p>
+<ul>
+<li><strong><code>toFull</code></strong> (KVOnly → Full): replays journal entries against the tree
+  via <code>patchParallel</code> with concurrent bucket execution, then returns
+  <code>OpsFull</code>.</li>
+<li><strong><code>toKVOnly</code></strong> (Full → KVOnly): verifies the journal is empty, then
+  returns <code>OpsKVOnly</code>.</li>
+</ul>
+<p>The <code>MtsTransition</code> record provides a managed lifecycle with a one-shot
+<code>transitionToFull</code> action that locks the KVOnly store before replaying.</p>
+<h2 id="crash-safety">Crash Safety</h2>
+<p>Each bucket transaction in the parallel replay is atomic (tree ops +
+journal entry deletes in a single transaction). A <strong>sentinel flag</strong> in
+the journal column brackets the non-atomic <code>toFull</code> sequence:</p>
+<ol>
+<li>Write sentinel + <code>expandToBucketDepth</code> (atomic)</li>
+<li>Replay loop (parallel bucket transactions)</li>
+<li><code>mergeSubtreeRoots</code> + delete sentinel (atomic)</li>
+</ol>
+<p>If the process crashes between steps 1–4, the next <code>toFull</code> detects the
+sentinel, runs <code>mergeSubtreeRoots</code> to fix the tree top, then continues
+with the normal replay of remaining journal entries.</p>
+<p>The <code>DbState</code> type exposes this as a three-state open result:</p>
+<ul>
+<li><code>NeedsRecovery</code> — sentinel found, must run recovery first</li>
+<li><code>Ready</code> — clean state, choose KVOnly or Full</li>
+</ul>
+<h2 id="rollbacks">Rollbacks</h2>
+<p>The <code>rollbacks</code> library implements a swap-partition model where two
+database partitions alternate between "live" and "staging" roles.
+Rollbacks discard the staging partition and swap back. Formal
+correctness is proved in Lean 4 (see <code>lean/</code> directory).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.indexes", "toc.integrate", "content.code.copy", "navigation.path"], "search": "../assets/javascripts/workers/search.7a47a382.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.e71a0d61.min.js"></script>
+      
+        <script src="../js/asciinema-player.min.js"></script>
+      
+    
+  </body>
+</html>
