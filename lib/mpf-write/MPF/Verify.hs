@@ -18,6 +18,7 @@ import Data.Bits (testBit)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.List (foldl')
+import Data.Maybe (fromMaybe)
 import Data.Word (Word8)
 import MPF.Hashes
     ( MPFHash (..)
@@ -93,11 +94,9 @@ foldAikenProof including path valueDigest =
   where
     go cursor [] =
         if including
-            then do
-                digest <- valueDigest
-                pure
-                    $ Just
-                    $ leafHash mpfHashing (drop cursor path) digest
+            then
+                Just . leafHash mpfHashing (drop cursor path)
+                    <$> valueDigest
             else pure Nothing
     go cursor (proofStep : rest) = do
         let skip = apsSkip proofStep
@@ -187,7 +186,7 @@ hexDigitToInt (HexDigit w) = fromIntegral w
 rebuildMerkleRoot
     :: Int -> Maybe MPFHash -> [MPFHash] -> MPFHash
 rebuildMerkleRoot position acc =
-    foldl' step (maybe nullHash id acc) . zip [0 :: Int ..] . reverse
+    foldl' step (fromMaybe nullHash acc) . zip [0 :: Int ..] . reverse
   where
     step current (depth, siblingHash)
         | testBit position depth =

@@ -169,10 +169,9 @@ spec = describe "MPF.Verify" $ do
                 B.empty
             `shouldBe` False
   where
-    mkFruitlessProof key =
+    mkFruitlessProof =
         mkMPFInclusionProof
             []
             fromHexKVAikenHashes
             mpfHashing
             MPFStandaloneMPFCol
-            key
