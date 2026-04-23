@@ -22,6 +22,7 @@ import Data.Word (Word8)
 import MPF.Hashes
     ( MPFHash (..)
     , MPFHashing (..)
+    , aikenKeyPath
     , byteStringToHexKey'
     , mkMPFHash
     , mpfHashing
@@ -79,7 +80,7 @@ verifyAikenExclusionProof rootBs keyBs proofBs =
         Nothing -> False
 
 pathFor :: ByteString -> HexKey
-pathFor = byteStringToHexKey' . renderMPFHash . mkMPFHash
+pathFor = aikenKeyPath
 
 foldAikenProof
     :: Bool
