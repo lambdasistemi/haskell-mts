@@ -56,5 +56,6 @@ nav:
     - CLI Manual: manual.md
     - Library API: library.md
     - TypeScript Verifier: typescript.md
-    - WASM Browser Demo: wasm-demo.md
+    - WASM Verifier Demo: wasm-demo.md
     - WASM Write Demo: wasm-write-demo.md
+    - WASM MPF Demo: wasm-mpf-demo.md

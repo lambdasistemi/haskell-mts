@@ -11,17 +11,14 @@ module MPF.Hashes.Types
     )
 where
 
-import Data.ByteArray (ByteArray, ByteArrayAccess)
-import Data.ByteArray.Encoding (Base (Base64), convertToBase)
 import Data.ByteString (ByteString)
-import Data.ByteString.Char8 qualified as BC
 
 -- | MPF Hash value (32 bytes Blake2b-256)
 newtype MPFHash = MPFHash ByteString
-    deriving (Eq, Ord, Semigroup, Monoid, ByteArrayAccess, ByteArray)
+    deriving (Eq, Ord, Semigroup, Monoid)
 
 instance Show MPFHash where
-    show (MPFHash h) = BC.unpack $ "MPFHash " <> convertToBase Base64 h
+    show (MPFHash h) = "MPFHash " ++ show h
 
 -- | Extract the raw bytes of a hash
 renderMPFHash :: MPFHash -> ByteString

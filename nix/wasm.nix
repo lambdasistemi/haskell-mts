@@ -1,4 +1,5 @@
-# Build the CSMT WASM artefacts (csmt-verify + csmt-write)
+# Build the CSMT and MPF WASM artefacts
+# (csmt-verify + csmt-write + mpf-verify + mpf-write)
 # using GHC's WASM backend.
 #
 # Two-phase strategy, adapted from cardano-addresses's WASM recipe
@@ -17,12 +18,7 @@
 #
 # The single source-repository-package dep is cborg (Hackage's
 # 0.2.10.0 is broken on GHC 9.12 WASM).
-{
-  pkgs,
-  ghcWasmToolchain,
-  src,
-  dependenciesHash,
-}:
+{ pkgs, ghcWasmToolchain, src, dependenciesHash, }:
 
 let
   haskell-nix = pkgs.haskell-nix;
@@ -48,51 +44,43 @@ let
 
   mkLocalHackageRepo = haskell-nix.mkLocalHackageRepo;
 
-  bootstrappedHackage =
-    pkgs.runCommand "cabal-bootstrap-hackage.haskell.org"
-      {
-        nativeBuildInputs = [
-          haskell-nix.nix-tools.exes.cabal
-        ]
-        ++ haskell-nix.cabal-issue-8352-workaround;
+  bootstrappedHackage = pkgs.runCommand "cabal-bootstrap-hackage.haskell.org" {
+    nativeBuildInputs = [ haskell-nix.nix-tools.exes.cabal ]
+      ++ haskell-nix.cabal-issue-8352-workaround;
+  } ''
+    HOME=$(mktemp -d)
+    mkdir -p $HOME/.cabal/packages/hackage.haskell.org
+    cat <<EOF > $HOME/.cabal/config
+    repository hackage.haskell.org
+      url: file:${
+        mkLocalHackageRepo {
+          name = "hackage.haskell.org";
+          index = truncatedHackageIndex;
+        }
       }
-      ''
-        HOME=$(mktemp -d)
-        mkdir -p $HOME/.cabal/packages/hackage.haskell.org
-        cat <<EOF > $HOME/.cabal/config
-        repository hackage.haskell.org
-          url: file:${
-            mkLocalHackageRepo {
-              name = "hackage.haskell.org";
-              index = truncatedHackageIndex;
-            }
-          }
-          secure: True
-          root-keys: aaa
-          key-threshold: 0
-        EOF
-        cabal v2-update hackage.haskell.org
-        cp -r $HOME/.cabal/packages/hackage.haskell.org $out
-      '';
+      secure: True
+      root-keys: aaa
+      key-threshold: 0
+    EOF
+    cabal v2-update hackage.haskell.org
+    cp -r $HOME/.cabal/packages/hackage.haskell.org $out
+  '';
 
-  dotCabal =
-    pkgs.runCommand "dot-cabal-wasm"
-      {
-        nativeBuildInputs = [ pkgs.xorg.lndir ];
-      }
-      ''
-        mkdir -p $out/packages/hackage.haskell.org
-        lndir ${bootstrappedHackage} $out/packages/hackage.haskell.org
+  dotCabal = pkgs.runCommand "dot-cabal-wasm" {
+    nativeBuildInputs = [ pkgs.xorg.lndir ];
+  } ''
+    mkdir -p $out/packages/hackage.haskell.org
+    lndir ${bootstrappedHackage} $out/packages/hackage.haskell.org
 
-        cat > $out/config <<EOF
-        repository hackage.haskell.org
-          url: http://hackage.haskell.org/
-          secure: True
+    cat > $out/config <<EOF
+    repository hackage.haskell.org
+      url: http://hackage.haskell.org/
+      secure: True
 
-        executable-stripping: False
-        shared: True
-        EOF
-      '';
+    executable-stripping: False
+    shared: True
+    EOF
+  '';
 
   # Deterministic source-repository-package clones.
   cborg-src = pkgs.fetchgit {
@@ -102,9 +90,9 @@ let
   };
 
   # Pulled in so that the pure @kv-transactions@ sublibrary is
-  # available to csmt-write on WASM. The rocksdb-bound main library
-  # of this package is not built under flag(wasm) — see the
-  # @mts:csmt@ stanza in mts.cabal.
+  # available to the WASM write executables. The rocksdb-bound main
+  # library of this package is not built under flag(wasm) — see the
+  # native-only library stanzas in mts.cabal.
   rocksdb-kv-transactions-src = pkgs.fetchgit {
     url = "https://github.com/paolino/rocksdb-kv-transactions";
     rev = "0888387a5de81711273ea9b1e9d160decc33c231";
@@ -115,25 +103,18 @@ let
   # in the native sources (tests, benches, rocksdb stuff).
   srcMetadata = pkgs.lib.cleanSourceWith {
     inherit src;
-    filter =
-      name: type:
-      let
-        baseName = baseNameOf (toString name);
-      in
-      type == "directory" || pkgs.lib.hasSuffix ".cabal" baseName || baseName == projectFile;
+    filter = name: type:
+      let baseName = baseNameOf (toString name);
+      in type == "directory" || pkgs.lib.hasSuffix ".cabal" baseName || baseName
+      == projectFile;
   };
 
   deps = pkgs.stdenv.mkDerivation {
-    pname = "csmt-verify-wasm-deps";
+    pname = "mts-wasm-deps";
     version = "0.1.0";
     src = srcMetadata;
 
-    nativeBuildInputs = [
-      ghcWasmToolchain
-      pkgs.cacert
-      pkgs.git
-      pkgs.curl
-    ];
+    nativeBuildInputs = [ ghcWasmToolchain pkgs.cacert pkgs.git pkgs.curl ];
 
     buildPhase = ''
       export HOME=$NIX_BUILD_TOP/home
@@ -147,7 +128,11 @@ let
       chmod -R u+w $CABAL_DIR
 
       wasm32-wasi-cabal --project-file=${projectFile} build \
-        --only-download csmt-verify-wasm csmt-write-wasm
+        --only-download \
+          csmt-verify-wasm \
+          csmt-write-wasm \
+          mpf-verify-wasm \
+          mpf-write-wasm
     '';
 
     installPhase = ''
@@ -163,14 +148,11 @@ let
   };
 
   wasm = pkgs.stdenv.mkDerivation {
-    pname = "csmt-verify-wasm";
+    pname = "mts-wasm";
     version = "0.1.0";
     inherit src;
 
-    nativeBuildInputs = [
-      ghcWasmToolchain
-      pkgs.git
-    ];
+    nativeBuildInputs = [ ghcWasmToolchain pkgs.git ];
 
     configurePhase = ''
       export HOME=$NIX_BUILD_TOP/home
@@ -197,7 +179,10 @@ let
     buildPhase = ''
       export CABAL_DIR=$NIX_BUILD_TOP/cabal
       wasm32-wasi-cabal --project-file=${projectFile} build \
-        csmt-verify-wasm csmt-write-wasm
+        csmt-verify-wasm \
+        csmt-write-wasm \
+        mpf-verify-wasm \
+        mpf-write-wasm
     '';
 
     installPhase = ''
@@ -206,10 +191,11 @@ let
         -exec cp {} $out/csmt-verify.wasm \;
       find dist-newstyle -name "csmt-write-wasm.wasm" -type f \
         -exec cp {} $out/csmt-write.wasm \;
+      find dist-newstyle -name "mpf-verify-wasm.wasm" -type f \
+        -exec cp {} $out/mpf-verify.wasm \;
+      find dist-newstyle -name "mpf-write-wasm.wasm" -type f \
+        -exec cp {} $out/mpf-write.wasm \;
     '';
   };
 
-in
-{
-  inherit deps wasm;
-}
+in { inherit deps wasm; }

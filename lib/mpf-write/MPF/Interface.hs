@@ -36,8 +36,6 @@ where
 
 import Control.Lens (Prism', preview, prism', review, (<&>))
 import Data.Bits (shiftL, shiftR, (.&.), (.|.))
-import Data.ByteArray (convert)
-import Data.ByteArray qualified as BA
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.Serialize
@@ -164,28 +162,27 @@ getHexKey = do
     return $ take (fromIntegral len) $ byteStringToHexKey bs
 
 -- | Serialize a sized ByteString with length prefix
-putSizedByteString :: BA.ByteArrayAccess a => a -> PutM ()
+putSizedByteString :: ByteString -> PutM ()
 putSizedByteString bs = do
-    let len = fromIntegral $ BA.length bs
+    let len = fromIntegral $ B.length bs
     putWord16be len
-    putByteString $ convert bs
+    putByteString bs
 
 -- | Deserialize a sized ByteString
-getSizedByteString :: BA.ByteArray a => Get a
+getSizedByteString :: Get ByteString
 getSizedByteString = do
     len <- getWord16be
-    bs <- getByteString (fromIntegral len)
-    return $ convert bs
+    getByteString (fromIntegral len)
 
 -- | Serialize a HexIndirect
-putHexIndirect :: BA.ByteArrayAccess a => HexIndirect a -> PutM ()
+putHexIndirect :: HexIndirect ByteString -> PutM ()
 putHexIndirect HexIndirect{hexJump, hexValue, hexIsLeaf} = do
     putHexKey hexJump
     putSizedByteString hexValue
     putWord8 (if hexIsLeaf then 1 else 0)
 
 -- | Deserialize a HexIndirect
-getHexIndirect :: BA.ByteArray a => Get (HexIndirect a)
+getHexIndirect :: Get (HexIndirect ByteString)
 getHexIndirect = do
     hexJump <- getHexKey
     hexValue <- getSizedByteString

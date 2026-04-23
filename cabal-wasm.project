@@ -1,7 +1,9 @@
--- WASM build configuration for the read (csmt-verify) and write
--- (csmt-write) slices of the CSMT library. Usage:
+-- WASM build configuration for the pure CSMT and MPF verifier/write
+-- entry points. Usage:
 --   wasm32-wasi-cabal --project-file=cabal-wasm.project build csmt-verify-wasm
 --   wasm32-wasi-cabal --project-file=cabal-wasm.project build csmt-write-wasm
+--   wasm32-wasi-cabal --project-file=cabal-wasm.project build mpf-verify-wasm
+--   wasm32-wasi-cabal --project-file=cabal-wasm.project build mpf-write-wasm
 --
 -- Both entry points link only against pure-Haskell sublibraries;
 -- this project is deliberately disjoint from cabal.project which
@@ -38,10 +40,9 @@ source-repository-package
   tag: 0888387a5de81711273ea9b1e9d160decc33c231
   --sha256: 0ywi4p744sk688p50f6n69llvxa1fws27wqciyhj4b57cqcpam4m
 
--- Build only the WASM executables (which pull in csmt-verify and
--- csmt-write). The native csmt library, tests, benchmarks, and
--- other sublibraries have C deps (rocksdb, crypton) that are not
--- in scope for this project.
+-- Build only the WASM executables. The native libraries, tests,
+-- benchmarks, and RocksDB-bound components are intentionally out of
+-- scope for this project.
 package mts
   flags: +wasm
 
