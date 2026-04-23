@@ -14,6 +14,7 @@ graph TD
     CSMT -->|Read/Write| RDB1[RocksDB / In-Memory]
     MPF -->|Read/Write| RDB2[RocksDB / In-Memory]
     TS[TypeScript Verifier] -.->|Verify CSMT proofs| Client[Browser / Node.js]
+    WASM[Browser WASM Demos] -.->|Verify / mutate CSMT and MPF| Client
 ```
 
 ### Layers
@@ -23,7 +24,7 @@ graph TD
 | **MTS Interface** | Shared `MerkleTreeStore` record with type families. Mode-indexed by `KVOnly` / `Full`. |
 | **Ops GADT** | `CommonOps` + `Ops` GADT with bidirectional transitions (`toFull` / `toKVOnly`). |
 | **CSMT Implementation** | Binary trie with path compression, CBOR proofs, completeness proofs, CLI, crash recovery. |
-| **MPF Implementation** | 16-ary trie with hex nibble keys, batch/streaming inserts, Aiken-compatible hashes. |
+| **MPF Implementation** | 16-ary trie with hex nibble keys, batch/streaming inserts, Aiken-compatible hashes and proof-step verification. |
 | **Storage Backends** | RocksDB (persistent) and in-memory (testing) for both implementations. Three columns: KV, Trie, Journal. |
 
 ### Components
@@ -38,6 +39,8 @@ graph TD
   operations. Uses `CSMT_DB_PATH` for the RocksDB database path.
 - **TypeScript Verifier** (`@paolino/csmt-verify`): Client-side CSMT proof
   verification for browser/Node.js.
+- **Browser WASM demos**: static demos for CSMT read-only verification, CSMT
+  write/prove/verify, and MPF write/prove/verify.
 
 ## Planned
 

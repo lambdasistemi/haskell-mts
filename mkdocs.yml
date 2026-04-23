@@ -1,5 +1,5 @@
 site_name: MTS Documentation
-site_url: https://paolino.github.io/haskell-mts/
+site_url: https://lambdasistemi.github.io/haskell-mts/
 repo_url: https://github.com/lambdasistemi/haskell-mts
 
 theme:
@@ -56,6 +56,6 @@ nav:
     - CLI Manual: manual.md
     - Library API: library.md
     - TypeScript Verifier: typescript.md
-    - WASM Verifier Demo: wasm-demo.md
-    - WASM Write Demo: wasm-write-demo.md
-    - WASM MPF Demo: wasm-mpf-demo.md
+    - CSMT WASM Verifier Demo: wasm-demo.md
+    - CSMT WASM Write Demo: wasm-write-demo.md
+    - MPF WASM Write Demo: wasm-mpf-demo.md

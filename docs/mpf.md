@@ -18,7 +18,9 @@ MPF provides:
 - Leaf/branch distinction (`hexIsLeaf` flag) for different hash schemes
 - Aiken-compatible root hashes (verified against 30-fruit test vector)
 - Batch, chunked, and streaming insertion modes
-- Inclusion proofs with SMT proof steps
+- Aiken-compatible inclusion and exclusion proofs
+- Pure verification helpers in `MPF.Verify`
+- Browser-side build/prove/verify via `mpf-write.wasm` and `mpf-verify.wasm`
 
 ## Key Types
 
@@ -59,8 +61,10 @@ data FromHexKV k v a = FromHexKV
     }
 ```
 
-The default `fromHexKVHashes` hashes the key with Blake2b-256, converts
-to nibbles, and hashes the value.
+`fromHexKVHashes` converts the raw key bytes directly to nibbles and hashes the
+value. When you need Aiken/browser parity, use `fromHexKVAikenHashes`
+instead: it routes the trie path through `blake2b_256(key)` rendered as 64
+hex nibbles, while still storing the original user key in the KV column.
 
 ### `MPFHashing` - Hash Operations
 
@@ -126,26 +130,41 @@ MPF supports multiple insertion strategies:
 Streaming insertion groups keys by their first hex digit, processing
 each of the 16 subtrees independently.
 
-## Inclusion Proofs
+## Proofs
 
-MPF inclusion proofs contain:
+### Inclusion Proofs
 
-- The key and value
-- A sequence of proof steps, each with:
-    - Node type (leaf or branch)
-    - Sibling hash
-    - SMT proof: 4 intermediate hashes from the 16-element pairwise
-      reduction tree
-- The root hash
+MPF inclusion proofs are built from proof steps that mirror Aiken's
+proof-step model:
 
-The SMT proof encodes the path through the binary reduction of the
-16-slot array, collecting the opposite subtree's root at each of 4
-levels.
+- branch steps for nodes with many siblings
+- fork steps when exactly one non-empty sibling is another branch
+- leaf steps when exactly one non-empty sibling is a leaf
+
+Each step also carries the 4-hash SMT witness needed to reconstruct the
+16-slot branch reduction.
+
+The Aiken wire format emitted by `renderAikenProof` serializes the proof-step
+list only. The pure verifier therefore takes the raw query key and, for
+inclusion mode, the raw value as separate inputs.
+
+### Exclusion Proofs
+
+MPF exclusion proofs reuse the same Aiken proof-step encoding as inclusion
+proofs. The distinction is carried out-of-band:
+
+- `ptype = 0` for inclusion
+- `ptype = 1` for exclusion
+- `ptype = 0xff` for the empty-tree sentinel in the browser demo
+
+This keeps the browser/WASM transport aligned with upstream Aiken instead of
+inventing a second exclusion-proof payload format.
 
 ## Aiken Compatibility
 
 MPF produces root hashes matching the Aiken `MerkleTree` reference
-implementation. This is verified by the 30-fruit test vector from the
+implementation, and the browser write path now derives key paths the same way
+the pure verifier does. This is verified by the 30-fruit test vector from the
 Aiken test suite:
 
 ```
@@ -155,8 +174,20 @@ Expected root: 4acd78f345a686361df77541b2e0b533f53362e36620a1fdd3a13e0b61a3b078
 The test inserts 30 fruit key-value pairs (e.g. `"apple[uid: 58]"` ->
 hash of the emoji) and verifies the resulting root hash matches exactly.
 
+The same Aiken-parity work also backs the browser demo:
+
+- `mpf-write.wasm` mutates the forest and emits Aiken proof-step bytes
+- `mpf-verify.wasm` re-verifies those bytes against the root, raw key, and
+  raw value
+
 ## Completeness Proofs
 
 MPF completeness proofs are not yet implemented. The `mtsCollectLeaves`,
 `mtsMkCompletenessProof`, and `mtsVerifyCompletenessProof` fields
 currently raise an error.
+
+## Browser Demo
+
+For the end-to-end tutorial, see [MPF WASM Write Demo](wasm-mpf-demo.md).
+That page walks through insert, delete, inclusion proof generation, exclusion
+witness generation, and independent verification in the browser.

@@ -8,7 +8,7 @@ them against the root - happens inside sandboxed WASM.
 <div id="demo-frame"></div>
 
 !!! tip "Try it"
-    [Open the standalone demo](demo-write/index.html){:target="_blank"}
+    <a href="../demo-write/index.html" target="_blank">Open the standalone demo</a>
 
 ## What the demo ships
 

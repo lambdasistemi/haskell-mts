@@ -54,3 +54,14 @@ Or via cabal provided you have a working Haskell environment and rocksdb develop
 ```bash
 cabal install
 ```
+
+## Start With The Tutorials
+
+Once the project builds, the fastest way to understand the current
+user-facing behavior is:
+
+1. [CLI Manual](manual.md) for the CSMT command-line workflow
+2. [CSMT WASM Verifier Demo](wasm-demo.md) for read-only proof checking
+3. [CSMT WASM Write Demo](wasm-write-demo.md) for browser-side mutation
+4. [MPF WASM Write Demo](wasm-mpf-demo.md) for MPF build/prove/verify with
+   Aiken-compatible proofs

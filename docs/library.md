@@ -240,11 +240,14 @@ use the `mts:mpf` sub-library directly.
 | Module | Purpose |
 |--------|---------|
 | `MPF` | Re-exports the public API |
-| `MPF.Hashes` | Blake2b-256 operations, `fromHexKVHashes`, `mpfHashing` |
+| `MPF.Hashes` | Blake2b-256 operations, `fromHexKVHashes`, `fromHexKVAikenHashes`, `mpfHashing` |
+| `MPF.Hashes.Aiken` | Aiken proof-step rendering/parsing helpers |
 | `MPF.Interface` | `FromHexKV`, `HexIndirect`, `HexKey`, `HexDigit` |
 | `MPF.Insertion` | `inserting`, `insertingBatch`, `insertingChunked`, `insertingStream` |
 | `MPF.Deletion` | `deleting` |
 | `MPF.Proof.Insertion` | `mkMPFInclusionProof`, `verifyMPFInclusionProof`, `foldMPFProof` |
+| `MPF.Proof.Exclusion` | `mkMPFExclusionProof`, `verifyMPFExclusionProof`, `foldMPFExclusionProof` |
+| `MPF.Verify` | `verifyAikenInclusionProof`, `verifyAikenExclusionProof` |
 | `MPF.Backend.RocksDB` | RocksDB persistent backend |
 | `MPF.Backend.Pure` | In-memory backend for testing |
 | `MPF.Backend.Standalone` | Column selectors and codecs |
@@ -271,11 +274,17 @@ insertingStream fromKV hashing kvCol mpfCol pairs
 ### Hex Key Operations
 
 ```haskell
+import MPF.Hashes (aikenKeyPath, fromHexKVAikenHashes)
 import MPF.Interface (byteStringToHexKey, hexKeyToByteString, HexDigit(..), HexKey)
 
 let key = byteStringToHexKey "hello"  -- [HexDigit 6, HexDigit 8, ...]
 let bs  = hexKeyToByteString key       -- round-trips back
+let aiken = aikenKeyPath "hello"       -- Blake2b(key) rendered as nibbles
 ```
+
+Use `fromHexKVAikenHashes` when you need the same hashed key routing used by
+the Aiken-compatible browser demo and `MPF.Verify`. Keep `fromHexKVHashes`
+for direct raw-byte-to-nibble routing.
 
 ### Column Selectors
 
@@ -283,6 +292,20 @@ MPF uses its own GADT column selectors:
 
 - `MPFStandaloneKVCol` - Key-value column
 - `MPFStandaloneMPFCol` - MPF tree column
+
+### Aiken Proof Verification
+
+For browser/WASM-style verification against raw key/value bytes:
+
+```haskell
+import MPF.Verify
+    ( verifyAikenExclusionProof
+    , verifyAikenInclusionProof
+    )
+```
+
+These functions verify the exact proof-step bytes emitted by
+`renderAikenProof`, which is the transport used by the MPF browser demo.
 
 ## Error Handling
 

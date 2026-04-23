@@ -8,7 +8,7 @@ in any WASI-capable host, including a browser using the
 <div id="demo-frame"></div>
 
 !!! tip "Try it"
-    [Open the standalone demo](demo/index.html){:target="_blank"}
+    <a href="../demo/index.html" target="_blank">Open the standalone demo</a>
 
 The demo ships:
 
