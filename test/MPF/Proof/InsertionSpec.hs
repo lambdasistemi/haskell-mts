@@ -2,7 +2,7 @@
 
 module MPF.Proof.InsertionSpec (spec) where
 
-import Control.Monad (forM, forM_)
+import Control.Monad (forM, forM_, replicateM)
 import Data.ByteString qualified as B
 import Data.List (nub)
 import MPF.Hashes (mkMPFHash, mpfHashing, renderMPFHash)
@@ -37,11 +37,9 @@ genFixedHexKey n = vectorOf n genHexDigit
 
 fullTreeKeys :: Int -> [HexKey]
 fullTreeKeys depth =
-    sequence
-        ( replicate
-            depth
-            [HexDigit (fromIntegral n) | n <- [0 .. 15 :: Int]]
-        )
+    replicateM
+        depth
+        [HexDigit (fromIntegral n) | n <- [0 .. 15 :: Int]]
 
 genSparseKeys :: Int -> Gen [HexKey]
 genSparseKeys n = do
@@ -72,7 +70,7 @@ testRandomFactsInAFullTree =
                             forM indices $ \ix -> do
                                 let (testKey, testValue) = kvs !! ix
                                 verifyMPFM testKey testValue
-                    in  all id results
+                    in  and results
 
 testRandomFactsInASparseTree :: Property
 testRandomFactsInASparseTree =
@@ -90,7 +88,7 @@ testRandomFactsInASparseTree =
                                 forM indices $ \ix -> do
                                     let (testKey, testValue) = kvs !! ix
                                     verifyMPFM testKey testValue
-                        in  all id results
+                        in  and results
 
 testRandomDeletedFactsInASparseTree :: Property
 testRandomDeletedFactsInASparseTree =

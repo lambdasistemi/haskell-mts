@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
 
 -- | Comprehensive proof CBOR compatibility test.
 -- Verifies renderAikenProof round-trips correctly for all 30 fruits

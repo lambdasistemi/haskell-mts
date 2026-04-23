@@ -82,15 +82,16 @@ rootWith mkHash kvs =
         . runMPFPure emptyMPFInMemoryDB
         . runTransactionUnguarded (mpfPureDatabase byteCodecs)
         $ do
-            forM_ kvs $ \(k, v) ->
-                inserting
-                    []
-                    (fromHexKVByteString mkHash)
-                    (hashingWith mkHash)
-                    MPFStandaloneKVCol
-                    MPFStandaloneMPFCol
-                    k
-                    v
+            forM_
+                kvs
+                $ uncurry
+                    ( inserting
+                        []
+                        (fromHexKVByteString mkHash)
+                        (hashingWith mkHash)
+                        MPFStandaloneKVCol
+                        MPFStandaloneMPFCol
+                    )
             mRoot <- query MPFStandaloneMPFCol []
             pure $ case mRoot of
                 Nothing -> Nothing
