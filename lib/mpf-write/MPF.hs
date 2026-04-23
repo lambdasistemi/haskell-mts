@@ -21,6 +21,9 @@ module MPF
     , module MPF.Proof.Insertion
     , module MPF.Proof.Exclusion
 
+      -- * Re-exports from Verify
+    , module MPF.Verify
+
       -- * Re-exports from Backend
     , module MPF.Backend.Standalone
     )
@@ -35,3 +38,4 @@ import MPF.Insertion
 import MPF.Interface
 import MPF.Proof.Exclusion
 import MPF.Proof.Insertion
+import MPF.Verify

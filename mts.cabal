@@ -25,12 +25,12 @@ source-repository head
   type:     git
   location: https://github.com/lambdasistemi/haskell-mts
 
--- When set, build ONLY the csmt-verify sublibrary and its WASM
--- entry point. Skips the native CLI, tests, benchmarks, and other
--- components whose deps (rocksdb, crypton) do not cross-compile to
--- the GHC WASM backend. See cabal-wasm.project.
+-- When set, build ONLY the pure, browser-safe sublibraries and their
+-- WASM entry points. Skips the native CLI, tests, benchmarks, and
+-- other components whose deps (rocksdb, crypton) do not cross-compile
+-- to the GHC WASM backend. See cabal-wasm.project.
 flag wasm
-  description: Build only csmt-verify + csmt-verify-wasm executable.
+  description: Build only the pure WASM-safe libraries and executables.
   manual:      True
   default:     False
 
@@ -274,6 +274,7 @@ library mpf-write
     MPF.Proof.Completeness
     MPF.Proof.Exclusion
     MPF.Proof.Insertion
+    MPF.Verify
 
   build-depends:
     , async                                    >=2.2  && <2.3
@@ -284,7 +285,6 @@ library mpf-write
     , containers                               >=0.6  && <0.7
     , exceptions                               >=0.10 && <0.11
     , lens                                     >=5.3  && <5.4
-    , memory                                   >=0.18 && <0.19
     , mts
     , mts:csmt-verify
     , rocksdb-kv-transactions:kv-transactions
@@ -317,6 +317,7 @@ library mpf
     , MPF.Proof.Completeness
     , MPF.Proof.Exclusion
     , MPF.Proof.Insertion
+    , MPF.Verify
 
   build-depends:
     , async                                    >=2.2  && <2.3
@@ -431,6 +432,45 @@ executable csmt-write-wasm
   if !flag(wasm)
     buildable: False
 
+-- MPF verifier companion to the MPF write-side demo. Unlike the CSMT
+-- verifier, MPF proof bytes carry only the Aiken proof-step list, so
+-- the verifier also receives the queried key and the optional value.
+executable mpf-verify-wasm
+  import:           warnings
+  main-is:          Main.hs
+  hs-source-dirs:   app/mpf-verify-wasm
+  build-depends:
+    , base           >=4.19 && <5
+    , bytestring     >=0.12 && <0.13
+    , cereal         >=0.5  && <0.6
+    , mts:mpf-write
+
+  default-language: Haskell2010
+
+  if !flag(wasm)
+    buildable: False
+
+-- MPF write-side WASM driver: mutate a pure in-memory MPF, emit the
+-- post-mutation root and either an inclusion or exclusion proof in
+-- the canonical Aiken proof-step format.
+executable mpf-write-wasm
+  import:           warnings
+  main-is:          Main.hs
+  hs-source-dirs:   app/mpf-write-wasm
+  build-depends:
+    , base                                     >=4.19 && <5
+    , bytestring                               >=0.12 && <0.13
+    , cereal                                   >=0.5  && <0.6
+    , containers                               >=0.6  && <0.7
+    , lens                                     >=5.3  && <5.4
+    , mts:mpf-write
+    , rocksdb-kv-transactions:kv-transactions  >=0.1  && <0.2
+
+  default-language: Haskell2010
+
+  if !flag(wasm)
+    buildable: False
+
 test-suite unit-tests
   import:             warnings
   default-language:   Haskell2010
@@ -495,6 +535,7 @@ test-suite unit-tests
     MPF.Proof.InsertionSpec
     MPF.ProofCompatSpec
     MPF.PropertySpec
+    MPF.VerifySpec
     MTS.PropertySpec
     MTS.Rollbacks.StoreSpec
     MTS.Rollbacks.TypesSpec
