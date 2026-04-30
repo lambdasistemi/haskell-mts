@@ -241,3 +241,93 @@ spec = describe "csmt-verify completeness" $ do
                         proofBs
                         `shouldBe` False
                 _ -> error "expected proof + root"
+
+    describe "empty-prefix (absent prefix)" $ do
+        -- A populated tree with a single anchor under [R,R,R,R];
+        -- the prefix [L,L,L,L,...] therefore has no leaves and
+        -- generateProof produces a CompletenessEmpty.
+        let absent :: [Direction]
+            absent = [L, L, L, L, L, L, L, L]
+            anchor = indirect [R, R, R, R] (mkHash "anchor")
+            (mp, mr) = evalPureFromEmptyDB $ do
+                insertHashes [anchor]
+                mp' <-
+                    runPureTransaction hashCodecs
+                        $ generateProof StandaloneCSMTCol [] absent
+                mr' <-
+                    runPureTransaction hashCodecs
+                        $ query StandaloneCSMTCol []
+                pure
+                    ( mp' :: Maybe (CompletenessProof Hash)
+                    , mr'
+                    )
+            withProof
+                :: ( ByteString
+                     -> [Indirect Hash]
+                     -> ByteString
+                     -> Bool
+                   )
+                -> IO ()
+            withProof k = case (mp, mr) of
+                (Just proof, Just rootIndirect) ->
+                    let rootBs =
+                            renderHash
+                                (rootHash hashHashing rootIndirect)
+                        proofBs = renderCompletenessProof proof
+                    in  k rootBs [] proofBs `shouldBe` True
+                _ -> error "expected proof + root"
+
+        it "verifies under the matching root"
+            $ withProof
+            $ \rootBs leaves proofBs ->
+                Verify.verifyCompletenessProof
+                    rootBs
+                    absent
+                    leaves
+                    proofBs
+
+        it "rejects when the verifier supplies a different prefix"
+            $ case (mp, mr) of
+                (Just proof, Just rootIndirect) -> do
+                    let rootBs =
+                            renderHash
+                                (rootHash hashHashing rootIndirect)
+                        proofBs = renderCompletenessProof proof
+                    Verify.verifyCompletenessProof
+                        rootBs
+                        ([R, R, R, R] :: [Direction])
+                        []
+                        proofBs
+                        `shouldBe` False
+                _ -> error "expected proof + root"
+
+        it "rejects when leaves are non-empty"
+            $ case (mp, mr) of
+                (Just proof, Just rootIndirect) -> do
+                    let rootBs =
+                            renderHash
+                                (rootHash hashHashing rootIndirect)
+                        proofBs = renderCompletenessProof proof
+                    Verify.verifyCompletenessProof
+                        rootBs
+                        absent
+                        [anchor]
+                        proofBs
+                        `shouldBe` False
+                _ -> error "expected proof + root"
+
+        it "rejects a tampered root"
+            $ case (mp, mr) of
+                (Just proof, Just rootIndirect) -> do
+                    let rootBs =
+                            renderHash
+                                (rootHash hashHashing rootIndirect)
+                        badRoot = B.map (`xor` 0xff) rootBs
+                        proofBs = renderCompletenessProof proof
+                    Verify.verifyCompletenessProof
+                        badRoot
+                        absent
+                        []
+                        proofBs
+                        `shouldBe` False
+                _ -> error "expected proof + root"
