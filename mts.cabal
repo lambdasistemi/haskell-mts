@@ -492,6 +492,7 @@ test-suite unit-tests
     , memory                                   >=0.18 && <0.19
     , mts
     , mts:csmt
+    , mts:csmt-core
     , mts:csmt-test-lib
     , mts:csmt-verify
     , mts:mpf
@@ -523,6 +524,7 @@ test-suite unit-tests
     CSMT.Proof.InsertionSpec
     CSMT.TreePrefixSpec
     CSMT.Verify.Blake2bSpec
+    CSMT.Verify.CompletenessSpec
     CSMT.VerifySpec
     Data.Serialize.ExtraSpec
     MPF.Backend.RocksDBSpec
