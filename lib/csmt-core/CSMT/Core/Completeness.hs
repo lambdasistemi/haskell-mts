@@ -14,15 +14,24 @@
 -- "CSMT.Proof.Completeness" because they require a transactional
 -- KV store.
 --
--- A completeness proof contains:
+-- A completeness proof can take one of two shapes:
 --
--- * Merge operations that reconstruct the subtree root from leaves
--- * Inclusion proof steps anchoring the subtree root to the tree root
+-- * 'CompletenessWitness' — the prefix has at least one leaf;
+--   the proof carries merge operations to reconstruct the
+--   subtree root from the leaves, plus inclusion-proof steps
+--   anchoring the subtree root to the tree root.
 --
--- The verifier provides the prefix and a trusted root hash. The fold
--- function derives the root jump internally from the prefix, the
--- subtree jump (from the merge ops result), and the step consumed
--- counts.
+-- * 'CompletenessEmpty' — the prefix has no leaves under the
+--   trusted root; the proof carries a single 'ExclusionProof'
+--   whose target is the prefix itself. The witness's path
+--   diverges from the prefix within a jump, which the verifier
+--   interprets as "no key has the prefix as its prefix" — the
+--   exact emptiness claim.
+--
+-- The verifier supplies the prefix and a trusted root hash. The
+-- fold function dispatches on the constructor and the supplied
+-- leaf list (empty leaves ⇒ 'CompletenessEmpty', non-empty
+-- leaves ⇒ 'CompletenessWitness'); a mismatch fails the proof.
 module CSMT.Core.Completeness
     ( CompletenessProof (..)
     , foldCompletenessProof
@@ -32,6 +41,10 @@ module CSMT.Core.Completeness
 import Data.List (isPrefixOf)
 import Data.Map.Strict qualified as Map
 
+import CSMT.Core.Exclusion
+    ( ExclusionProof (..)
+    , verifyExclusionProof
+    )
 import CSMT.Core.Proof (ProofStep (..))
 import CSMT.Core.Types
     ( Hashing (..)
@@ -43,20 +56,33 @@ import CSMT.Core.Types
 
 -- | A completeness proof for a subtree under a given prefix.
 --
--- Contains merge operations to reconstruct the subtree root from
--- leaves, and inclusion steps to anchor the subtree root to the
--- tree root. The prefix is not stored — the verifier already knows
--- it. The root jump is derived during verification.
-data CompletenessProof a = CompletenessProof
-    { cpMergeOps :: [(Int, Int)]
-    -- ^ Merge operations: each @(i, j)@ combines leaves at those
-    -- indices. Applied to the leaf list, these reconstruct the
-    -- subtree root.
-    , cpInclusionSteps :: [ProofStep a]
-    -- ^ Inclusion proof steps from the subtree root outward to
-    -- the tree root. Empty when the prefix covers the whole tree
-    -- (prefix = []) or when the root jump subsumes the prefix.
-    }
+-- 'CompletenessWitness' is the populated case (one or more
+-- leaves). 'CompletenessEmpty' is the absent-prefix case, where
+-- the prefix has no entries under the trusted root.
+data CompletenessProof a
+    = -- | Populated subtree: merge operations reconstruct the
+      -- subtree root from the leaves, and inclusion steps
+      -- anchor the subtree root to the tree root. The prefix
+      -- is not stored — the verifier already knows it. The
+      -- root jump is derived during verification.
+      CompletenessWitness
+        { cpMergeOps :: [(Int, Int)]
+        -- ^ Merge operations: each @(i, j)@ combines leaves
+        -- at those indices. Applied to the leaf list, these
+        -- reconstruct the subtree root.
+        , cpInclusionSteps :: [ProofStep a]
+        -- ^ Inclusion proof steps from the subtree root
+        -- outward to the tree root. Empty when the prefix
+        -- covers the whole tree (prefix = []) or when the
+        -- root jump subsumes the prefix.
+        }
+    | -- | Absent prefix: an 'ExclusionProof' whose target key
+      -- is the prefix. Verified by 'verifyExclusionProof',
+      -- which checks the embedded inclusion-proof witness
+      -- against the trusted root and confirms the divergence
+      -- happens within a jump. A divergence within a jump is
+      -- exactly the guarantee that no key extends the prefix.
+      CompletenessEmpty (ExclusionProof a)
     deriving (Show, Eq)
 
 -- | A function to compose two indirect values into a combined hash.
@@ -64,8 +90,8 @@ type Compose a = Indirect a -> Indirect a -> a
 
 -- | Fold merge operations over a list of leaves.
 --
--- Returns the subtree root as an 'Indirect', or 'Nothing' if the
--- proof is invalid (e.g. key comparison fails).
+-- Returns the subtree root as an 'Indirect', or 'Nothing' if
+-- the proof is invalid (e.g. key comparison fails).
 foldMergeOps
     :: Compose a
     -> [Indirect a]
@@ -93,20 +119,34 @@ foldMergeOps compose values = go (Map.fromList $ zip [0 ..] values)
                         go m' xs
                 _ -> Nothing
 
--- | Verify a completeness proof by computing the tree root hash.
+-- | Verify a completeness proof against a trusted root hash.
 --
 -- The verifier provides the prefix (which they chose) and the
--- leaves (which they received). Each leaf's @jump@ field is the
--- *absolute* key in the column — it MUST start with @prefixKey@.
--- The fold strips the prefix internally before reconstructing
--- the subtree root, then walks the inclusion steps back to the
--- column root.
+-- leaves (which they received). The proof must match the leaf
+-- shape:
 --
--- Returns 'Nothing' if any leaf's jump does not start with
--- @prefixKey@, if the merge fold fails, or if the proof is
--- otherwise malformed.
+-- * non-empty leaves ⇒ 'CompletenessWitness';
+-- * empty leaves ⇒ 'CompletenessEmpty'.
+--
+-- For 'CompletenessWitness', each leaf's @jump@ field MUST be
+-- absolute (start with @prefixKey@). The fold strips the prefix
+-- internally before reconstructing the subtree root, then walks
+-- the inclusion steps back to the column root.
+--
+-- For 'CompletenessEmpty', the embedded 'ExclusionProof' is
+-- verified directly; the result is the trusted root on success
+-- (so the caller's @==@ check trivially holds) and 'Nothing' on
+-- failure.
+--
+-- Returns 'Nothing' on shape mismatch or any malformed input
+-- (including a witness leaf whose jump does not start with
+-- @prefixKey@).
 foldCompletenessProof
-    :: Hashing a
+    :: Eq a
+    => Hashing a
+    -> a
+    -- ^ Trusted root (used for the empty case; threaded through
+    -- so the same caller path works for both variants).
     -> Key
     -- ^ The prefix this proof covers (verifier provides this)
     -> [Indirect a]
@@ -114,12 +154,14 @@ foldCompletenessProof
     -- (each jump starts with @prefixKey@)
     -> CompletenessProof a
     -> Maybe a
-    -- ^ Computed tree root hash
+    -- ^ Recomputed tree root, or 'Nothing' on shape mismatch /
+    -- malformed proof.
 foldCompletenessProof
     hashing
+    _trustedRoot
     prefixKey
     leaves
-    CompletenessProof{cpMergeOps, cpInclusionSteps} = do
+    (CompletenessWitness cpMergeOps cpInclusionSteps) = do
         relativeLeaves <- traverse (stripLeafPrefix prefixKey) leaves
         subtreeRoot <- case relativeLeaves of
             [single] | null cpMergeOps -> Just single
@@ -156,6 +198,18 @@ foldCompletenessProof
             | p `isPrefixOf` jmp =
                 Just (Indirect (drop (length p) jmp) val)
             | otherwise = Nothing
+foldCompletenessProof
+    hashing
+    trustedRoot
+    prefixKey
+    leaves
+    (CompletenessEmpty exclusion) =
+        case (leaves, exclusion) of
+            ([], ExclusionWitness{epTargetKey})
+                | epTargetKey == prefixKey
+                , verifyExclusionProof hashing trustedRoot exclusion ->
+                    Just trustedRoot
+            _ -> Nothing
 
 -- | Fold inclusion steps from subtree outward to root.
 --

@@ -118,17 +118,17 @@ spec = do
                             $ query StandaloneCSMTCol []
                     return (mp', r')
               in
-                case mp of
-                    Nothing -> error "expected a proof"
-                    Just proof ->
-                        foldCompletenessProof
-                            word64Hashing
-                            []
-                            values
-                            proof
-                            `shouldBe` fmap
-                                (rootHash word64Hashing)
-                                r
+                case (mp, r) of
+                    (Just proof, Just rootIndirect) ->
+                        let tr = rootHash word64Hashing rootIndirect
+                        in  foldCompletenessProof
+                                word64Hashing
+                                tr
+                                []
+                                values
+                                proof
+                                `shouldBe` Just tr
+                    _ -> error "expected a proof"
         it "can verify completeness proof for random trees"
             $ property
             $ forAll manyRandomPaths
@@ -143,17 +143,17 @@ spec = do
                             runPureTransaction word64Codecs
                                 $ query StandaloneCSMTCol []
                         return (mp', r')
-                case mp of
-                    Nothing -> error "expected a proof"
-                    Just proof ->
-                        foldCompletenessProof
-                            word64Hashing
-                            []
-                            (sort values)
-                            proof
-                            `shouldBe` fmap
-                                (rootHash word64Hashing)
-                                r
+                case (mp, r) of
+                    (Just proof, Just rootIndirect) ->
+                        let tr = rootHash word64Hashing rootIndirect
+                        in  foldCompletenessProof
+                                word64Hashing
+                                tr
+                                []
+                                (sort values)
+                                proof
+                                `shouldBe` Just tr
+                    _ -> error "expected a proof"
         it "can verify completeness proof for random trees of hashes"
             $ property
             $ forAll manyRandomPaths
@@ -168,14 +168,14 @@ spec = do
                             runPureTransaction hashCodecs
                                 $ query StandaloneCSMTCol []
                         return (mp', r')
-                case mp of
-                    Nothing -> error "expected a proof"
-                    Just proof ->
-                        foldCompletenessProof
-                            hashHashing
-                            []
-                            (sort values)
-                            proof
-                            `shouldBe` fmap
-                                (rootHash hashHashing)
-                                r
+                case (mp, r) of
+                    (Just proof, Just rootIndirect) ->
+                        let tr = rootHash hashHashing rootIndirect
+                        in  foldCompletenessProof
+                                hashHashing
+                                tr
+                                []
+                                (sort values)
+                                proof
+                                `shouldBe` Just tr
+                    _ -> error "expected a proof"

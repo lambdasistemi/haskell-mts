@@ -550,16 +550,18 @@ csmtMerkleTreeStoreT prefix fromKV hashing =
             , mtsVerifyCompletenessProof = \leaves proof -> do
                 currentRoot <-
                     root hashing StandaloneCSMTCol prefix
-                let computed =
-                        foldCompletenessProof
+                pure $ case currentRoot of
+                    Just r ->
+                        case foldCompletenessProof
                             hashing
+                            r
                             []
                             leaves
-                            proof
-                pure $ case (currentRoot, computed) of
-                    (Just r, Just computedRoot) ->
-                        computedRoot == r
-                    _ -> False
+                            proof of
+                            Just computedRoot ->
+                                computedRoot == r
+                            Nothing -> False
+                    Nothing -> False
             }
 
 -- | Build an IO 'Full' 'MerkleTreeStore' for CSMT scoped to a

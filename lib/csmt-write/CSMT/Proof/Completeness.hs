@@ -120,7 +120,7 @@ generateProof sel pfx targetPrefix = do
         Nothing -> Nothing
         Just (mergeOps, _, inclusionSteps) ->
             Just
-                CompletenessProof
+                CompletenessWitness
                     { cpMergeOps = mergeOps
                     , cpInclusionSteps = reverse inclusionSteps
                     }

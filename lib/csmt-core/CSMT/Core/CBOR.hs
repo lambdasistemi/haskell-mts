@@ -196,14 +196,19 @@ decodeMergeOp = do
     j <- CBOR.decodeInt
     pure (i, j)
 
--- | Encode a 'CompletenessProof' as a fixed-length-2 CBOR list:
+-- | Encode a 'CompletenessProof' as a tagged CBOR list.
+--
+-- Tag @0@ = 'CompletenessWitness' — payload is a length-2 list:
 -- merge operations (each a 2-element @[i, j]@ list) followed by
--- inclusion proof steps (reusing 'encodeProofStep'). Symmetric with
--- 'encodeProof' for inclusion proofs.
+-- inclusion proof steps (reusing 'encodeProofStep').
+--
+-- Tag @1@ = 'CompletenessEmpty' — payload is the embedded
+-- 'ExclusionProof' (reusing 'encodeExclusionProof').
 encodeCompletenessProof :: CompletenessProof Hash -> CBOR.Encoding
 encodeCompletenessProof
-    CompletenessProof{cpMergeOps, cpInclusionSteps} =
-        CBOR.encodeListLen 2
+    (CompletenessWitness cpMergeOps cpInclusionSteps) =
+        CBOR.encodeListLen 3
+            <> CBOR.encodeWord 0
             <> ( CBOR.encodeListLen
                     (fromIntegral (length cpMergeOps))
                     <> foldMap encodeMergeOp cpMergeOps
@@ -212,16 +217,25 @@ encodeCompletenessProof
                     (fromIntegral (length cpInclusionSteps))
                     <> foldMap encodeProofStep cpInclusionSteps
                )
+encodeCompletenessProof (CompletenessEmpty exclusion) =
+    CBOR.encodeListLen 2
+        <> CBOR.encodeWord 1
+        <> encodeExclusionProof exclusion
 
 decodeCompletenessProof
     :: CBOR.Decoder s (CompletenessProof Hash)
 decodeCompletenessProof = do
     _ <- CBOR.decodeListLen
-    mergeOpsLen <- CBOR.decodeListLen
-    cpMergeOps <- replicateM mergeOpsLen decodeMergeOp
-    stepsLen <- CBOR.decodeListLen
-    cpInclusionSteps <- replicateM stepsLen decodeProofStep
-    pure CompletenessProof{cpMergeOps, cpInclusionSteps}
+    tag <- CBOR.decodeWord
+    case tag of
+        0 -> do
+            mergeOpsLen <- CBOR.decodeListLen
+            mergeOps <- replicateM mergeOpsLen decodeMergeOp
+            stepsLen <- CBOR.decodeListLen
+            steps <- replicateM stepsLen decodeProofStep
+            pure (CompletenessWitness mergeOps steps)
+        1 -> CompletenessEmpty <$> decodeExclusionProof
+        _ -> fail "Invalid completeness proof tag"
 
 -- | Render a completeness proof as CBOR bytes.
 renderCompletenessProof :: CompletenessProof Hash -> ByteString
