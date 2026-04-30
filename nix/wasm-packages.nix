@@ -1,9 +1,7 @@
 { pkgs, src, mkdocsAssets, fixtures, wasmBuild }:
 let
   mkWasmModule = pname: file:
-    pkgs.runCommand pname {
-      preferLocalBuild = true;
-    } ''
+    pkgs.runCommand pname { preferLocalBuild = true; } ''
       mkdir -p $out
       cp ${wasmBuild.wasm}/${file} $out/${file}
     '';

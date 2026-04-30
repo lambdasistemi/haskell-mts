@@ -53,6 +53,12 @@ import Database.KV.Transaction
 -- Navigates from the tree root to the target prefix, handling path
 -- compression (jumps that span beyond the prefix). Once the prefix
 -- is consumed, collects all leaves below that point.
+--
+-- Each returned 'Indirect' carries its *absolute* key (within the
+-- column) in the @jump@ field — i.e. starting with @targetPrefix@.
+-- This matches what 'foldCompletenessProof' / 'verifyCompletenessProof'
+-- expect, so callers can hand the result straight to the verifier
+-- alongside the same prefix they passed here.
 collectValues
     :: (Monad m, GCompare d)
     => Selector d Key (Indirect a)
@@ -60,7 +66,9 @@ collectValues
     -- ^ Prefix (use @[]@ for root)
     -> Key
     -> Transaction m cf d op [Indirect a]
-collectValues sel = navigate
+collectValues sel pfx targetPrefix = do
+    raw <- navigate pfx targetPrefix
+    pure (map (prefix targetPrefix) raw)
   where
     navigate currentKey remainingPrefix = do
         mi <- query sel currentKey

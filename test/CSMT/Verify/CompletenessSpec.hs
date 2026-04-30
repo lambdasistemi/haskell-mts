@@ -25,6 +25,7 @@ import CSMT.Hashes (Hash, hashHashing, mkHash, renderHash)
 import CSMT.Interface (Hashing (..), Indirect (..))
 import CSMT.Proof.Completeness
     ( CompletenessProof
+    , collectValues
     , generateProof
     )
 import CSMT.Test.Lib
@@ -149,3 +150,94 @@ spec = describe "csmt-verify completeness" $ do
                 let bs = renderCompletenessProof proof
                 in  Verify.parseCompletenessProof bs `shouldBe` Just proof
             Nothing -> error "expected a proof"
+
+    -- See https://github.com/lambdasistemi/haskell-mts/issues/157.
+    -- The verifier's contract is "leaf jumps are absolute (within
+    -- the column) — they start with @prefixKey@". Two cases must
+    -- agree: leaves built manually from KV-row bytes (the
+    -- cardano-mpfs-offchain consumer's natural form) and leaves
+    -- returned by 'collectValues' (now also absolute).
+    describe "non-empty prefix populated case (issue #157)" $ do
+        let prefixKey :: [Direction]
+            prefixKey = [L, R, L, R]
+            -- Two leaves under the prefix; absolute keys of length
+            -- 8 (4 bits prefix + 4 bits suffix).
+            leafKeyA, leafKeyB :: [Direction]
+            leafKeyA = prefixKey ++ [L, L, L, L]
+            leafKeyB = prefixKey ++ [R, R, R, R]
+            valA = mkHash "leaf-A"
+            valB = mkHash "leaf-B"
+            absoluteLeaves =
+                [ indirect leafKeyA valA
+                , indirect leafKeyB valB
+                ]
+            (mp, mr, collectedAbs) = evalPureFromEmptyDB $ do
+                insertHashes absoluteLeaves
+                proof <-
+                    runPureTransaction hashCodecs
+                        $ generateProof
+                            StandaloneCSMTCol
+                            []
+                            prefixKey
+                rootI <-
+                    runPureTransaction hashCodecs
+                        $ query StandaloneCSMTCol []
+                collected <-
+                    runPureTransaction hashCodecs
+                        $ collectValues
+                            StandaloneCSMTCol
+                            []
+                            prefixKey
+                pure
+                    ( proof :: Maybe (CompletenessProof Hash)
+                    , rootI
+                    , collected
+                    )
+
+        it "verifies with collectValues output (absolute jumps)" $ do
+            case (mp, mr) of
+                (Just proof, Just rootI) -> do
+                    let rootBs =
+                            renderHash (rootHash hashHashing rootI)
+                        proofBs = renderCompletenessProof proof
+                    Verify.verifyCompletenessProof
+                        rootBs
+                        prefixKey
+                        (sort collectedAbs)
+                        proofBs
+                        `shouldBe` True
+                _ -> error "expected proof + root"
+
+        it "verifies with consumer-built absolute-key leaves" $ do
+            case (mp, mr) of
+                (Just proof, Just rootI) -> do
+                    let rootBs =
+                            renderHash (rootHash hashHashing rootI)
+                        proofBs = renderCompletenessProof proof
+                    Verify.verifyCompletenessProof
+                        rootBs
+                        prefixKey
+                        (sort absoluteLeaves)
+                        proofBs
+                        `shouldBe` True
+                _ -> error "expected proof + root"
+
+        it "rejects leaves whose jumps don't start with the prefix"
+            $ case (mp, mr) of
+                (Just proof, Just rootI) -> do
+                    let rootBs =
+                            renderHash (rootHash hashHashing rootI)
+                        proofBs = renderCompletenessProof proof
+                        -- Strip the prefix bits — these are NOT
+                        -- absolute, so the verifier must reject.
+                        relativeLeaves =
+                            [ indirect [L, L, L, L] valA
+                            , indirect [R, R, R, R] valB
+                            ]
+                    Verify.verifyCompletenessProof
+                        rootBs
+                        prefixKey
+                        (sort relativeLeaves)
+                        proofBs
+                        `shouldBe` False
+                _ -> error "expected proof + root"
