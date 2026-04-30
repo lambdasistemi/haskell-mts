@@ -85,6 +85,7 @@ verifyCompletenessProof trustedRootBs prefixKey leaves proofBs =
         (Just trustedRoot, Just proof) ->
             case foldCompletenessProof
                 hashHashing
+                trustedRoot
                 prefixKey
                 leaves
                 proof of

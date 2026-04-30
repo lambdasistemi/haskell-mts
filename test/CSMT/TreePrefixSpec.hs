@@ -282,19 +282,22 @@ spec = do
                     mapM_
                         ( \p -> do
                             let (collected, proof) = verifyP p
-                            case proof of
-                                Nothing -> collected `shouldBe` []
-                                Just pr ->
-                                    foldCompletenessProof
-                                        word64Hashing
-                                        p
-                                        (sort collected)
-                                        pr
-                                        `shouldBe` fmap
-                                            ( rootHash
+                            case (proof, treeRoot) of
+                                (Nothing, _) ->
+                                    collected `shouldBe` []
+                                (Just pr, Just rootIndirect) ->
+                                    let tr =
+                                            rootHash
                                                 word64Hashing
-                                            )
-                                            treeRoot
+                                                rootIndirect
+                                    in  foldCompletenessProof
+                                            word64Hashing
+                                            tr
+                                            p
+                                            (sort collected)
+                                            pr
+                                            `shouldBe` Just tr
+                                _ -> error "expected a tree root"
                         )
                         ([[L], [R]] :: [Key])
 
@@ -314,17 +317,19 @@ spec = do
                                     p <- generateProof StandaloneCSMTCol [] []
                                     r <- queryPrefix StandaloneCSMTCol [] []
                                     pure (c, p, r)
-                    case proof of
-                        Nothing -> collected `shouldBe` []
-                        Just p ->
-                            foldCompletenessProof
-                                word64Hashing
-                                []
-                                (sort collected)
-                                p
-                                `shouldBe` fmap
-                                    (rootHash word64Hashing)
-                                    treeRoot
+                    case (proof, treeRoot) of
+                        (Nothing, _) -> collected `shouldBe` []
+                        (Just p, Just rootIndirect) ->
+                            let tr =
+                                    rootHash word64Hashing rootIndirect
+                            in  foldCompletenessProof
+                                    word64Hashing
+                                    tr
+                                    []
+                                    (sort collected)
+                                    p
+                                    `shouldBe` Just tr
+                        _ -> error "expected a tree root"
 
         it "generateProof is Nothing iff collectValues is empty"
             $ property
