@@ -13,6 +13,10 @@ module CSMT.Core.CBOR
     , parseProof
     , renderExclusionProof
     , parseExclusionProof
+    , renderCompletenessProof
+    , parseCompletenessProof
+    , encodeCompletenessProof
+    , decodeCompletenessProof
     ) where
 
 import Codec.CBOR.Decoding qualified as CBOR
@@ -23,6 +27,9 @@ import Control.Monad (replicateM)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as BL
 
+import CSMT.Core.Completeness
+    ( CompletenessProof (..)
+    )
 import CSMT.Core.Exclusion
     ( ExclusionProof (..)
     )
@@ -172,6 +179,61 @@ parseExclusionProof
 parseExclusionProof bs =
     case CBOR.deserialiseFromBytes
         decodeExclusionProof
+        (BL.fromStrict bs) of
+        Left _ -> Nothing
+        Right (_, pf) -> Just pf
+
+encodeMergeOp :: (Int, Int) -> CBOR.Encoding
+encodeMergeOp (i, j) =
+    CBOR.encodeListLen 2
+        <> CBOR.encodeInt i
+        <> CBOR.encodeInt j
+
+decodeMergeOp :: CBOR.Decoder s (Int, Int)
+decodeMergeOp = do
+    _ <- CBOR.decodeListLen
+    i <- CBOR.decodeInt
+    j <- CBOR.decodeInt
+    pure (i, j)
+
+-- | Encode a 'CompletenessProof' as a fixed-length-2 CBOR list:
+-- merge operations (each a 2-element @[i, j]@ list) followed by
+-- inclusion proof steps (reusing 'encodeProofStep'). Symmetric with
+-- 'encodeProof' for inclusion proofs.
+encodeCompletenessProof :: CompletenessProof Hash -> CBOR.Encoding
+encodeCompletenessProof
+    CompletenessProof{cpMergeOps, cpInclusionSteps} =
+        CBOR.encodeListLen 2
+            <> ( CBOR.encodeListLen
+                    (fromIntegral (length cpMergeOps))
+                    <> foldMap encodeMergeOp cpMergeOps
+               )
+            <> ( CBOR.encodeListLen
+                    (fromIntegral (length cpInclusionSteps))
+                    <> foldMap encodeProofStep cpInclusionSteps
+               )
+
+decodeCompletenessProof
+    :: CBOR.Decoder s (CompletenessProof Hash)
+decodeCompletenessProof = do
+    _ <- CBOR.decodeListLen
+    mergeOpsLen <- CBOR.decodeListLen
+    cpMergeOps <- replicateM mergeOpsLen decodeMergeOp
+    stepsLen <- CBOR.decodeListLen
+    cpInclusionSteps <- replicateM stepsLen decodeProofStep
+    pure CompletenessProof{cpMergeOps, cpInclusionSteps}
+
+-- | Render a completeness proof as CBOR bytes.
+renderCompletenessProof :: CompletenessProof Hash -> ByteString
+renderCompletenessProof =
+    BL.toStrict . CBOR.toLazyByteString . encodeCompletenessProof
+
+-- | Parse CBOR bytes as a completeness proof.
+parseCompletenessProof
+    :: ByteString -> Maybe (CompletenessProof Hash)
+parseCompletenessProof bs =
+    case CBOR.deserialiseFromBytes
+        decodeCompletenessProof
         (BL.fromStrict bs) of
         Left _ -> Nothing
         Right (_, pf) -> Just pf
