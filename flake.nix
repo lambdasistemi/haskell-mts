@@ -18,8 +18,7 @@
     };
   };
 
-  outputs =
-    inputs@{ self, nixpkgs, flake-utils, haskellNix, mkdocs, asciinema
+  outputs = inputs@{ self, nixpkgs, flake-utils, haskellNix, mkdocs, asciinema
     , ghc-wasm-meta, ... }:
     let
       lib = nixpkgs.lib;

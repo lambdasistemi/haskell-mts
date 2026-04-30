@@ -29,6 +29,7 @@ module CSMT.Core.Completeness
     , foldMergeOps
     ) where
 
+import Data.List (isPrefixOf)
 import Data.Map.Strict qualified as Map
 
 import CSMT.Core.Proof (ProofStep (..))
@@ -95,17 +96,22 @@ foldMergeOps compose values = go (Map.fromList $ zip [0 ..] values)
 -- | Verify a completeness proof by computing the tree root hash.
 --
 -- The verifier provides the prefix (which they chose) and the
--- leaves (which they received). The root jump is derived from
--- the prefix, the subtree jump, and the inclusion step consumed
--- counts.
+-- leaves (which they received). Each leaf's @jump@ field is the
+-- *absolute* key in the column — it MUST start with @prefixKey@.
+-- The fold strips the prefix internally before reconstructing
+-- the subtree root, then walks the inclusion steps back to the
+-- column root.
 --
--- Returns 'Nothing' if the proof is malformed.
+-- Returns 'Nothing' if any leaf's jump does not start with
+-- @prefixKey@, if the merge fold fails, or if the proof is
+-- otherwise malformed.
 foldCompletenessProof
     :: Hashing a
     -> Key
     -- ^ The prefix this proof covers (verifier provides this)
     -> [Indirect a]
-    -- ^ Leaves under the prefix
+    -- ^ Leaves under the prefix, with jumps in absolute form
+    -- (each jump starts with @prefixKey@)
     -> CompletenessProof a
     -> Maybe a
     -- ^ Computed tree root hash
@@ -114,11 +120,23 @@ foldCompletenessProof
     prefixKey
     leaves
     CompletenessProof{cpMergeOps, cpInclusionSteps} = do
-        subtreeRoot <- case leaves of
+        relativeLeaves <- traverse (stripLeafPrefix prefixKey) leaves
+        subtreeRoot <- case relativeLeaves of
             [single] | null cpMergeOps -> Just single
-            _ -> foldMergeOps (combineHash hashing) leaves cpMergeOps
-        let Indirect subtreeJump subtreeValue = subtreeRoot
-            fullKey = prefixKey ++ subtreeJump
+            [] -> Nothing
+            _ ->
+                foldMergeOps
+                    (combineHash hashing)
+                    relativeLeaves
+                    cpMergeOps
+        let Indirect subtreeJumpRel subtreeValue = subtreeRoot
+            -- 'subtreeJumpRel' is the part of the subtree node's
+            -- absolute key beyond @prefixKey@. The full absolute
+            -- key for the subtree node is therefore
+            -- @prefixKey ++ subtreeJumpRel@; that is what the
+            -- inclusion-step consumed counts walk back to the
+            -- column root.
+            fullKey = prefixKey ++ subtreeJumpRel
             totalConsumed =
                 sum (map stepConsumed cpInclusionSteps)
             rootJumpLen = length fullKey - totalConsumed
@@ -131,6 +149,13 @@ foldCompletenessProof
                     (reverse keyAfterRoot)
                     cpInclusionSteps
         pure $ rootHash hashing (Indirect rootJump rootValue)
+      where
+        stripLeafPrefix
+            :: Key -> Indirect a -> Maybe (Indirect a)
+        stripLeafPrefix p (Indirect jmp val)
+            | p `isPrefixOf` jmp =
+                Just (Indirect (drop (length p) jmp) val)
+            | otherwise = Nothing
 
 -- | Fold inclusion steps from subtree outward to root.
 --
