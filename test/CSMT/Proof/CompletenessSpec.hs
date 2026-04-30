@@ -60,7 +60,7 @@ spec = do
                 collected
                     `shouldBe` sort values
     describe "generateProof" $ do
-        it "can generate proof for empty tree"
+        it "returns Nothing for empty tree (no sentinel root)"
             $ let mp =
                     evalPureFromEmptyDB
                         $ runPureTransaction hashCodecs
