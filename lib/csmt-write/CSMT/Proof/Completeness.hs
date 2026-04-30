@@ -31,6 +31,7 @@ import CSMT.Core.Completeness
     , foldCompletenessProof
     , foldMergeOps
     )
+import CSMT.Core.Exclusion (ExclusionProof (..))
 import CSMT.Interface
     ( Direction (..)
     , Indirect (..)
@@ -39,6 +40,7 @@ import CSMT.Interface
     , oppositeDirection
     , prefix
     )
+import CSMT.Proof.Exclusion (buildExclusionProof)
 import CSMT.Proof.Insertion (ProofStep (..))
 import Database.KV.Transaction
     ( GCompare
@@ -116,14 +118,36 @@ generateProof
     -> Transaction m cf d op (Maybe (CompletenessProof a))
 generateProof sel pfx targetPrefix = do
     result <- navigate 0 pfx targetPrefix []
-    pure $ case result of
-        Nothing -> Nothing
+    case result of
         Just (mergeOps, _, inclusionSteps) ->
-            Just
-                CompletenessWitness
-                    { cpMergeOps = mergeOps
-                    , cpInclusionSteps = reverse inclusionSteps
-                    }
+            pure
+                $ Just
+                    CompletenessWitness
+                        { cpMergeOps = mergeOps
+                        , cpInclusionSteps = reverse inclusionSteps
+                        }
+        Nothing -> do
+            -- The walker returns 'Nothing' both when the column
+            -- is empty and when the target prefix diverges from
+            -- the tree's path. We only promote the divergence
+            -- case to an emptiness proof: if the column is
+            -- empty we fall back to the older contract
+            -- ('Nothing') because 'verifyExclusionProof' on an
+            -- 'ExclusionEmpty' is unconditionally @True@ — sound
+            -- only when paired with a separate empty-tree-root
+            -- check, which the current MTS interface does not
+            -- carry. The divergence case produces an
+            -- 'ExclusionWitness' whose within-jump divergence is
+            -- exactly the prefix-emptiness guarantee.
+            mroot <- query sel pfx
+            case mroot of
+                Nothing -> pure Nothing
+                Just _ -> do
+                    mexcl <- buildExclusionProof pfx sel targetPrefix
+                    pure $ case mexcl of
+                        Just w@ExclusionWitness{} ->
+                            Just (CompletenessEmpty w)
+                        _ -> Nothing
   where
     navigate
         :: Int

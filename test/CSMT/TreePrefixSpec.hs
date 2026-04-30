@@ -18,7 +18,8 @@ import CSMT.Backend.Pure
     )
 import CSMT.Interface (FromKV (..), Hashing (..))
 import CSMT.Proof.Completeness
-    ( collectValues
+    ( CompletenessProof (..)
+    , collectValues
     , foldCompletenessProof
     , generateProof
     , queryPrefix
@@ -35,7 +36,6 @@ import CSMT.Test.Lib
 import Control.Lens (simple)
 import Data.Foldable (foldl')
 import Data.List (sort)
-import Data.Maybe (isJust)
 import Data.Word (Word64)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import Test.QuickCheck
@@ -331,7 +331,7 @@ spec = do
                                     `shouldBe` Just tr
                         _ -> error "expected a tree root"
 
-        it "generateProof is Nothing iff collectValues is empty"
+        it "generateProof shape mirrors collectValues emptiness"
             $ property
             $ forAll (elements [1 .. 8])
             $ \n ->
@@ -339,14 +339,26 @@ spec = do
                     let kvs = zip keys [1 :: Word64 ..]
                         db = foldl' (\d (k, v) -> insertP k v d) emptyInMemoryDB kvs
                         consistent p =
-                            let (isEmpty, hasProof) =
+                            let (isEmpty, isWitness) =
                                     fst
                                         $ runPure db
                                         $ runPureTransaction word64Codecs
                                         $ do
-                                            c <- collectValues StandaloneCSMTCol [] p
-                                            pr <- generateProof StandaloneCSMTCol [] p
-                                            pure (null c, isJust pr)
-                            in  isEmpty /= hasProof
+                                            c <-
+                                                collectValues
+                                                    StandaloneCSMTCol
+                                                    []
+                                                    p
+                                            pr <-
+                                                generateProof
+                                                    StandaloneCSMTCol
+                                                    []
+                                                    p
+                                            pure (null c, isProofWitness pr)
+                            in  isEmpty /= isWitness
                     all consistent ([[], [L], [R]] :: [Key])
                         `shouldBe` True
+  where
+    isProofWitness :: Maybe (CompletenessProof a) -> Bool
+    isProofWitness (Just CompletenessWitness{}) = True
+    isProofWitness _ = False
