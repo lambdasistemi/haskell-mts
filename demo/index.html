@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CSMT proof verifier (WASM)</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 52rem;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        background: #111;
+        color: #eee;
+        line-height: 1.4;
+      }
+      h1 {
+        font-size: 1.4rem;
+      }
+      code,
+      textarea,
+      input {
+        font-family: ui-monospace, Menlo, monospace;
+      }
+      textarea {
+        width: 100%;
+        box-sizing: border-box;
+        background: #1a1a1a;
+        color: #eee;
+        border: 1px solid #333;
+        padding: 0.4rem;
+      }
+      label {
+        display: block;
+        margin-top: 0.8rem;
+        font-size: 0.85rem;
+        color: #aaa;
+      }
+      button,
+      select {
+        background: #1a1a1a;
+        color: #eee;
+        border: 1px solid #333;
+        padding: 0.4rem 0.8rem;
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:hover {
+        background: #2a2a2a;
+      }
+      .row {
+        display: flex;
+        gap: 0.6rem;
+        align-items: center;
+        margin-top: 0.8rem;
+      }
+      .ok {
+        color: #5f5;
+      }
+      .bad {
+        color: #f55;
+      }
+      .muted {
+        color: #888;
+        font-size: 0.85rem;
+      }
+      pre {
+        background: #1a1a1a;
+        padding: 0.6rem;
+        border: 1px solid #333;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>CSMT proof verifier — running in your browser</h1>
+    <p class="muted">
+      This page loads <code>csmt-verify.wasm</code>, a pure-Haskell
+      verifier compiled with the GHC WASM backend, and runs it under
+      a WASI polyfill. No server, no Haskell runtime on the page — the
+      entire verification happens in the sandboxed WebAssembly module.
+    </p>
+
+    <div class="row">
+      <label for="fixture">Fixture</label>
+      <select id="fixture"></select>
+      <button id="tamper-root" type="button">Tamper root</button>
+      <button id="tamper-proof" type="button">Tamper proof</button>
+    </div>
+
+    <label for="opcode">Opcode</label>
+    <select id="opcode">
+      <option value="0">0 — inclusion</option>
+      <option value="1">1 — exclusion</option>
+    </select>
+
+    <label for="root">Root hash (64 hex chars)</label>
+    <textarea id="root" rows="2" spellcheck="false"></textarea>
+
+    <label for="proof">Proof CBOR (hex)</label>
+    <textarea id="proof" rows="6" spellcheck="false"></textarea>
+
+    <div class="row">
+      <button id="verify" type="button">Verify</button>
+      <span id="result" class="muted">idle</span>
+    </div>
+
+    <label>Wasm stdout / stderr</label>
+    <pre id="log"></pre>
+
+    <p class="muted">
+      Artifact: <code>csmt-verify.wasm</code>
+      (<span id="wasm-size">...</span> bytes).
+      Source: <a href="https://github.com/lambdasistemi/haskell-mts">
+        lambdasistemi/haskell-mts</a>.
+    </p>
+
+    <script type="module" src="./verify.js?v=a48ee10ee83994ad"></script>
+  </body>
+</html>

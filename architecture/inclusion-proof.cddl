@@ -1,0 +1,32 @@
+; CDDL specification for CSMT Inclusion Proof
+; CBOR encoding used by CSMT.Hashes.CBOR module
+
+; Direction in the merkle tree path (L=0, R=1)
+direction = 0 / 1
+
+; Key is a path through the tree as a list of directions
+key = [* direction]
+
+; Blake2b-256 hash (32 bytes)
+hash = bstr .size 32
+
+; Indirect node: jump path and hash value
+indirect = [
+    jump: key,
+    value: hash
+]
+
+; Proof step: bits consumed and sibling node
+proof_step = [
+    step_consumed: int,
+    step_sibling: indirect
+]
+
+; Complete inclusion proof
+inclusion_proof = [
+    proof_key: key,         ; The key being proven
+    proof_value: hash,      ; Hash of the value at the key
+    proof_root_hash: hash,  ; Root hash this proves against
+    proof_steps: [* proof_step],
+    proof_root_jump: key    ; Jump path at the root
+]
