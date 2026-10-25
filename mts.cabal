@@ -347,11 +347,15 @@ library mpf
 library csmt-test-lib
   import:           warnings
   visibility:       public
-  exposed-modules:  CSMT.Test.Lib
+  exposed-modules:
+    CSMT.Test.Lib
+    CSMT.Test.Malformed
+
   build-depends:
     , base                                     >=4.19 && <5
     , bytestring                               >=0.12 && <0.13
     , cereal                                   >=0.5  && <0.6
+    , containers                               >=0.6  && <0.7
     , free                                     >=5.2  && <5.3
     , lens                                     >=5.3  && <5.4
     , mts
@@ -524,6 +528,7 @@ test-suite unit-tests
     CSMT.Proof.CompletenessSpec
     CSMT.Proof.ExclusionSpec
     CSMT.Proof.InsertionSpec
+    CSMT.Proof.MalformedSpec
     CSMT.TreePrefixSpec
     CSMT.Verify.Blake2bSpec
     CSMT.Verify.CompletenessSpec
