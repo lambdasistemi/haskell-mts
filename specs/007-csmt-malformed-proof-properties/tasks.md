@@ -8,6 +8,10 @@
 - [ ] exclusion soundness properties and fixes, counterexamples kept
 - [ ] proof decoding refuses malformed bytes without exceptions
 
+## haskell-completeness
+- [ ] completeness soundness properties and fixes, counterexamples kept
+- [ ] completeness over random trees and prefixes
+
 ## typescript-mirror
 - [ ] TypeScript checks and generated tests
 
