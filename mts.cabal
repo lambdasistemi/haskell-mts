@@ -351,6 +351,7 @@ library csmt-test-lib
     CSMT.Test.Lib
     CSMT.Test.Malformed
     CSMT.Test.MalformedBytes
+    CSMT.Test.MalformedCompleteness
     CSMT.Test.MalformedExclusion
 
   build-depends:
@@ -533,6 +534,7 @@ test-suite unit-tests
     CSMT.Proof.ExclusionSpec
     CSMT.Proof.InsertionSpec
     CSMT.Proof.MalformedBytesSpec
+    CSMT.Proof.MalformedCompletenessSpec
     CSMT.Proof.MalformedExclusionSpec
     CSMT.Proof.MalformedSpec
     CSMT.TreePrefixSpec
