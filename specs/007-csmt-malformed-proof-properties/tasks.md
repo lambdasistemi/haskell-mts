@@ -1,8 +1,8 @@
 # Tasks
 
 ## haskell-inclusion
-- [ ] inclusion soundness properties and range checks, counterexamples kept
-- [ ] inclusion completeness over random trees
+- [x] inclusion soundness properties and range checks, counterexamples kept
+- [x] inclusion completeness over random trees
 
 ## haskell-exclusion
 - [ ] exclusion soundness properties and fixes, counterexamples kept
