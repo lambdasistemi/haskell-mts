@@ -26,7 +26,10 @@ import CSMT.Core.Types
 
 -- | An exclusion proof for a key in a CSMT.
 data ExclusionProof a
-    = -- | The tree is empty; any key is trivially absent.
+    = -- | The tree is empty. An empty tree has no root hash, so
+      -- 'verifyExclusionProof' refuses this proof against every root:
+      -- a caller that holds no root hash establishes emptiness from
+      -- that absence.
       ExclusionEmpty
     | -- | A witness key diverges from the target within a jump.
       ExclusionWitness
@@ -37,18 +40,21 @@ data ExclusionProof a
 
 -- | Verify an exclusion proof against a trusted root hash.
 --
--- For 'ExclusionEmpty': always 'True' (empty tree trivially
--- excludes any key). Callers that need to distinguish an
--- empty tree from a populated one should inspect the root
--- separately.
+-- 'ExclusionEmpty' is refused against every root. A root hash
+-- belongs to a tree that holds a key, and the empty tree has none:
+-- to exclude a key from a tree without a root hash, check that the
+-- root is absent.
 --
 -- For 'ExclusionWitness': verifies the witness inclusion proof
 -- against the trusted root, then checks that the target key
 -- diverges from the witness key within a jump region (not at
--- a branch boundary).
+-- a branch boundary). A target that is the witness key, begins it
+-- or extends it does not diverge and is refused, and so is every key
+-- the tree holds and every beginning of one. No proof makes this
+-- function throw.
 verifyExclusionProof
     :: Eq a => Hashing a -> a -> ExclusionProof a -> Bool
-verifyExclusionProof _ _ ExclusionEmpty = True
+verifyExclusionProof _ _ ExclusionEmpty = False
 verifyExclusionProof
     hashing
     trustedRoot
@@ -83,12 +89,10 @@ checkKeyDivergence targetKey witnessKey rootJump consumedList =
     case firstDivergence targetKey witnessKey of
         Nothing -> False
         Just divPos ->
-            let branchPositions =
-                    scanBranchPositions
-                        (length rootJump)
-                        (reverse consumedList)
-            in  divPos `notElem` branchPositions
-                    && divPos < length witnessKey
+            divPos
+                `notElem` scanBranchPositions
+                    (length rootJump)
+                    (reverse consumedList)
 
 firstDivergence :: Key -> Key -> Maybe Int
 firstDivergence [] [] = Nothing

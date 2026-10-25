@@ -35,11 +35,12 @@ path elements aliasing a held key's path once packed.
 | range-check-kills-relaxation | each check added, removed or relaxed, makes a property fail; this runs in CI |
 | failing-case-kept | each counterexample found is a named test |
 | case-count-recorded | properties run in CI with a fixed seed and case count, recorded in the PR |
+| completeness-rejects-omission | `verifyCompletenessProof` (lib/csmt-core/CSMT/Core/Completeness.hs, re-exported by csmt-verify) accepts a proof for a prefix only if the leaves it returns are exactly the tree's leaves under that prefix: no leaf omitted, added, duplicated, reordered or changed; it is refused (Nothing or False), never by an exception |
+| honest-completeness-accepted | every completeness proof from `generateProof` over random trees and prefixes (including empty prefixes and the whole tree) verifies |
 
 Trees hold keys of one length (the same obligation aiken-csmt documents: leaf and branch hashes are not
 domain-separated). Proof formats do not change.
 
 ## Non-goals
 
-Changing the hash format (aiken-csmt #12), packed paths (aiken-csmt #13), MPF, completeness proofs beyond what
-`verifyExclusionProof`/`verifyInclusionProof` need, Singular.
+Changing the hash format (aiken-csmt #12), packed paths (aiken-csmt #13), MPF, an on-chain completeness verifier, Singular.

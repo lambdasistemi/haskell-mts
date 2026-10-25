@@ -350,16 +350,20 @@ library csmt-test-lib
   exposed-modules:
     CSMT.Test.Lib
     CSMT.Test.Malformed
+    CSMT.Test.MalformedBytes
+    CSMT.Test.MalformedExclusion
 
   build-depends:
     , base                                     >=4.19 && <5
     , bytestring                               >=0.12 && <0.13
+    , cborg                                    >=0.2  && <0.3
     , cereal                                   >=0.5  && <0.6
     , containers                               >=0.6  && <0.7
     , free                                     >=5.2  && <5.3
     , lens                                     >=5.3  && <5.4
     , mts
     , mts:csmt
+    , mts:csmt-core
     , QuickCheck                               >=2.14 && <2.18
     , rocksdb-kv-transactions:kv-transactions  >=0.1  && <0.2
 
@@ -528,6 +532,8 @@ test-suite unit-tests
     CSMT.Proof.CompletenessSpec
     CSMT.Proof.ExclusionSpec
     CSMT.Proof.InsertionSpec
+    CSMT.Proof.MalformedBytesSpec
+    CSMT.Proof.MalformedExclusionSpec
     CSMT.Proof.MalformedSpec
     CSMT.TreePrefixSpec
     CSMT.Verify.Blake2bSpec

@@ -8,9 +8,10 @@ after the Codex auditor stalled twice on the provider's content filter during ai
 
 | slice | content | depends on |
 |---|---|---|
-| haskell-inclusion | QuickCheck generators near honest proofs over every field's domain; root jump bound to the key, full consumption, `stepConsumed` refused out of range without `error`; completeness over random trees; kept counterexamples | none |
+| haskell-inclusion | QuickCheck generators near honest proofs over every field's domain; root jump bound to the key, full consumption, `stepConsumed` refused out of range without `error`; completeness over random trees; kept counterexamples | none (done: PR #175, merged a2e5181) |
 | haskell-exclusion | `ExclusionEmpty` bound to the empty root; witness-path properties for held keys (including divergence at branch positions and keys of other lengths); exclusion completeness; Plutus-data / CBOR proof decoding refuses malformed bytes | haskell-inclusion |
-| typescript-mirror | the same checks in verifiers/typescript (verify.ts, exclusion.ts, decoding), with seeded generated tests in vitest; non-binary decoded directions refused | haskell-exclusion |
+| haskell-completeness | generators that damage honest completeness proofs from `generateProof` (drop, add, duplicate or reorder leaves; change a value; shift or lengthen the prefix; damage the embedded inclusion and exclusion steps; `CompletenessEmpty` with any exclusion); soundness "no leaf omitted or added"; refusal not exception, including `foldInclusionSteps`' zero-consumed `error`; completeness over random trees and prefixes; kept counterexamples | haskell-exclusion |
+| typescript-mirror | the same checks in verifiers/typescript (verify.ts, exclusion.ts, completeness, decoding), with seeded generated tests in vitest; non-binary decoded directions refused | haskell-completeness |
 | parity-vectors | `csmt-test-vectors` emits a language-neutral vector file (statement, proof, expected verdict; honest and malformed, including the counterexamples kept by aiken-csmt #10 and by this ticket) and its Aiken rendering; Haskell and TypeScript test suites read it in CI | typescript-mirror |
 | relaxation-check | planted relaxations of every added check run in CI for Haskell and TypeScript; fixed seed and case count | parity-vectors |
 
@@ -30,3 +31,11 @@ pushed head is the net. Rows added by later slices are "CI change in this ticket
    acceptable, or seeded generators inside vitest only? Recommendation: seeded generators, no new dependency.
 2. The aiken-csmt parity follow-up PR: in this ticket's acceptance, or a separate small ticket? Recommendation: a
    separate PR owned by this ticket owner right after merge, listed in this PR's body.
+
+## Amendment 2026-10-25 (operator, through the epic owner)
+
+Completeness proofs are what CSMT offers that guarded merkle-patricia-forestry cannot, and they are checked off-chain,
+so the completeness verifier gets the same malformed-proof treatment as slice haskell-completeness, after
+haskell-exclusion (on whose `ExclusionEmpty` and witness checks `CompletenessEmpty` rests) and before the TypeScript
+mirror, which now covers completeness too. 
+Each accepted slice lands by merging its pull request when green (the epic owner merges); the next slice opens a new branch and pull request from main. The first one is `feat/172-exclusion-and-completeness` from main a2e5181 (PR #176), carrying haskell-exclusion.

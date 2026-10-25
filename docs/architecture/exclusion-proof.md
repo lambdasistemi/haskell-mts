@@ -73,8 +73,10 @@ from root to the witness leaf.
 
 ## Verification Algorithm
 
-For `ExclusionEmpty`: trivially valid (caller must verify the
-root is actually empty).
+For `ExclusionEmpty`: refused against every root. An empty tree has
+no root hash, so no root verifies an empty-tree proof; establish
+emptiness from the absent root (`mtsRootHash` is `Nothing`), not from
+this function.
 
 For `ExclusionWitness`:
 

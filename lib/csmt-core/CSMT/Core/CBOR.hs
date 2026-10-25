@@ -1,3 +1,5 @@
+{-# LANGUAGE RankNTypes #-}
+
 -- |
 -- Module      : CSMT.Core.CBOR
 -- Description : CBOR encoding/decoding for CSMT proofs
@@ -8,6 +10,11 @@
 -- Shared wire format — the @csmt@ write side and the @csmt-verify@
 -- verifier both round-trip through these codecs, so bytes produced
 -- by the server are exactly the bytes the verifier consumes.
+--
+-- The parsers accept only the bytes a renderer produces. The CBOR
+-- library also reads numbers written longer than needed, lists whose
+-- header disagrees with the items read, and bytes after the value;
+-- none of them is a proof, and none of them parses.
 module CSMT.Core.CBOR
     ( renderProof
     , parseProof
@@ -133,12 +140,21 @@ renderProof :: InclusionProof Hash -> ByteString
 renderProof =
     BL.toStrict . CBOR.toLazyByteString . encodeProof
 
--- | Parse CBOR bytes as an inclusion proof.
+-- | Decode bytes that are exactly the rendering of the value they
+-- decode to.
+parseCanonical
+    :: (a -> ByteString)
+    -> (forall s. CBOR.Decoder s a)
+    -> ByteString
+    -> Maybe a
+parseCanonical render decoder bs =
+    case CBOR.deserialiseFromBytes decoder (BL.fromStrict bs) of
+        Right (_, a) | render a == bs -> Just a
+        _ -> Nothing
+
+-- | Parse the bytes of 'renderProof' as an inclusion proof.
 parseProof :: ByteString -> Maybe (InclusionProof Hash)
-parseProof bs =
-    case CBOR.deserialiseFromBytes decodeProof (BL.fromStrict bs) of
-        Left _ -> Nothing
-        Right (_, pf) -> Just pf
+parseProof = parseCanonical renderProof decodeProof
 
 encodeExclusionProof :: ExclusionProof Hash -> CBOR.Encoding
 encodeExclusionProof ExclusionEmpty =
@@ -173,15 +189,11 @@ renderExclusionProof =
         . CBOR.toLazyByteString
         . encodeExclusionProof
 
--- | Parse CBOR bytes as an exclusion proof.
+-- | Parse the bytes of 'renderExclusionProof' as an exclusion proof.
 parseExclusionProof
     :: ByteString -> Maybe (ExclusionProof Hash)
-parseExclusionProof bs =
-    case CBOR.deserialiseFromBytes
-        decodeExclusionProof
-        (BL.fromStrict bs) of
-        Left _ -> Nothing
-        Right (_, pf) -> Just pf
+parseExclusionProof =
+    parseCanonical renderExclusionProof decodeExclusionProof
 
 encodeMergeOp :: (Int, Int) -> CBOR.Encoding
 encodeMergeOp (i, j) =
@@ -242,12 +254,9 @@ renderCompletenessProof :: CompletenessProof Hash -> ByteString
 renderCompletenessProof =
     BL.toStrict . CBOR.toLazyByteString . encodeCompletenessProof
 
--- | Parse CBOR bytes as a completeness proof.
+-- | Parse the bytes of 'renderCompletenessProof' as a completeness
+-- proof.
 parseCompletenessProof
     :: ByteString -> Maybe (CompletenessProof Hash)
-parseCompletenessProof bs =
-    case CBOR.deserialiseFromBytes
-        decodeCompletenessProof
-        (BL.fromStrict bs) of
-        Left _ -> Nothing
-        Right (_, pf) -> Just pf
+parseCompletenessProof =
+    parseCanonical renderCompletenessProof decodeCompletenessProof

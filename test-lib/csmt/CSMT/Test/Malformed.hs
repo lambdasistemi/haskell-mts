@@ -31,9 +31,18 @@ module CSMT.Test.Malformed
     , genWild
     , shrinkProof
 
+      -- * Building blocks for other generators
+    , genHash
+    , genBits
+    , genNear
+    , flipBitAt
+    , insertAt
+    , damageStructure
+
       -- * Counterexample rendering
     , describeTree
     , describeProof
+    , renderKey
     )
 where
 
@@ -190,6 +199,15 @@ applyDamages damages t o p = do
         (\q _ -> elements damages >>= \damage -> damage t o q)
         p
         [1 .. n :: Int]
+
+-- | A proof with a few of its structural fields damaged: root jump,
+-- steps, step sizes and siblings.
+damageStructure
+    :: Tree
+    -> Tree
+    -> InclusionProof Hash
+    -> Gen (InclusionProof Hash)
+damageStructure = applyDamages structureDamages
 
 structureDamages :: [Damage]
 structureDamages =
