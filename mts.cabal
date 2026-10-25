@@ -2,7 +2,7 @@ cabal-version:   3.4
 name:            mts
 
 -- x-release-please-start-version
-version:         1.0.1
+version:         1.1.0
 
 -- x-release-please-end
 synopsis:        Merkle Tree Store with pluggable trie implementations

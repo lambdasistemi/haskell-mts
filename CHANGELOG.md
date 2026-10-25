@@ -1,5 +1,21 @@
 # Changelog for mts
 
+## [1.1.0](https://github.com/lambdasistemi/haskell-mts/compare/v1.0.1...v1.1.0) (2026-10-25)
+
+
+### Features
+
+* **test-vectors:** emit random-tree and measurement vectors for the Aiken CSMT ([b7d5631](https://github.com/lambdasistemi/haskell-mts/commit/b7d56316cdf0512c6d34b55af3cb76f9728142fb))
+* **test-vectors:** emit random-tree and measurement vectors for the Aiken CSMT ([af85e3d](https://github.com/lambdasistemi/haskell-mts/commit/af85e3dfead8dec8598fbaa1a95d9c0dbd0e5820))
+
+
+### Bug Fixes
+
+* **csmt-core:** refuse inclusion proofs that do not bind the whole key ([a2e5181](https://github.com/lambdasistemi/haskell-mts/commit/a2e51819af8a4f85acfcc5cdc5eaaf61420ec7f0))
+* **csmt-core:** refuse inclusion proofs that do not bind the whole key ([6bf3b68](https://github.com/lambdasistemi/haskell-mts/commit/6bf3b6888f5e7df862254422cb567fc956b68758))
+* **csmt-core:** refuse malformed exclusion proofs and proof bytes ([aaa2e40](https://github.com/lambdasistemi/haskell-mts/commit/aaa2e40ce4cc0313c17430368b9206aa8f2173fc))
+* **csmt-core:** refuse malformed exclusion proofs and proof bytes ([21d329b](https://github.com/lambdasistemi/haskell-mts/commit/21d329bb8a2aea4f79babd0db277383b42b80d91))
+
 ## [1.0.1](https://github.com/lambdasistemi/haskell-mts/compare/v1.0.0...v1.0.1) (2026-06-10)
 
 
