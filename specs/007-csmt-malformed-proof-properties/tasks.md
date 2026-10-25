@@ -5,8 +5,8 @@
 - [x] inclusion completeness over random trees
 
 ## haskell-exclusion
-- [ ] exclusion soundness properties and fixes, counterexamples kept
-- [ ] proof decoding refuses malformed bytes without exceptions
+- [x] exclusion soundness properties and fixes, counterexamples kept
+- [x] proof decoding refuses malformed bytes without exceptions
 
 ## haskell-completeness
 - [ ] completeness soundness properties and fixes, counterexamples kept

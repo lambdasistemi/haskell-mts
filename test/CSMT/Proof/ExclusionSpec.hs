@@ -97,12 +97,16 @@ spec = describe "CSMT.Proof.Exclusion" $ do
             $ fst (exclusionProofFor [] [L, R, L])
             `shouldBe` Just ExclusionEmpty
 
-        it "ExclusionEmpty verifies"
-            $ verifyExclusionProof
-                word64Hashing
-                0
-                ExclusionEmpty
-            `shouldBe` True
+        it "ExclusionEmpty is refused against any root"
+            $ map
+                ( \r ->
+                    verifyExclusionProof
+                        word64Hashing
+                        r
+                        ExclusionEmpty
+                )
+                [0, 1, maxBound]
+            `shouldBe` [False, False, False]
 
     describe "single-element tree" $ do
         it "excludes absent key"
