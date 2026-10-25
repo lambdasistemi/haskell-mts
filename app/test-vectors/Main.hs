@@ -59,11 +59,25 @@ import CSMT.Proof.Insertion
     , buildInclusionProof
     )
 import Control.Lens (simple)
+import Control.Monad (forM_)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
+import Data.List (nub)
+import Data.Maybe (fromMaybe)
 import Database.KV.Transaction
     ( Transaction
     , runTransactionUnguarded
+    )
+import Text.Printf (printf)
+import Trees
+    ( Measurement (..)
+    , Tree (..)
+    , TreeSpec (..)
+    , growTree
+    , measurement
+    , measurementSizes
+    , randomTreeSpecs
+    , shapeName
     )
 
 -- -----------------------------------------------------------
@@ -143,6 +157,28 @@ getProofAndRoot db k =
             pure (p, rh)
     in  (fmap snd mp, r)
 
+-- | Root of a db, 'Nothing' when it holds no key.
+rootOf :: InMemoryDB -> Maybe Hash
+rootOf db = fst $ runPure db rootHashBS
+
+-- | The db after inserting one more key-value pair.
+insertInto
+    :: InMemoryDB -> (ByteString, ByteString) -> InMemoryDB
+insertInto db (k, v) = snd $ runPure db $ insertBS k v
+
+-- | Root of a db that holds at least one key.
+nonEmptyRoot :: InMemoryDB -> Hash
+nonEmptyRoot db =
+    fromMaybe (error "nonEmptyRoot: no key in the tree")
+        $ rootOf db
+
+-- | Inclusion proof of a key the db holds.
+proofIn :: InMemoryDB -> ByteString -> InclusionProof Hash
+proofIn db k =
+    fromMaybe (error $ "proofIn: key not in the tree: " <> show k)
+        $ fst
+        $ getProofAndRoot db k
+
 -- -----------------------------------------------------------
 -- Domain → Expr conversions
 -- -----------------------------------------------------------
@@ -209,6 +245,19 @@ emitHas name key val r p =
         trie <- bind "trie" $ call "from_root" [rootExpr r]
         proof <- bindProof "proof" p
         pure $ call "has" [trie, hex key, hex val, proof]
+
+-- | Emit a 'miss' test.
+emitMiss
+    :: String
+    -> Hash
+    -> ByteString
+    -> InclusionProof Hash
+    -> ModuleM ()
+emitMiss name r key p =
+    emitTest name $ do
+        trie <- bind "trie" $ call "from_root" [rootExpr r]
+        proof <- bindProof "proof" p
+        pure $ call "miss" [trie, hex key, proof]
 
 -- | Emit an 'insert into empty' test.
 emitInsertEmpty
@@ -1198,6 +1247,143 @@ aikenModule = do
                         , proof3
                         ]
             pure $ call "is_empty" [fifo4]
+
+    randomTreeSection
+    measurementSection
+
+-- -----------------------------------------------------------
+-- Random-tree vectors
+-- -----------------------------------------------------------
+
+-- | The section of seeded random trees. For each tree: a 'has'
+-- for every member, 'miss' and 'insert' for sampled absent keys
+-- with the proof taken in the tree that holds the key, and
+-- 'delete' for a few members.
+randomTreeSection :: ModuleM ()
+randomTreeSection = do
+    emit Blank
+    emit $ comment "Random-tree test vectors"
+    emit Blank
+    emit
+        $ useFrom
+            "aiken/csmt"
+            [ "Proof"
+            , "ProofStep"
+            , "delete"
+            , "from_root"
+            , "has"
+            , "insert"
+            , "is_empty"
+            , "miss"
+            , "root"
+            ]
+    emit $ useFrom "aiken/csmt/hashing" ["Indirect"]
+    emit Blank
+    mapM_ emitRandomTree randomTreeSpecs
+
+-- | Test name for the @i@-th member (@m@) or absent key (@a@) of
+-- a tree.
+randomName :: String -> TreeSpec -> Char -> Int -> String
+randomName op TreeSpec{..} =
+    printf
+        "rand_%s_%s_k%d_n%d_%c%02d"
+        op
+        (shapeName specShape)
+        specKeyLength
+        specSize
+
+emitRandomTree :: TreeSpec -> ModuleM ()
+emitRandomTree spec = do
+    let Tree{treeMembers, treeAbsent} = growTree spec
+        db = buildTree treeMembers
+        root = nonEmptyRoot db
+        members = zip [0 ..] treeMembers
+    forM_ members $ \(i, (k, v)) ->
+        emitHas
+            (randomName "has" spec 'm' i)
+            k
+            v
+            root
+            (proofIn db k)
+    forM_ (zip [0 ..] treeAbsent) $ \(i, absent@(k, v)) -> do
+        let grown = insertInto db absent
+            p = proofIn grown k
+        emitMiss (randomName "miss" spec 'a' i) root k p
+        emitInsert
+            (randomName "insert" spec 'a' i)
+            root
+            k
+            v
+            (nonEmptyRoot grown)
+            p
+    forM_ (deletedMembers spec) $ \i -> do
+        let (k, v) = treeMembers !! i
+            p = proofIn db k
+            rest = [m | (j, m) <- members, j /= i]
+            name = randomName "delete" spec 'm' i
+        case rootOf (buildTree rest) of
+            Nothing -> emitDeleteToEmpty name root k v p
+            Just r' -> emitDelete name root k v r' p
+
+-- | Positions of the members that get a 'delete' test: the
+-- first, the middle and the last.
+deletedMembers :: TreeSpec -> [Int]
+deletedMembers TreeSpec{specSize} =
+    nub [0, specSize `div` 2, specSize - 1]
+
+-- -----------------------------------------------------------
+-- Measurement vectors
+-- -----------------------------------------------------------
+
+-- | The section of measurement trees: for each size one 'has',
+-- one 'miss' and one 'insert', named after the operation and
+-- the size so the cost reported for the test is the measurement.
+measurementSection :: ModuleM ()
+measurementSection = do
+    emit Blank
+    emit $ comment "Measurement test vectors"
+    emit Blank
+    emit
+        $ useFrom
+            "aiken/csmt"
+            [ "Proof"
+            , "ProofStep"
+            , "from_root"
+            , "has"
+            , "insert"
+            , "miss"
+            , "root"
+            ]
+    emit $ useFrom "aiken/csmt/hashing" ["Indirect"]
+    emit Blank
+    mapM_ emitMeasurement measurementSizes
+
+emitMeasurement :: Int -> ModuleM ()
+emitMeasurement n = do
+    let Measurement
+            { measureMembers
+            , measureSample = (sk, sv)
+            , measureAbsent = absent@(ak, av)
+            } = measurement n
+        db = buildTree measureMembers
+        grown = insertInto db absent
+        root = nonEmptyRoot db
+        p = proofIn grown ak
+        suffix = show n
+    emitHas
+        ("measure_has_" <> suffix)
+        sk
+        sv
+        root
+        (proofIn db sk)
+    emitMiss ("measure_miss_" <> suffix) root ak p
+    emitInsert
+        ("measure_insert_" <> suffix)
+        root
+        ak
+        av
+        (nonEmptyRoot grown)
+        p
 
 -- -----------------------------------------------------------
 -- Main
