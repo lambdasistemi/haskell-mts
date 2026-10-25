@@ -37,5 +37,5 @@ pushed head is the net. Rows added by later slices are "CI change in this ticket
 Completeness proofs are what CSMT offers that guarded merkle-patricia-forestry cannot, and they are checked off-chain,
 so the completeness verifier gets the same malformed-proof treatment as slice haskell-completeness, after
 haskell-exclusion (on whose `ExclusionEmpty` and witness checks `CompletenessEmpty` rests) and before the TypeScript
-mirror, which now covers completeness too. Each slice is its own pull request, merged by the epic owner when green.
-Remaining slices run on branch `feat/172-exclusion-and-completeness` from main a2e5181.
+mirror, which now covers completeness too. 
+Each accepted slice lands by merging its pull request when green (the epic owner merges); the next slice opens a new branch and pull request from main. The first one is `feat/172-exclusion-and-completeness` from main a2e5181 (PR #176), carrying haskell-exclusion.
